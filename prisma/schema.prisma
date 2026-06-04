@@ -1,0 +1,183 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id              String              @id @default(cuid())
+  hcaId           String              @unique
+  email           String              @unique
+  name            String
+  avatarUrl       String?
+  slackId         String?
+  hackatimeId     String?
+  isSuperAdmin      Boolean             @default(false)
+  isProgramAuthor   Boolean             @default(false)
+  hcbAccessToken    String?
+  hcbRefreshToken   String?
+  hcbTokenExpiresAt DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  memberships ProgramMembership[]
+  auditLogs   AuditLog[]
+  sessions    Session[]
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Program {
+  id             String   @id @default(cuid())
+  name           String
+  yswsName       String?
+  iconUrl        String?
+  description    String?
+  masterEndpoint String
+  secretKey      String
+  isActive            Boolean  @default(true)
+  hcbOrganizationId   String?
+  hcbOrganizationName String?
+  hcbOrganizationSlug String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  memberships        ProgramMembership[]
+  checkResults       CheckResult[]
+  auditLogs          AuditLog[]
+  pendingApprovals   PendingApproval[]
+  pendingInvites     PendingInvite[]
+  cardGrantTemplates CardGrantTemplate[]
+}
+
+model ProgramMembership {
+  id                    String    @id @default(cuid())
+  userId                String
+  programId             String
+  invitedById           String?
+  joinedAt              DateTime  @default(now())
+  lastAccess            DateTime?
+  canViewReviews        Boolean   @default(false)
+  canCreateReviews      Boolean   @default(false)
+  canAuthorizeReviews   Boolean   @default(false)
+  canViewFulfillments   Boolean   @default(false)
+  canViewAddressData    Boolean   @default(false)
+  canUpdateFulfillments Boolean   @default(false)
+  canUpdateProgram      Boolean   @default(false)
+  isRoot                Boolean   @default(false)
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, programId])
+}
+
+model CheckResult {
+  id        String   @id @default(cuid())
+  programId String
+  shipId    String
+  checkId   String
+  family    String
+  severity  String
+  status    String   @default("completed")
+  passed    Boolean  @default(false)
+  summary   String   @default("")
+  details   Json?
+  costUsd   Float?
+  latencyMs Int?
+  ranAt     DateTime @default(now())
+
+  program Program @relation(fields: [programId], references: [id])
+
+  @@unique([programId, shipId, checkId])
+  @@index([programId, shipId])
+  @@index([checkId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  programId  String
+  userId     String
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  program Program @relation(fields: [programId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@index([programId])
+  @@index([userId])
+}
+
+model PendingInvite {
+  id          String   @id @default(cuid())
+  programId   String
+  email       String
+  name        String
+  avatarUrl   String?
+  invitedById String
+  createdAt   DateTime @default(now())
+
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, email])
+  @@index([email])
+  @@index([programId])
+}
+
+model PendingApproval {
+  id              String   @id @default(cuid())
+  programId       String
+  projectId       String
+  shipId          String
+  reviewerId      String
+  hoursAssigned   Float
+  feedbackMessage String
+  justification   String
+  status          String   @default("pending")
+  discardedById   String?
+  createdAt       DateTime @default(now())
+
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, shipId, reviewerId])
+  @@index([programId])
+}
+
+model CardGrantTemplate {
+  id                       String   @id @default(cuid())
+  programId                String
+  shopItemId               String
+  amountCents              Int
+  purpose                  String?
+  oneTimeUse               Boolean  @default(false)
+  preAuthorizationRequired Boolean  @default(false)
+  instructions             String?
+  merchantLock             String?
+  categoryLock             String?
+  keywordLock              String?
+  expirationDays           Int?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, shopItemId])
+  @@index([programId])
+}

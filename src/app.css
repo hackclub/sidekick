@@ -1,0 +1,62 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/typography';
+
+@font-face {
+	font-family: 'Inter';
+	font-style: normal;
+	font-weight: 100 900;
+	font-display: swap;
+	src: url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+}
+
+@theme {
+	--color-page: #ffffff;
+	--color-surface: #f4f4f4;
+	--color-sidebar: #eaeaea;
+	--color-sidebar-border: #b0b0b0;
+
+	--color-border-card: #e2e2e2;
+	--color-border-input: #dcdcdc;
+	--color-border-table: #ebebeb;
+	--color-border-active: #b8b8b8;
+	--color-border-button: #dcdcdc;
+
+	--color-text-primary: #000000;
+	--color-text-secondary: #737373;
+	--color-text-tertiary: #a3a3a3;
+	--color-text-faint: #b6b6b6;
+	--color-text-input: #393939;
+	--color-text-placeholder: #7f7f7f;
+	--color-text-placeholder-light: #959595;
+	--color-text-muted: #6c6c6c;
+	--color-text-subtle: #515151;
+	--color-text-dim: #5d5d5d;
+
+	--color-accent: #d47e2f;
+	--color-accent-bg: #fff5ec;
+	--color-accent-bg-warm: #fff3ea;
+
+	--color-link: #0085b5;
+	--color-git-added: #007706;
+	--color-git-removed: #bf0000;
+
+	--color-check-pass: #007706;
+	--color-check-fail: #bf0000;
+
+	--font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+	--font-mono: 'Cascadia Mono', 'Cascadia Code', ui-monospace, monospace;
+
+	--radius-bento: 20px;
+	--radius-card: 16px;
+	--radius-section: 10px;
+	--radius-sidebar-btn: 8px;
+	--radius-input: 8px;
+	--radius-tag: 6px;
+	--radius-full: 9999px;
+
+	--shadow-card: 0px 2px 4px 0px rgba(0, 0, 0, 0.12);
+	--shadow-sidebar-active: 0px 2px 1px rgba(0, 0, 0, 0.1);
+
+	--sidebar-collapsed-width: 56px;
+	--sidebar-expanded-width: 250px;
+}
