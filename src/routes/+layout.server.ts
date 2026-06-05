@@ -11,10 +11,7 @@ export const load: LayoutServerLoad = async ({ cookies, url }) => {
 	const user = await getSessionUser(cookies);
 
 	if (!user) {
-		if (url.pathname !== '/') {
-			throw redirect(302, '/');
-		}
-		return { user: null, programs: [] };
+		throw redirect(302, '/auth/login');
 	}
 
 	const programs = await getUserPrograms(user.id, user.isSuperAdmin);
