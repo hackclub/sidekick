@@ -4,6 +4,7 @@ export interface SlackUserProfile {
 	name: string;
 	avatarUrl: string | null;
 	email: string | null;
+	deleted: boolean;
 }
 
 const cache = new Map<string, { profile: SlackUserProfile | null; expiresAt: number }>();
@@ -33,7 +34,8 @@ export async function getSlackUserProfile(userId: string): Promise<SlackUserProf
 		const profile: SlackUserProfile = {
 			name: displayName || username || user.real_name || userId,
 			avatarUrl: user.profile?.image_192 || user.profile?.image_72 || null,
-			email: user.profile?.email || null
+			email: user.profile?.email || null,
+			deleted: !!user.deleted
 		};
 
 		cache.set(userId, { profile, expiresAt: Date.now() + TTL });

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { X, NotebookPen, MessageSquareText, ChevronDown, ExternalLink, Pencil, Check, CreditCard, Loader2 } from 'lucide-svelte';
+	import { X, NotebookPen, MessageSquareText, ChevronDown, ExternalLink, Pencil, Check, CreditCard, Loader2, TriangleAlert } from 'lucide-svelte';
 	import StatusLight from '$lib/components/ui/StatusLight.svelte';
 	import UserCard from '$lib/components/ui/UserCard.svelte';
 	import ShippingAddress from './ShippingAddress.svelte';
@@ -331,6 +331,22 @@
 	function fmtGrantDate(iso: string): string {
 		return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 	}
+
+	let userSlackId = $state<string | null>(null);
+	let slackDeactivated = $state<boolean | null>(null);
+
+	$effect(() => {
+		userSlackId = null;
+		slackDeactivated = null;
+
+		fetch(`/api/slack/${encodeURIComponent(order.userId)}`)
+			.then((r) => r.json())
+			.then((data) => {
+				userSlackId = data.slackId ?? null;
+				slackDeactivated = data.slackId ? !!data.deleted : null;
+			})
+			.catch(() => {});
+	});
 </script>
 
 <div class="flex flex-col gap-6 pb-8 pt-12 px-8">
@@ -491,6 +507,23 @@
 		</div>
 	</div>
 
+	{#if order.quantity > 1 || slackDeactivated}
+		<div class="flex flex-col gap-2">
+			{#if order.quantity > 1}
+				<div class="flex items-center gap-2 px-3 py-2 rounded-section bg-amber-50 border border-amber-200">
+					<TriangleAlert size={14} class="text-amber-700 shrink-0" />
+					<p class="text-xs text-amber-700">The quantity for this order is <span class="font-bold">{order.quantity}</span>.</p>
+				</div>
+			{/if}
+			{#if slackDeactivated}
+				<div class="flex items-center gap-2 px-3 py-2 rounded-section bg-check-fail/10 border border-check-fail/30">
+					<TriangleAlert size={14} class="text-check-fail shrink-0" />
+					<span class="text-xs text-check-fail">This user's Slack account has been deactivated.</span>
+				</div>
+			{/if}
+		</div>
+	{/if}
+
 	{#if cardGrantTemplate}
 		<div class="flex flex-col gap-2">
 			{#if grantSent}
@@ -510,11 +543,6 @@
 					Send Card Grant (HCB not configured)
 				</button>
 			{:else}
-				{#if order.quantity > 1}
-					<div class="px-3 py-2 rounded-section bg-amber-50 border border-amber-200">
-						<p class="text-xs text-amber-700">The quantity for this order is <span class="font-bold">{order.quantity}</span>.</p>
-					</div>
-				{/if}
 				{#if loadingGrants}
 					<div class="flex items-center gap-2 h-10 px-4">
 						<Loader2 size={14} class="animate-spin text-text-tertiary" />
@@ -708,6 +736,8 @@
 		name={order.userName}
 		email={order.userEmail}
 		avatarUrl={order.userAvatarUrl}
+		slackId={userSlackId}
+		{slackDeactivated}
 		joinDate=""
 	/>
 

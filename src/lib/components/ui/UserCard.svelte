@@ -11,6 +11,7 @@
 		hackatimeId?: string | null;
 		email?: string | null;
 		trustLevel?: string | null;
+		slackDeactivated?: boolean | null;
 		loading?: boolean;
 		class?: string;
 	}
@@ -23,6 +24,7 @@
 		hackatimeId = null,
 		email = null,
 		trustLevel = null,
+		slackDeactivated = null,
 		loading = false,
 		class: className = ''
 	}: Props = $props();
@@ -114,7 +116,15 @@
 					</svg>
 					<span class="text-sm text-text-primary tracking-[-0.3px]">Slack ID</span>
 				</div>
-				<span class="font-mono text-sm text-text-primary tracking-[-0.3px]">{slackId}</span>
+				<div class="flex gap-2 items-center">
+					<span class="font-mono text-sm text-text-primary tracking-[-0.3px]">{slackId}</span>
+					{#if slackDeactivated}
+						<div class="flex gap-1.5 items-center">
+							<StatusLight status="fail" size={8} />
+							<span class="text-sm tracking-[-0.3px] text-check-fail">deactivated</span>
+						</div>
+					{/if}
+				</div>
 			</div>
 		{/if}
 
