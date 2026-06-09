@@ -828,7 +828,7 @@
 
 					{#if data.program.hcbOrganizationId && data.shopItems.length > 0}
 						<input
-							type="text"
+							type="search"
 							placeholder="Filter shop items…"
 							bind:value={shopItemFilter}
 							class="w-full h-9 px-3 rounded-input border border-border-input text-sm text-text-input tracking-[-0.3px] placeholder:text-text-placeholder focus:outline-none focus:border-border-active transition-colors"
