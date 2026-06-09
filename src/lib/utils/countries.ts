@@ -253,6 +253,8 @@ const ISO_COUNTRY_NAMES: Record<string, string> = {
 export function countryName(code: string): string {
 	const upper = code.toUpperCase();
 	const name = ISO_COUNTRY_NAMES[upper];
-	if (name) return `${name} (${upper})`;
+	if (name)
+		return `${name} (${upper})`;
+	
 	return code;
 }
