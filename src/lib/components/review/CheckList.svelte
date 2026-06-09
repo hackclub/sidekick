@@ -22,7 +22,7 @@
 	const passed = $derived(checks.filter((c) => c.status !== 'pending' && c.passed));
 </script>
 
-<div class="border border-border-card rounded-card shadow-card p-8 flex flex-col gap-4 {className}">
+<div class="border border-border-card rounded-card shadow-card p-8 pr-20 flex flex-col gap-4 {className}">
 	<div class="flex flex-col gap-1">
 		<div class="flex items-center gap-2">
 			<p class="font-bold text-[15px] text-text-primary tracking-[-0.4px]">Automated checks</p>

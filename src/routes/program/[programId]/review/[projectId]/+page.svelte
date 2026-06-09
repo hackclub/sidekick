@@ -271,7 +271,7 @@
 		</div>
 	</div>
 
-	<div class="flex-1 overflow-auto px-4 md:px-6 xl:px-16 py-10">
+	<div class="flex-1 overflow-auto px-4 md:px-6 wide:px-16 py-10">
 		<div class="review-bento gap-3">
 			<div class="flex flex-col gap-3" style="grid-area: user">
 				<UserCard
@@ -296,23 +296,25 @@
 				/>
 			</div>
 
-			<div style="grid-area: project">
-				<ProjectCard
-					id={data.project.id}
-					title={data.project.title}
-					description={data.project.description}
-					screenshotUrl={data.project.screenshotUrl}
-					demoUrl={data.project.demoUrl ?? ''}
-					codeUrl={data.project.codeUrl}
-					class="h-full"
-				/>
-			</div>
+			<div class="project-checks-wrapper">
+				<div class="flex-1 min-w-0" style="grid-area: project">
+					<ProjectCard
+						id={data.project.id}
+						title={data.project.title}
+						description={data.project.description}
+						screenshotUrl={data.project.screenshotUrl}
+						demoUrl={data.project.demoUrl ?? ''}
+						codeUrl={data.project.codeUrl}
+						class="h-full"
+					/>
+				</div>
 
-			<div style="grid-area: checks">
-				<CheckList
-					{checks}
-					class="h-full"
-				/>
+				<div style="grid-area: checks">
+					<CheckList
+						{checks}
+						class="h-full"
+					/>
+				</div>
 			</div>
 
 			<div class="flex flex-col gap-3" style="grid-area: timeline">
@@ -342,8 +344,8 @@
 				{/if}
 			</div>
 
-			<div class="xl:relative" style="grid-area: multi">
-				<div class="flex flex-col gap-3 xl:absolute xl:inset-0 xl:overflow-y-auto">
+			<div class="wide:relative" style="grid-area: multi">
+				<div class="flex flex-col gap-3 wide:absolute wide:inset-0 wide:overflow-y-auto">
 					<AirtableRecords
 						records={airtable?.airtableRecords ?? []}
 						loading={!airtable}
@@ -376,6 +378,7 @@
 						hackatimeProjectKeys={data.project.hackatimeProjectKeys}
 						programId={data.program.id}
 						defaultDate={data.pendingShip?.submittedAt?.split('T')[0]}
+						projectBreakdown={hackatime?.projectBreakdown ?? []}
 					/>
 				</div>
 			{/if}
@@ -392,8 +395,8 @@
 			"project"
 			"checks"
 			"multi"
-			"timeline"
-			"heartbeats";
+			"heartbeats"
+			"timeline";
 	}
 
 	@media (min-width: 768px) {
@@ -402,24 +405,29 @@
 			grid-template-areas:
 				"user       project"
 				"checks     multi"
-				"timeline   timeline"
-				"heartbeats heartbeats";
+				"heartbeats heartbeats"
+				"timeline   timeline";
 		}
 	}
 
-	@media (min-width: 1280px) {
-		.review-bento {
-			grid-template-columns: minmax(0, 380px) minmax(0, 1fr) minmax(0, 420px);
-			grid-template-areas:
-				"user       project    checks"
-				"timeline   timeline   multi"
-				"heartbeats heartbeats heartbeats";
-		}
+	.project-checks-wrapper {
+		display: contents;
 	}
 
 	@media (min-width: 1600px) {
 		.review-bento {
 			grid-template-columns: minmax(0, 380px) minmax(0, 1fr) minmax(0, 540px);
+			grid-template-areas:
+				"user       top             top"
+				"heartbeats heartbeats       multi"
+				"timeline   timeline         timeline";
+		}
+
+		.project-checks-wrapper {
+			grid-area: top;
+			display: flex;
+			gap: 0.75rem;
+			align-items: stretch;
 		}
 	}
 </style>
