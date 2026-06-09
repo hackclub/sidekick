@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types.js';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { afterNavigate, goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import OrderTableRow from '$lib/components/fulfillment/OrderTableRow.svelte';
@@ -81,6 +81,7 @@
 	}
 
 	let tableEl = $state<HTMLTableElement | null>(null);
+	let scrollContainerEl = $state<HTMLDivElement | null>(null);
 
 	function startColResize(colIndex: number, e: MouseEvent) {
 		e.preventDefault();
@@ -172,6 +173,15 @@
 		hasPrevPage = false;
 	}
 
+	let shouldScrollToTop = false;
+
+	afterNavigate(() => {
+		if (shouldScrollToTop) {
+			shouldScrollToTop = false;
+			scrollContainerEl?.scrollTo({ top: 0, behavior: 'smooth' });
+		}
+	});
+
 	function loadNextPage() {
 		if (!data.nextCursor)
 			return;
@@ -180,6 +190,7 @@
 		sessionStorage.setItem(CURSOR_STACK_KEY, JSON.stringify(stack));
 		const url = new URL($page.url);
 		url.searchParams.set('cursor', data.nextCursor);
+		shouldScrollToTop = true;
 		// eslint-disable-next-line svelte/no-navigation-without-resolve
 		goto(url.toString());
 	}
@@ -193,6 +204,7 @@
 		const url = new URL($page.url);
 		if (prevCursor) { url.searchParams.set('cursor', prevCursor); }
 		else { url.searchParams.delete('cursor'); }
+		shouldScrollToTop = true;
 		// eslint-disable-next-line svelte/no-navigation-without-resolve
 		goto(url.toString());
 	}
@@ -313,7 +325,7 @@
 		</div>
 
 		<div class="flex-1 min-h-0 flex flex-col border border-border-table rounded-input overflow-clip">
-			<div class="flex-1 min-h-0 overflow-auto">
+			<div bind:this={scrollContainerEl} class="flex-1 min-h-0 overflow-auto">
 				<table bind:this={tableEl} class="w-full border-collapse table-fixed">
 					<colgroup>
 						{#each colWidths as w, i (i)}
