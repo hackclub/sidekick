@@ -199,6 +199,8 @@ export interface FetchOrdersInput {
   cursor?: string;
   limit?: number;
   searchUser?: string;
+  sortBy?: "id" | "user" | "item" | "quantity" | "date" | "status";
+  sortOrder?: "asc" | "desc";
 }
 
 export interface FetchOrderDetailInput {

@@ -115,38 +115,29 @@
 		window.addEventListener('mouseup', onUp);
 	}
 
-	let sortKey = $state<SortKey>('date');
-	let sortAsc = $state(true);
+	const sortKeyToParam: Record<SortKey, string> = {
+		id: 'id', user: 'user', item: 'item', qty: 'quantity', date: 'date', status: 'status'
+	};
+	const paramToSortKey: Record<string, SortKey> = {
+		id: 'id', user: 'user', item: 'item', quantity: 'qty', date: 'date', status: 'status'
+	};
+
+	const sortKey = $derived<SortKey>(paramToSortKey[data.sortBy] ?? 'date');
+	const sortAsc = $derived(data.sortOrder === 'asc');
 
 	function toggleSort(key: SortKey) {
+		clearCursorStack();
+		const url = new URL($page.url);
+		const param = sortKeyToParam[key];
 		if (sortKey === key) {
-			sortAsc = !sortAsc;
+			url.searchParams.set('sortOrder', sortAsc ? 'desc' : 'asc');
 		} else {
-			sortKey = key;
-			sortAsc = true;
+			url.searchParams.set('sort', param);
+			url.searchParams.set('sortOrder', 'asc');
 		}
+		url.searchParams.delete('cursor');
+		goto(url.toString(), { replaceState: true });
 	}
-
-	const sortedOrders = $derived.by(() => {
-		const orders = [...data.orders];
-		const dir = sortAsc ? 1 : -1;
-		orders.sort((a, b) => {
-			switch (sortKey) {
-				case 'id': return (parseInt(a.id) - parseInt(b.id)) * dir;
-				case 'user': return a.userName.localeCompare(b.userName) * dir;
-				case 'item': {
-					const ai = data.items[a.itemId]?.name ?? a.itemId;
-					const bi = data.items[b.itemId]?.name ?? b.itemId;
-					return ai.localeCompare(bi) * dir;
-				}
-				case 'qty': return (a.quantity - b.quantity) * dir;
-				case 'date': return (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) * dir;
-				case 'status': return a.status.localeCompare(b.status) * dir;
-				default: return 0;
-			}
-		});
-		return orders;
-	});
 
 	const CURSOR_STACK_KEY = 'sidekick:fulfillment:cursorStack';
 
@@ -353,7 +344,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each sortedOrders as order (order.id)}
+						{#each data.orders as order (order.id)}
 							{@const item = data.items[order.itemId]}
 							<OrderTableRow
 								id="#{order.id}"
