@@ -47,9 +47,9 @@ async function authFetch(path: string, params?: Record<string, string>): Promise
 
 	let response = await fetch(url.toString(), { headers });
 
-	// Some public repos return 403 with a fine-grained PAT that doesn't explicitly
-	// cover them. Fall back to unauthenticated for those cases.
-	if (response.status === 403 && token) {
+	// Fine-grained PATs return 403 or 404 for repos outside their scope.
+	// Fall back to unauthenticated for those cases.
+	if ((response.status === 403 || response.status === 404) && token) {
 		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		const { Authorization: _auth, ...unauthHeaders } = headers;
 		response = await fetch(url.toString(), { headers: unauthHeaders });
