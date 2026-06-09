@@ -367,8 +367,8 @@
 				})
 			});
 			savingTemplate = null;
-			delete templateForms[itemId];
 			await invalidateAll();
+			delete templateForms[itemId];
 		} finally {
 			savingTemplate = null;
 		}
@@ -383,8 +383,8 @@
 				body: JSON.stringify({ shopItemId: itemId })
 			});
 			deletingTemplate = null;
-			delete templateForms[itemId];
 			await invalidateAll();
+			delete templateForms[itemId];
 		} finally {
 			deletingTemplate = null;
 		}
