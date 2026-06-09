@@ -205,6 +205,31 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
+	updateApiConfig: async ({ request, params, locals }) => {
+		const user = locals.user;
+		if (!user)
+			throw error(401);
+
+		await requirePermission(user.id, params.programId, 'canUpdateProgram', {
+			isSuperAdmin: user.isSuperAdmin
+		});
+
+		const formData = await request.formData();
+		const masterEndpoint = (formData.get('masterEndpoint') as string)?.trim();
+		const secretKey = (formData.get('secretKey') as string)?.trim();
+
+		if (!masterEndpoint || !secretKey) {
+			throw error(400, 'Master endpoint and secret key are required');
+		}
+
+		await db.program.update({
+			where: { id: params.programId },
+			data: { masterEndpoint, secretKey }
+		});
+
+		return { success: true };
+	},
+
 	updateIcon: async ({ request, params, locals }) => {
 		const user = locals.user;
 		if (!user) throw error(401);

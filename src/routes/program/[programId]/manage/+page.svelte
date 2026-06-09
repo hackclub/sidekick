@@ -51,6 +51,11 @@
 	let yswsSaved = $state(false);
 	let iconUrl = $state(data.program.iconUrl);
 
+	let masterEndpoint = $state(data.program.masterEndpoint);
+	let secretKey = $state(data.program.secretKey);
+	let apiConfigSaving = $state(false);
+	let apiConfigSaved = $state(false);
+
 	let expandedMembers: Record<string, boolean> = $state({});
 	let togglingPerm = $state<string | null>(null);
 	let removingMember = $state<string | null>(null);
@@ -1027,16 +1032,36 @@
 
 			<ManageSection title="Program API Configuration" description="This is how Sidekick reads, writes, and otherwise communicates with your program.">
 				{#snippet icon()}<EthernetPort size={16} class="text-text-secondary" />{/snippet}
-				<div class="border border-dashed border-border-card rounded-section p-6 flex flex-col gap-6">
+				<form
+					method="POST"
+					action="?/updateApiConfig"
+					use:enhance={() => {
+						apiConfigSaving = true;
+						return async ({ update }) => {
+							await update({ reset: false });
+							apiConfigSaving = false;
+							apiConfigSaved = true;
+							setTimeout(() => { apiConfigSaved = false; }, 2000);
+						};
+					}}
+					class="border border-dashed border-border-card rounded-section p-6 flex flex-col gap-6"
+				>
 					<LabeledField label="Master endpoint" description="This endpoint should follow the Sidekick communication protocol.">
 						{#snippet icon()}<Globe size={16} />{/snippet}
-						<EndpointField value={data.program.masterEndpoint} secretKey={data.program.secretKey} readonly />
+						<EndpointField name="masterEndpoint" bind:value={masterEndpoint} secretKey={secretKey} />
 					</LabeledField>
 					<LabeledField label="Secret key" description="Only your API server and Sidekick should share this. Authorizes ALL API requests.">
 						{#snippet icon()}<KeyRound size={16} />{/snippet}
-						<SecretKeyField value={data.program.secretKey} readonly />
+						<SecretKeyField name="secretKey" bind:value={secretKey} />
 					</LabeledField>
-				</div>
+					<button
+						type="submit"
+						disabled={apiConfigSaving}
+						class="h-9 px-4 rounded-input border border-border-button text-sm font-medium text-text-subtle tracking-[-0.3px] hover:bg-surface transition-colors cursor-pointer disabled:opacity-50 w-fit"
+					>
+						{apiConfigSaved ? 'Saved!' : apiConfigSaving ? 'Saving…' : 'Save'}
+					</button>
+				</form>
 			</ManageSection>
 
 			<ManageSection title="Audit Log" description="What's going on?!">
