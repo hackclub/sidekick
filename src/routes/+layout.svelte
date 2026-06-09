@@ -12,7 +12,9 @@
 
 	let { data, children }: Props = $props();
 
-	const currentProgram = $derived(data.programs?.[0] ?? null);
+	const currentProgram = $derived(
+		data.programs?.find((p) => p.id === $page.params.programId) ?? data.programs?.[0] ?? null
+	);
 	const showShell = $derived(!!data.user && !$page.url.pathname.startsWith('/auth/'));
 	const permissions = $derived(($page.data as Record<string, unknown>).permissions as { canViewReviews: boolean; canViewFulfillments: boolean } | undefined ?? null);
 </script>
