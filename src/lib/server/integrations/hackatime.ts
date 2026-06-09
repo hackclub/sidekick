@@ -133,16 +133,14 @@ export async function getProjectDetails(
 }
 
 export async function getUserTrustFactor(
-	username: string
+	userId: string
 ): Promise<TrustFactor> {
-	const response = await authFetch(
-		`/api/v1/users/${encodeURIComponent(username)}/trust_factor`
-	);
+	const response = await authFetch('/api/admin/v1/user/info', { id: userId });
 	const data = await response.json();
 
 	return {
-		trustLevel: data.trust_level,
-		trustValue: data.trust_value
+		trustLevel: data.user.trust_level,
+		trustValue: 0
 	};
 }
 
