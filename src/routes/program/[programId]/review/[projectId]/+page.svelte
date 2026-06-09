@@ -240,6 +240,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>{data.project.title} - {data.program.name} - Sidekick</title>
+</svelte:head>
+
 <div class="flex flex-col h-full">
 	<div class="border-b border-border-input flex h-11 items-center justify-between px-4 shrink-0 min-w-0">
 		<div class="flex gap-4 items-center min-w-0 flex-1">

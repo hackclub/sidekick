@@ -25,6 +25,10 @@
 	);
 </script>
 
+<svelte:head>
+	<title>Review - {data.program.name} - Sidekick</title>
+</svelte:head>
+
 <div class="px-6 lg:px-12 xl:px-16 py-10 flex flex-col gap-8 max-w-full overflow-hidden">
 	<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
 		<BentoGraph

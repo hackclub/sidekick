@@ -516,6 +516,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Manage - {data.program.name} - Sidekick</title>
+</svelte:head>
+
 <ManageLayout programs={data.programs} activeProgramId={data.program.id}>
 	<div class="border border-border-card rounded-bento overflow-hidden">
 			<div class="flex items-center gap-4 px-8 pt-8 pb-6">
