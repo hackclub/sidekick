@@ -59,4 +59,6 @@
 
 	--sidebar-collapsed-width: 56px;
 	--sidebar-expanded-width: 250px;
+
+	--breakpoint-wide: 1600px;
 }

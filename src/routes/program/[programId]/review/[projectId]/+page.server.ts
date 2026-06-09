@@ -99,7 +99,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 
 	const hackatimeData = (async () => {
 		if (!(hackatimeUser && project.hackatimeProjectKeys.length > 0)) {
-			return { hackatime: null as { totalSeconds: number; aiSeconds: number } | null, trustLevel: null as string | null };
+			return { hackatime: null as { totalSeconds: number; aiSeconds: number } | null, trustLevel: null as string | null, projectBreakdown: [] as { name: string; totalSeconds: number }[] };
 		}
 		try {
 			const [projectDetails, trust] = await Promise.all([
@@ -108,11 +108,15 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			]);
 			const totalSeconds = projectDetails.projects.reduce((s, p) => s + p.totalSeconds, 0);
 			lap('  hackatime');
-			return { hackatime: { totalSeconds, aiSeconds: 0 }, trustLevel: trust.trustLevel };
+			return {
+				hackatime: { totalSeconds, aiSeconds: 0 },
+				trustLevel: trust.trustLevel,
+				projectBreakdown: projectDetails.projects.map((p) => ({ name: p.name, totalSeconds: p.totalSeconds }))
+			};
 		} catch (e) {
 			console.error('[review] hackatime failed:', e);
 			lap('  hackatime (failed)');
-			return { hackatime: null, trustLevel: null };
+			return { hackatime: null, trustLevel: null, projectBreakdown: [] };
 		}
 	})();
 

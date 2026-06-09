@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Activity, LoaderCircle, FolderCode } from 'lucide-svelte';
+	import { Activity, LoaderCircle, FolderCode, ExternalLink, Check } from 'lucide-svelte';
 	import HeartbeatFrequencyBar from './HeartbeatFrequencyBar.svelte';
 	import HeartbeatScatter from './HeartbeatScatter.svelte';
 	import HeartbeatTable from './HeartbeatTable.svelte';
@@ -30,15 +30,39 @@
 		cursorPath: string;
 	}
 
+	interface ProjectBreakdown {
+		name: string;
+		totalSeconds: number;
+	}
+
 	interface Props {
 		hackatimeUser: string;
 		hackatimeProjectKeys: string[];
 		programId: string;
 		defaultDate?: string;
+		projectBreakdown?: ProjectBreakdown[];
 		class?: string;
 	}
 
-	let { hackatimeUser, hackatimeProjectKeys, programId, defaultDate, class: className = '' }: Props = $props();
+	let { hackatimeUser, hackatimeProjectKeys, programId, defaultDate, projectBreakdown = [], class: className = '' }: Props = $props();
+
+	const MAX_VISIBLE_PROJECTS = 4;
+
+	const sortedProjects = $derived.by(() => {
+		const timeMap = new Map(projectBreakdown.map((p) => [p.name, p.totalSeconds]));
+		return [...hackatimeProjectKeys]
+			.map((key) => ({ name: key, totalSeconds: timeMap.get(key) ?? 0 }))
+			.sort((a, b) => b.totalSeconds - a.totalSeconds);
+	});
+
+	const visibleProjects = $derived(sortedProjects.slice(0, MAX_VISIBLE_PROJECTS));
+	const overflowProjects = $derived(sortedProjects.slice(MAX_VISIBLE_PROJECTS));
+
+	function formatHours(seconds: number): string {
+		const h = seconds / 3600;
+		if (h < 0.1) return '<0.1h';
+		return h < 10 ? `${h.toFixed(1)}h` : `${Math.round(h)}h`;
+	}
 
 	let currentDate = $state(defaultDate || new Date().toISOString().split('T')[0]);
 	let heartbeats = $state<HeartbeatRow[] | null>(null);
@@ -53,9 +77,9 @@
 
 	let activityCache = $state<Record<string, DayActivity[]>>({});
 	let overviewLoading = $state(false);
-	let showLineNo = $state(true);
-	let showCursor = $state(true);
+	let overflowTooltip = $state<{ x: number; y: number } | null>(null);
 	let scrollContainer = $state<HTMLElement | null>(null);
+	let joeCopied = $state(false);
 
 	function monthKey(dateStr: string): string {
 		return dateStr.slice(0, 7);
@@ -283,6 +307,31 @@
 		heartbeats?.filter((hb) => hb.editor !== 'lapse' && !hb.user_agent.toLowerCase().includes('lapse')) ?? null
 	);
 
+	const dayProjectKeys = $derived.by(() => {
+		if (!codingHeartbeats) return hackatimeProjectKeys;
+		const keySet = new Set(hackatimeProjectKeys.map((k) => k.toLowerCase()));
+		const present = new Set<string>();
+		for (const hb of codingHeartbeats) {
+			if (keySet.has(hb.project.toLowerCase())) present.add(hb.project);
+		}
+		return present.size > 0 ? [...present] : hackatimeProjectKeys;
+	});
+
+	function buildJoeUrl(): string {
+		const params = new URLSearchParams({
+			u: hackatimeUser,
+			d: currentDate,
+			p: dayProjectKeys.join(',')
+		});
+		return `https://joe.fraud.hackclub.com/billy?${params}`;
+	}
+
+	async function copyJoeLink() {
+		await navigator.clipboard.writeText(buildJoeUrl());
+		joeCopied = true;
+		setTimeout(() => (joeCopied = false), 2000);
+	}
+
 	function handleFocusChange(timestamp: number) {
 		focusedTimestamp = timestamp;
 		animationKey++;
@@ -311,31 +360,42 @@
 	</div>
 
 	<div class="flex items-center justify-between px-6 py-2.5 border-b border-border-card bg-surface/30">
-		<div class="flex items-center gap-2">
+		<div class="flex items-center gap-2 min-w-0">
 			<FolderCode size={14} class="text-text-tertiary shrink-0" />
 			<span class="text-[12px] text-text-tertiary shrink-0">Projects:</span>
-			<div class="flex flex-wrap gap-1.5">
-				{#each hackatimeProjectKeys as key (key)}
-					<span class="text-[12px] font-medium text-text-primary bg-page border border-border-card rounded-tag px-2 py-0.5">{key}</span>
+			<div class="flex flex-wrap gap-1.5 min-w-0">
+				{#each visibleProjects as proj (proj.name)}
+					<span class="text-[12px] font-medium text-text-primary bg-page border border-border-card rounded-tag px-2 py-0.5 truncate">
+						{proj.name} <span class="text-text-tertiary font-normal">{formatHours(proj.totalSeconds)}</span>
+					</span>
 				{/each}
+				{#if overflowProjects.length > 0}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<span
+						class="overflow-pill text-[12px] font-medium text-text-secondary bg-page border border-border-card rounded-tag px-2 py-0.5 cursor-default"
+						onmouseenter={(e) => {
+							const rect = e.currentTarget.getBoundingClientRect();
+							overflowTooltip = { x: rect.left + rect.width / 2, y: rect.top };
+						}}
+						onmouseleave={() => (overflowTooltip = null)}
+					>
+						+{overflowProjects.length}
+					</span>
+				{/if}
 			</div>
 		</div>
-		<div class="flex items-center gap-1.5 shrink-0 ml-4">
-			<button
-				class="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-tag cursor-pointer transition-colors {showLineNo ? 'bg-page border border-border-card font-medium' : 'text-text-tertiary hover:text-text-secondary'}"
-				onclick={() => (showLineNo = !showLineNo)}
-			>
-				<span class="inline-block size-1.5 rounded-full" style="background: #06b6d4"></span>
-				Line
-			</button>
-			<button
-				class="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-tag cursor-pointer transition-colors {showCursor ? 'bg-page border border-border-card font-medium' : 'text-text-tertiary hover:text-text-secondary'}"
-				onclick={() => (showCursor = !showCursor)}
-			>
-				<span class="inline-block size-1.5 rounded-full" style="background: #e33062"></span>
-				Cursor
-			</button>
-		</div>
+		<button
+			class="flex items-center gap-1 text-[11px] px-2 py-1 rounded-tag cursor-pointer transition-colors shrink-0 ml-4 {joeCopied ? 'bg-check-pass/10 text-check-pass border border-check-pass/30' : 'bg-page border border-border-card text-text-secondary hover:text-text-primary'}"
+			onclick={copyJoeLink}
+		>
+			{#if joeCopied}
+				<Check size={12} />
+				Copied
+			{:else}
+				<ExternalLink size={12} />
+				Copy Joe link
+			{/if}
+		</button>
 	</div>
 
 	<div class="border-b border-border-card bg-surface/20 relative">
@@ -358,12 +418,8 @@
 										onclick={() => selectDay(day.date)}
 									>
 										<svg viewBox="0 0 400 100" class="w-full aspect-[4/1] bg-surface rounded-tag">
-											{#if showLineNo}
-												<path d={day.lineNoPath} stroke="#06b6d4" stroke-width="10" stroke-linecap="round" fill="none" />
-											{/if}
-											{#if showCursor}
-												<path d={day.cursorPath} stroke="#e33062" stroke-width="10" stroke-linecap="round" fill="none" />
-											{/if}
+											<path d={day.lineNoPath} stroke="#06b6d4" stroke-width="10" stroke-linecap="round" fill="none" />
+											<path d={day.cursorPath} stroke="#e33062" stroke-width="10" stroke-linecap="round" fill="none" />
 										</svg>
 										<div class="flex items-center justify-between px-0.5">
 											<span class="text-[10px] text-text-secondary">
@@ -440,3 +496,31 @@
 		</div>
 	{/if}
 </div>
+
+{#if overflowTooltip}
+	<div
+		class="overflow-tooltip"
+		style="left: {overflowTooltip.x}px; top: {overflowTooltip.y}px;"
+	>
+		{#each overflowProjects as proj (proj.name)}
+			<span class="whitespace-nowrap text-[12px] text-text-primary">{proj.name} <span class="text-text-tertiary">{formatHours(proj.totalSeconds)}</span></span>
+		{/each}
+	</div>
+{/if}
+
+<style>
+	.overflow-tooltip {
+		position: fixed;
+		transform: translate(-50%, calc(-100% - 6px));
+		background: var(--color-page, #fff);
+		border: 1px solid var(--color-border-card);
+		border-radius: 8px;
+		padding: 6px 10px;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+		z-index: 50;
+		pointer-events: none;
+	}
+</style>
