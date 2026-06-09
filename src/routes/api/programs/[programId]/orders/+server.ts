@@ -27,11 +27,12 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		});
 	}
 
-	if (body.reference !== undefined || body.adminNotes !== undefined) {
+	if (body.reference !== undefined || body.adminNotes !== undefined || body.userNotes !== undefined) {
 		await client.updateOrderFields({
 			orderId: body.orderId,
 			...(body.reference !== undefined && { reference: body.reference }),
-			...(body.adminNotes !== undefined && { adminNotes: body.adminNotes })
+			...(body.adminNotes !== undefined && { adminNotes: body.adminNotes }),
+			...(body.userNotes !== undefined && { userNotes: body.userNotes })
 		});
 	}
 
