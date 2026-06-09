@@ -86,7 +86,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	}
 
 	// Update the order reference with the grant ID
-	const reference = `hcb:${grant.id}`;
+	const reference = `https://hcb.hackclub.com/grants/${grant.id.replace(/^cdg_/, '')}`;
 	await client.updateOrderFields({ orderId, reference });
 
 	await db.auditLog.create({
