@@ -207,7 +207,8 @@ export const actions: Actions = {
 
 	updateApiConfig: async ({ request, params, locals }) => {
 		const user = locals.user;
-		if (!user) throw error(401);
+		if (!user)
+			throw error(401);
 
 		await requirePermission(user.id, params.programId, 'canUpdateProgram', {
 			isSuperAdmin: user.isSuperAdmin
