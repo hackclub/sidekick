@@ -1,6 +1,7 @@
 <script lang="ts">
 	import StatusLight from './StatusLight.svelte';
 	import Avatar from './Avatar.svelte';
+	import SlackIcon from '../icons/SlackIcon.svelte';
 	import { ShieldAlert, Clock, Mail } from 'lucide-svelte';
 
 	interface Props {
@@ -65,16 +66,7 @@
 				onclick={openSlack}
 				title="Open in Slack"
 			>
-				<svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-					<path d="M4.202 12.638a2.101 2.101 0 0 1-2.101 2.101A2.101 2.101 0 0 1 0 12.638a2.101 2.101 0 0 1 2.101-2.1h2.1v2.1z" fill="currentColor"/>
-					<path d="M5.261 12.638a2.101 2.101 0 0 1 2.1-2.1 2.101 2.101 0 0 1 2.101 2.1v5.261A2.101 2.101 0 0 1 7.362 20a2.101 2.101 0 0 1-2.1-2.101v-5.261z" fill="currentColor"/>
-					<path d="M7.362 4.202a2.101 2.101 0 0 1-2.1-2.101A2.101 2.101 0 0 1 7.361 0a2.101 2.101 0 0 1 2.101 2.101v2.1H7.362z" fill="currentColor"/>
-					<path d="M7.362 5.261a2.101 2.101 0 0 1 2.1 2.1 2.101 2.101 0 0 1-2.1 2.101H2.1A2.101 2.101 0 0 1 0 7.362a2.101 2.101 0 0 1 2.101-2.1h5.261z" fill="currentColor"/>
-					<path d="M15.798 7.362a2.101 2.101 0 0 1 2.101-2.1A2.101 2.101 0 0 1 20 7.361a2.101 2.101 0 0 1-2.101 2.101h-2.1V7.362z" fill="currentColor"/>
-					<path d="M14.739 7.362a2.101 2.101 0 0 1-2.1 2.1 2.101 2.101 0 0 1-2.101-2.1V2.1A2.101 2.101 0 0 1 12.638 0a2.101 2.101 0 0 1 2.101 2.101v5.261z" fill="currentColor"/>
-					<path d="M12.638 15.798a2.101 2.101 0 0 1 2.101 2.101A2.101 2.101 0 0 1 12.638 20a2.101 2.101 0 0 1-2.1-2.101v-2.1h2.1z" fill="currentColor"/>
-					<path d="M12.638 14.739a2.101 2.101 0 0 1-2.1-2.1 2.101 2.101 0 0 1 2.1-2.101h5.261A2.101 2.101 0 0 1 20 12.638a2.101 2.101 0 0 1-2.101 2.101h-5.261z" fill="currentColor"/>
-				</svg>
+				<SlackIcon size={16} />
 			</button>
 		{/if}
 	</div>
@@ -104,16 +96,7 @@
 		{#if slackId}
 			<div class="flex items-center justify-between w-full">
 				<div class="flex gap-1.5 items-center">
-					<svg width="14" height="14" viewBox="0 0 20 20" fill="none" class="text-text-primary shrink-0">
-						<path d="M4.202 12.638a2.101 2.101 0 0 1-2.101 2.101A2.101 2.101 0 0 1 0 12.638a2.101 2.101 0 0 1 2.101-2.1h2.1v2.1z" fill="currentColor"/>
-						<path d="M5.261 12.638a2.101 2.101 0 0 1 2.1-2.1 2.101 2.101 0 0 1 2.101 2.1v5.261A2.101 2.101 0 0 1 7.362 20a2.101 2.101 0 0 1-2.1-2.101v-5.261z" fill="currentColor"/>
-						<path d="M7.362 4.202a2.101 2.101 0 0 1-2.1-2.101A2.101 2.101 0 0 1 7.361 0a2.101 2.101 0 0 1 2.101 2.101v2.1H7.362z" fill="currentColor"/>
-						<path d="M7.362 5.261a2.101 2.101 0 0 1 2.1 2.1 2.101 2.101 0 0 1-2.1 2.101H2.1A2.101 2.101 0 0 1 0 7.362a2.101 2.101 0 0 1 2.101-2.1h5.261z" fill="currentColor"/>
-						<path d="M15.798 7.362a2.101 2.101 0 0 1 2.101-2.1A2.101 2.101 0 0 1 20 7.361a2.101 2.101 0 0 1-2.101 2.101h-2.1V7.362z" fill="currentColor"/>
-						<path d="M14.739 7.362a2.101 2.101 0 0 1-2.1 2.1 2.101 2.101 0 0 1-2.101-2.1V2.1A2.101 2.101 0 0 1 12.638 0a2.101 2.101 0 0 1 2.101 2.101v5.261z" fill="currentColor"/>
-						<path d="M12.638 15.798a2.101 2.101 0 0 1 2.101 2.101A2.101 2.101 0 0 1 12.638 20a2.101 2.101 0 0 1-2.1-2.101v-2.1h2.1z" fill="currentColor"/>
-						<path d="M12.638 14.739a2.101 2.101 0 0 1-2.1-2.1 2.101 2.101 0 0 1 2.1-2.101h5.261A2.101 2.101 0 0 1 20 12.638a2.101 2.101 0 0 1-2.101 2.101h-5.261z" fill="currentColor"/>
-					</svg>
+					<SlackIcon size={14} class="text-text-primary shrink-0" />
 					<span class="text-sm text-text-primary tracking-[-0.3px]">Slack ID</span>
 				</div>
 				<div class="flex gap-2 items-center">
