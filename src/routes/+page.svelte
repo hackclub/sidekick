@@ -14,7 +14,7 @@
 	<div class="flex items-center justify-center h-full">
 		<div class="flex flex-col items-center gap-6 max-w-md w-full">
 			<div class="flex flex-col items-center gap-1">
-				<h1 class="font-bold text-[22px] tracking-[-0.66px]">Welcome back, {data.user.name}</h1>
+				<h1 class="font-bold text-[22px] tracking-[-0.66px]">Welcome back, {data.user?.name}</h1>
 				<p class="text-[14px] text-text-secondary tracking-[-0.28px]">Select a program to get started.</p>
 			</div>
 			<div class="flex flex-col gap-2 w-full">
