@@ -21,12 +21,16 @@ export const load: PageServerLoad = async ({ params, parent, url }) => {
 	const statusFilter = (url.searchParams.get('status') as 'pending' | 'fulfilled' | 'cancelled' | 'all') || 'pending';
 	const searchUser = url.searchParams.get('search') || undefined;
 	const cursor = url.searchParams.get('cursor') || undefined;
+	const sortBy = (url.searchParams.get('sort') as 'id' | 'user' | 'item' | 'quantity' | 'date' | 'status') || 'date';
+	const sortOrder = (url.searchParams.get('sortOrder') as 'asc' | 'desc') || 'asc';
 
 	const result = await client.fetchOrders({
 		status: statusFilter,
 		searchUser,
 		cursor,
-		limit: 50
+		limit: 50,
+		sortBy,
+		sortOrder
 	});
 
 	// Load card grant templates for this program
@@ -54,6 +58,8 @@ export const load: PageServerLoad = async ({ params, parent, url }) => {
 		nextCursor: result.nextCursor ?? null,
 		totalCount: result.totalCount,
 		statusFilter,
+		sortBy,
+		sortOrder,
 		searchUser: searchUser ?? '',
 		canUpdateFulfillments: membership.canUpdateFulfillments,
 		canViewAddressData: membership.canViewAddressData,
