@@ -11,6 +11,7 @@ RUN npx prisma generate
 RUN npm run build
 
 FROM base AS production
+RUN apk add --no-cache git
 COPY --from=build /app/build ./build
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./
