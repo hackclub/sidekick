@@ -17,6 +17,10 @@
 	let secretKey = $state('');
 </script>
 
+<svelte:head>
+	<title>New Program - Sidekick</title>
+</svelte:head>
+
 <ManageLayout programs={data.programs} isCreateNew>
 	<div class="border border-border-card rounded-bento px-8 py-8">
 		<div class="flex flex-col gap-6">

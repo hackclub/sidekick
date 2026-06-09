@@ -35,6 +35,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Admin - Sidekick</title>
+</svelte:head>
+
 <div class="flex flex-col gap-6 p-10 max-w-[720px] mx-auto">
 	<div class="flex items-center gap-4">
 		<div class="size-10 rounded-section bg-accent-bg flex items-center justify-center">

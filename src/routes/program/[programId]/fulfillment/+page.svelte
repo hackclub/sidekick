@@ -283,6 +283,10 @@
 	const isDragging = $derived(draggingDivider || resizingCol >= 0);
 </script>
 
+<svelte:head>
+	<title>Fulfillment - {data.program.name} - Sidekick</title>
+</svelte:head>
+
 <div class="flex h-full overflow-hidden {isDragging ? 'select-none' : ''}">
 	<div class="flex flex-col gap-3 p-6 min-w-0" style="width: {dividerX}%">
 		<div class="flex items-center justify-between">
