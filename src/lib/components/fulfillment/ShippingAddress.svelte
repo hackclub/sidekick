@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { MapPin, Eye } from 'lucide-svelte';
+	import { countryName } from '$lib/utils/countries';
 
 	interface AddressData {
 		firstName: string;
@@ -60,7 +61,7 @@
 						? [{ label: 'State/Province/etc.', value: address.stateProvince }]
 						: []),
 					{ label: 'Postal Code', value: address.postalCode },
-					{ label: 'Country', value: address.country },
+					{ label: 'Country', value: countryName(address.country) },
 					...(address.phoneNumber
 						? [{ label: 'Phone Number', value: address.phoneNumber }]
 						: [])
