@@ -160,6 +160,7 @@ An **order** represents a participant earning a specific item. Orders reference 
   "status": "pending",
   "reference": "https://hcb.hackclub.com/grants/abc123",
   "adminNotes": "Shipped via FedEx, tracking #123456",
+  "userNotes": "Your Raspberry Pi has been shipped! Expect delivery in 3-5 days.",
   "createdAt": "2026-05-20T09:00:00Z",
   "metadata": {}
 }
@@ -178,6 +179,7 @@ An **order** represents a participant earning a specific item. Orders reference 
 | `status`        | `string` | Yes      | `"pending"`, `"fulfilled"`, or `"cancelled"`.                                              |
 | `reference`     | `string` | No       | External reference - tracking ID, HCB grant URL, or any identifier. Not necessarily a URL. |
 | `adminNotes`    | `string` | No       | Per-order notes written by fulfillers. Updated via `UPDATE_ORDER_FIELDS`.                  |
+| `userNotes`     | `string` | No       | Per-order notes visible to the user who placed the order. Updated via `UPDATE_ORDER_FIELDS`. |
 | `createdAt`     | `string` | Yes      | ISO 8601 timestamp.                                                                        |
 | `fulfilledAt`   | `string` | No       | ISO 8601 timestamp, if fulfilled.                                                          |
 | `metadata`      | `object` | No       | Program-specific extra data.                                                               |
@@ -626,15 +628,17 @@ Update editable fields on an order without changing its status.
 {
   "orderId": "order_789",
   "reference": "USPS-123456789",
-  "adminNotes": "Shipped via USPS Priority. Expected delivery 6/10."
+  "adminNotes": "Shipped via USPS Priority. Expected delivery 6/10.",
+  "userNotes": "Your order has shipped! Tracking: USPS-123456789"
 }
 ```
 
-| Field        | Type     | Required | Description                                             |
-| ------------ | -------- | -------- | ------------------------------------------------------- |
-| `orderId`    | `string` | Yes      | The order to update.                                    |
-| `reference`  | `string` | No       | External reference (tracking ID, HCB grant link, etc.). |
-| `adminNotes` | `string` | No       | Per-order notes for fulfillers.                         |
+| Field        | Type     | Required | Description                                                            |
+| ------------ | -------- | -------- | ---------------------------------------------------------------------- |
+| `orderId`    | `string` | Yes      | The order to update.                                                   |
+| `reference`  | `string` | No       | External reference (tracking ID, HCB grant link, etc.).                |
+| `adminNotes` | `string` | No       | Per-order notes for fulfillers.                                        |
+| `userNotes`  | `string` | No       | Per-order notes visible to the user who placed the order.              |
 
 All fields except `orderId` are optional - only include the fields you want to update.
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { X, NotebookPen, ChevronDown, ExternalLink, Pencil, Check, CreditCard, Loader2 } from 'lucide-svelte';
+	import { X, NotebookPen, MessageSquareText, ChevronDown, ExternalLink, Pencil, Check, CreditCard, Loader2 } from 'lucide-svelte';
 	import StatusLight from '$lib/components/ui/StatusLight.svelte';
 	import UserCard from '$lib/components/ui/UserCard.svelte';
 	import ShippingAddress from './ShippingAddress.svelte';
@@ -23,11 +23,12 @@
 		onstatuschange?: (newStatus: string) => void;
 		onreferencechange?: (newRef: string) => void;
 		onnoteschange?: (newNotes: string) => void;
+		onusernoteschange?: (newNotes: string) => void;
 		oncontextchange?: (newContext: string) => void;
 		onsendgrant?: (reference: string) => void;
 	}
 
-	let { order, item, programId, cardGrantTemplate = null, hcbOrganization = null, onclose, onstatuschange, onreferencechange, onnoteschange, oncontextchange, onsendgrant }: Props = $props();
+	let { order, item, programId, cardGrantTemplate = null, hcbOrganization = null, onclose, onstatuschange, onreferencechange, onnoteschange, onusernoteschange, oncontextchange, onsendgrant }: Props = $props();
 
 	let editingNotes = $state(false);
 	let notesValue = $state('');
@@ -179,6 +180,38 @@
 	function cancelNotesEdit() {
 		notesValue = order.adminNotes ?? '';
 		editingNotes = false;
+	}
+
+	let editingUserNotes = $state(false);
+	let userNotesValue = $state('');
+	let savingUserNotes = $state(false);
+
+	$effect(() => {
+		userNotesValue = order.userNotes ?? '';
+		editingUserNotes = false;
+	});
+
+	async function saveUserNotes() {
+		savingUserNotes = true;
+
+		try {
+			await fetch(`/api/programs/${programId}/orders`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ orderId: order.id, userNotes: userNotesValue })
+			});
+
+			onusernoteschange?.(userNotesValue);
+			editingUserNotes = false;
+		}
+		finally {
+			savingUserNotes = false;
+		}
+	}
+
+	function cancelUserNotesEdit() {
+		userNotesValue = order.userNotes ?? '';
+		editingUserNotes = false;
 	}
 
 	let editingContext = $state(false);
@@ -587,45 +620,88 @@
 		</div>
 	{/if}
 
-	<div class="flex flex-col gap-2">
-		<div class="flex gap-2 items-center">
-			<NotebookPen size={14} class="text-text-primary" />
-			<span class="font-bold text-[15px] text-text-primary tracking-[-0.4px]">Admin Notes</span>
+	<div class="flex gap-4">
+		<div class="flex-1 min-w-0 flex flex-col gap-2">
+			<div class="flex gap-2 items-center">
+				<NotebookPen size={14} class="text-text-primary" />
+				<span class="font-bold text-[15px] text-text-primary tracking-[-0.4px]">Admin Notes</span>
+			</div>
+
+			{#if editingNotes}
+				<div class="flex flex-col gap-2">
+					<textarea
+						bind:value={notesValue}
+						rows="4"
+						class="bg-white border border-border-card rounded-section p-4 text-sm tracking-[-0.3px] resize-y w-full"
+					></textarea>
+					<div class="flex gap-2 justify-end">
+						<button
+							class="px-3 py-1.5 rounded-tag border border-border-input text-xs font-medium hover:bg-surface cursor-pointer"
+							onclick={cancelNotesEdit}
+						>
+							Cancel
+						</button>
+						<button
+							class="px-3 py-1.5 rounded-tag bg-accent text-white text-xs font-medium hover:opacity-90 cursor-pointer"
+							onclick={saveNotes}
+							disabled={savingNotes}
+						>
+							{savingNotes ? 'Saving...' : 'Save'}
+						</button>
+					</div>
+				</div>
+			{:else}
+				<button
+					class="bg-white border border-border-card rounded-section p-4 text-left w-full cursor-pointer hover:border-accent transition-colors"
+					onclick={() => (editingNotes = true)}
+				>
+					<span class="text-sm tracking-[-0.3px] {order.adminNotes ? 'text-text-primary' : 'text-text-placeholder-light'}">
+						{order.adminNotes || 'No notes yet.'}
+					</span>
+				</button>
+			{/if}
 		</div>
 
-		{#if editingNotes}
-			<div class="flex flex-col gap-2">
-				<textarea
-					bind:value={notesValue}
-					rows="4"
-					class="bg-white border border-border-card rounded-section p-4 text-sm tracking-[-0.3px] resize-y w-full"
-				></textarea>
-				<div class="flex gap-2 justify-end">
-					<button
-						class="px-3 py-1.5 rounded-tag border border-border-input text-xs font-medium hover:bg-surface cursor-pointer"
-						onclick={cancelNotesEdit}
-					>
-						Cancel
-					</button>
-					<button
-						class="px-3 py-1.5 rounded-tag bg-accent text-white text-xs font-medium hover:opacity-90 cursor-pointer"
-						onclick={saveNotes}
-						disabled={savingNotes}
-					>
-						{savingNotes ? 'Saving...' : 'Save'}
-					</button>
-				</div>
+		<div class="flex-1 min-w-0 flex flex-col gap-2">
+			<div class="flex gap-2 items-center">
+				<MessageSquareText size={14} class="text-text-primary" />
+				<span class="font-bold text-[15px] text-text-primary tracking-[-0.4px]">User-visible Notes</span>
 			</div>
-		{:else}
-			<button
-				class="bg-white border border-border-card rounded-section p-4 text-left w-full cursor-pointer hover:border-accent transition-colors"
-				onclick={() => (editingNotes = true)}
-			>
-				<span class="text-sm tracking-[-0.3px] {order.adminNotes ? 'text-text-primary' : 'text-text-placeholder-light'}">
-					{order.adminNotes || 'No notes yet.'}
-				</span>
-			</button>
-		{/if}
+
+			{#if editingUserNotes}
+				<div class="flex flex-col gap-2">
+					<textarea
+						bind:value={userNotesValue}
+						rows="4"
+						class="bg-white border border-border-card rounded-section p-4 text-sm tracking-[-0.3px] resize-y w-full"
+					></textarea>
+					<div class="flex gap-2 justify-end">
+						<button
+							class="px-3 py-1.5 rounded-tag border border-border-input text-xs font-medium hover:bg-surface cursor-pointer"
+							onclick={cancelUserNotesEdit}
+						>
+							Cancel
+						</button>
+						<button
+							class="px-3 py-1.5 rounded-tag bg-accent text-white text-xs font-medium hover:opacity-90 cursor-pointer"
+							onclick={saveUserNotes}
+							disabled={savingUserNotes}
+						>
+							{savingUserNotes ? 'Saving...' : 'Save'}
+						</button>
+					</div>
+				</div>
+			{:else}
+				<button
+					class="bg-white border border-border-card rounded-section p-4 text-left w-full cursor-pointer hover:border-accent transition-colors"
+					onclick={() => (editingUserNotes = true)}
+				>
+					<span class="text-sm tracking-[-0.3px] {order.userNotes ? 'text-text-primary' : 'text-text-placeholder-light'}">
+						{order.userNotes || 'No user notes yet.'}
+					</span>
+				</button>
+			{/if}
+		</div>
 	</div>
 
 	<UserCard

@@ -121,6 +121,7 @@ export interface Order {
   status: "pending" | "fulfilled" | "cancelled";
   reference?: string;
   adminNotes?: string;
+  userNotes?: string;
   createdAt: string; // ISO 8601
   fulfilledAt?: string; // ISO 8601
   metadata?: Record<string, unknown>;
@@ -221,6 +222,7 @@ export interface UpdateOrderFieldsInput {
   orderId: string;
   reference?: string;
   adminNotes?: string;
+  userNotes?: string;
 }
 
 export interface UpdateItemFieldsInput {

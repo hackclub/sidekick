@@ -200,7 +200,7 @@
 		goto(url.toString());
 	}
 
-	let orderOverrides = $state<Record<string, { status?: string; reference?: string; adminNotes?: string }>>({});
+	let orderOverrides = $state<Record<string, { status?: string; reference?: string; adminNotes?: string; userNotes?: string }>>({});
 
 	function handleStatusChange(orderId: string, newStatus: string) {
 		orderOverrides[orderId] = { ...orderOverrides[orderId], status: newStatus };
@@ -222,6 +222,7 @@
 		if (ov.status !== undefined) { result.status = ov.status as Order['status']; }
 		if (ov.reference !== undefined) { result.reference = ov.reference; }
 		if (ov.adminNotes !== undefined) { result.adminNotes = ov.adminNotes; }
+		if (ov.userNotes !== undefined) { result.userNotes = ov.userNotes; }
 		return result;
 	}
 
@@ -231,6 +232,10 @@
 
 	function handleNotesChange(orderId: string, newNotes: string) {
 		orderOverrides[orderId] = { ...orderOverrides[orderId], adminNotes: newNotes };
+	}
+
+	function handleUserNotesChange(orderId: string, newNotes: string) {
+		orderOverrides[orderId] = { ...orderOverrides[orderId], userNotes: newNotes };
 	}
 
 	let itemOverrides = $state<Record<string, { fulfillerContext?: string }>>({});
@@ -435,6 +440,7 @@
 				onstatuschange={(newStatus) => handleStatusChange(selectedOrder!.id, newStatus)}
 				onreferencechange={(newRef) => handleReferenceChange(selectedOrder!.id, newRef)}
 				onnoteschange={(newNotes) => handleNotesChange(selectedOrder!.id, newNotes)}
+				onusernoteschange={(newNotes) => handleUserNotesChange(selectedOrder!.id, newNotes)}
 				oncontextchange={(newCtx) => handleContextChange(effectiveItem!.id, newCtx)}
 				onsendgrant={(ref) => handleReferenceChange(selectedOrder!.id, ref)}
 			/>
