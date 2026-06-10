@@ -91,6 +91,7 @@
 	const URL_RE = /(https?:\/\/[^\s<>)"']+)/g;
 
 	function linkify(text: string): Array<{ type: 'text' | 'link'; value: string }> {
+		if (!text) return [];
 		const parts: Array<{ type: 'text' | 'link'; value: string }> = [];
 		let lastIndex = 0;
 		for (const match of text.matchAll(URL_RE)) {

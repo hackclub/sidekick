@@ -3,7 +3,7 @@ import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient } from '$lib/server/protocol/client.js';
 import { resolveActorIds } from '$lib/server/actors.js';
-import { getProjectDetails, getUserTrustFactor } from '$lib/server/integrations/hackatime.js';
+import { getProjectDetails, getUserTrustFactor, getAiCodingSeconds } from '$lib/server/integrations/hackatime.js';
 import { findRecordsByUrl, airtableRecordUrl } from '$lib/server/integrations/airtable.js';
 import { parseRepoUrl, getCommits, getRepoInfo, getReadme } from '$lib/server/integrations/github.js';
 import { getLapseTimelapses } from '$lib/server/integrations/lapse.js';
@@ -102,14 +102,15 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			return { hackatime: null as { totalSeconds: number; aiSeconds: number } | null, trustLevel: null as string | null, projectBreakdown: [] as { name: string; totalSeconds: number }[] };
 		}
 		try {
-			const [projectDetails, trust] = await Promise.all([
+			const [projectDetails, trust, aiSeconds] = await Promise.all([
 				getProjectDetails(hackatimeUser, project.hackatimeProjectKeys),
-				getUserTrustFactor(hackatimeUser)
+				getUserTrustFactor(hackatimeUser),
+				getAiCodingSeconds(hackatimeUser, project.hackatimeProjectKeys)
 			]);
 			const totalSeconds = projectDetails.projects.reduce((s, p) => s + p.totalSeconds, 0);
 			lap('  hackatime');
 			return {
-				hackatime: { totalSeconds, aiSeconds: 0 },
+				hackatime: { totalSeconds, aiSeconds },
 				trustLevel: trust.trustLevel,
 				projectBreakdown: projectDetails.projects.map((p) => ({ name: p.name, totalSeconds: p.totalSeconds }))
 			};
@@ -401,20 +402,19 @@ export const actions: Actions = {
 					internalMessage: (formData.get('internalMessage') as string) || undefined
 				};
 				break;
-			case 'internal_comment':
+			case 'comment':
+			case 'internal_comment': {
+				const commentText = (formData.get('commentText') as string | null) ?? '';
+				if (!commentText.trim()) throw error(400, 'Comment text is required');
 				input = {
 					...base,
-					action: 'internal_comment',
-					commentText: formData.get('commentText') as string
+					action: action as 'comment' | 'internal_comment',
+					commentText
 				};
 				break;
+			}
 			default:
-				input = {
-					...base,
-					action: 'comment',
-					commentText: formData.get('commentText') as string
-				};
-				break;
+				throw error(400, `Unknown action: ${action}`);
 		}
 
 		const result = await client.submitReviewAction(input);
