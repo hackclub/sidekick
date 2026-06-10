@@ -34,10 +34,10 @@
 	let savedInternal: string | null = $state(null);
 
 	const displayFeedback = $derived(
-		savedFeedback ?? (event.type === 'approval' || event.type === 'rejection' || event.type === 'pending_approval' ? event.feedbackMessage : '')
+		savedFeedback ?? (event.type === 'approval' || event.type === 'authorized_approval' || event.type === 'rejection' || event.type === 'pending_approval' ? event.feedbackMessage : '')
 	);
 	const displayInternal = $derived(
-		savedInternal ?? (event.type === 'approval' || event.type === 'pending_approval' ? event.justification : event.type === 'rejection' ? (event.internalMessage ?? '') : '')
+		savedInternal ?? (event.type === 'approval' || event.type === 'authorized_approval' || event.type === 'pending_approval' ? event.justification : event.type === 'rejection' ? (event.internalMessage ?? '') : '')
 	);
 
 	function startEditing() {
@@ -131,7 +131,7 @@
 				<Ship size={24} class="text-text-primary" />
 			{:else if event.type === 'rejection'}
 				<CircleX size={24} class="text-check-fail" />
-			{:else if event.type === 'approval'}
+			{:else if event.type === 'approval' || event.type === 'authorized_approval'}
 				<CircleCheck size={24} class="text-check-pass" />
 			{:else if event.type === 'pending_approval'}
 				<Clock size={24} class="text-amber-500" />
@@ -164,6 +164,22 @@
 				{:else if event.type === 'rejection'}
 					<p class="text-sm tracking-[-0.3px]">
 						<span class="font-bold">{actor.name}</span> rejected
+					</p>
+				{:else if event.type === 'authorized_approval'}
+					{@const authorizedByActor = actors[event.authorizedByActorId] ?? { name: event.authorizedByActorId, avatarUrl: null }}
+					<p class="text-sm tracking-[-0.3px]">
+						<span class="font-bold">{actor.name}</span> approved for <span class="font-bold">{fmtHours(event.hoursAssigned)}</span>
+						{#if event.hoursDeflated && event.hoursDeflated > 0}
+							<span class="text-text-tertiary">({fmtHours(event.hoursDeflated)} deflation)</span>
+						{/if}
+						<span class="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded-tag bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-medium">
+							<ShieldCheck size={10} />
+							Authorized by
+							{#if authorizedByActor.avatarUrl}
+								<img src={authorizedByActor.avatarUrl} alt="" class="size-3.5 rounded-full object-cover" />
+							{/if}
+							{authorizedByActor.name}
+						</span>
 					</p>
 				{:else if event.type === 'approval'}
 					<p class="text-sm tracking-[-0.3px]">
@@ -313,6 +329,17 @@
 						{/if}
 					</div>
 				{/if}
+			</div>
+		{:else if event.type === 'authorized_approval'}
+			<div class="flex gap-1.5 w-full">
+				<div class="bg-surface rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
+					<p class="font-bold text-sm tracking-[-0.3px]">Reviewer message</p>
+					<p class="text-sm tracking-[-0.3px] break-words">{@render linkedText(displayFeedback)}</p>
+				</div>
+				<div class="bg-accent-bg-warm border border-dashed border-accent rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
+					<p class="font-bold text-sm tracking-[-0.3px]">Justification</p>
+					<p class="text-sm tracking-[-0.3px] break-words">{@render linkedText(displayInternal)}</p>
+				</div>
 			</div>
 		{:else if event.type === 'approval'}
 			<div class="flex gap-1.5 w-full">

@@ -31,7 +31,7 @@ export interface Ship {
   id: string;
   hoursSubmitted: number;
   submittedAt: string; // ISO 8601
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "pending_hq" | "approved" | "rejected";
 }
 
 export interface ProjectChange {
@@ -67,6 +67,17 @@ export type TimelineEvent =
       shipId: string;
       actorId: string;
       hoursAssigned: number;
+      feedbackMessage: string;
+      justification: string;
+      timestamp: string;
+    }
+  | {
+      type: "authorized_approval";
+      shipId: string;
+      actorId: string;
+      authorizedByActorId: string;
+      hoursAssigned: number;
+      hoursDeflated?: number;
       feedbackMessage: string;
       justification: string;
       timestamp: string;
@@ -132,7 +143,7 @@ export interface Order {
 // ---------------------------------------------------------------------------
 
 export interface FetchProjectsInput {
-  status?: "pending" | "approved" | "rejected" | "all";
+  status?: "pending" | "pending_hq" | "approved" | "rejected" | "all";
   cursor?: string;
   limit?: number;
 }
@@ -162,6 +173,12 @@ export type SubmitReviewActionInput = SubmitReviewActionBase &
         action: "reject";
         feedbackMessage: string;
         internalMessage?: string;
+      }
+    | {
+        action: "authorize";
+      }
+    | {
+        action: "deauthorize";
       }
     | {
         action: "comment";
@@ -296,6 +313,7 @@ export interface UpdateItemFieldsOutput {
 
 export interface GetProgramStatsOutput {
   pendingReviewCount: number;
+  pendingHqCount: number;
   pendingFulfillmentCount: number;
 }
 

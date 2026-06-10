@@ -23,8 +23,9 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	const weekAgo = new Date(now.getTime() - 7 * 86400000);
 	const twelveWeeksAgo = new Date(now.getTime() - 12 * 7 * 86400000);
 
-	const [projectsResult, statsResult, reviewLogs, pendingApprovals] = await Promise.all([
+	const [projectsResult, hqProjectsResult, statsResult, reviewLogs, pendingApprovals] = await Promise.all([
 		client.fetchProjects({ status: 'pending', limit: 50 }),
+		client.fetchProjects({ status: 'pending_hq', limit: 50 }),
 		client.getProgramStats({}),
 		db.auditLog.findMany({
 			where: {
@@ -43,7 +44,16 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			: Promise.resolve([])
 	]);
 
-	const authorIds = [...new Set(projectsResult.projects.map((p) => p.authorId))];
+	// Filter to projects that actually have pending_hq ships (endpoints that
+	// don't support the status may return all projects).
+	const hqProjects = hqProjectsResult.projects.filter(
+		(p) => p.ships.some((s) => s.status === 'pending_hq')
+	);
+
+	const authorIds = [...new Set([
+		...projectsResult.projects.map((p) => p.authorId),
+		...hqProjects.map((p) => p.authorId)
+	])];
 	for (const pa of pendingApprovals) {
 		authorIds.push(pa.reviewerId);
 	}
@@ -65,10 +75,12 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 
 	return {
 		projects: projectsResult.projects,
+		hqProjects,
 		actors: actorsObj,
 		nextCursor: projectsResult.nextCursor ?? null,
 		totalCount: projectsResult.totalCount,
 		pendingCount: statsResult.pendingReviewCount,
+		pendingHqCount: statsResult.pendingHqCount ?? hqProjects.length,
 		reviewLeaderboardWeekly,
 		reviewLeaderboardAllTime,
 		reviewVolume,

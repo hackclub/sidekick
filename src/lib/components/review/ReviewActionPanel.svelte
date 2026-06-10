@@ -48,13 +48,10 @@
 
 	let selectedAction: ActionType = $state('approve');
 	let hoursAssigned = $state(0);
-	let hoursInitialized = false;
+	let userEditedHours = false;
 	$effect(() => {
-		if (!hoursInitialized) {
+		if (!userEditedHours) {
 			hoursAssigned = Math.max(0, Math.round(remainingHours * 100) / 100);
-			if (remainingHours > 0) {
-				hoursInitialized = true;
-			}
 		}
 	});
 
@@ -76,8 +73,7 @@
 			if (parsed.selectedAction) {
 				selectedAction = parsed.selectedAction;
 			}
-			if (typeof parsed.hoursAssigned === 'number') { hoursAssigned = parsed.hoursAssigned; hoursInitialized = true; }
-			return { ...blank, ...parsed.drafts };
+				return { ...blank, ...parsed.drafts };
 		} catch { return blank; }
 	}
 
@@ -87,13 +83,12 @@
 		const key = storageKey();
 		if (!key)
 			return;
-		localStorage.setItem(key, JSON.stringify({ drafts, selectedAction, hoursAssigned }));
+		localStorage.setItem(key, JSON.stringify({ drafts, selectedAction }));
 	}
 
 	$effect(() => {
 		void JSON.stringify(drafts);
 		void selectedAction;
-		void hoursAssigned;
 		saveDrafts();
 	});
 
@@ -138,7 +133,7 @@
 			if (prefill.internalMessage !== undefined) {
 				setDraft('internalMessage', prefill.internalMessage);
 			}
-			hoursInitialized = true;
+			userEditedHours = true;
 		}
 	});
 
@@ -286,6 +281,7 @@
 						step="0.01"
 						min="0"
 						bind:value={hoursAssigned}
+						oninput={() => { userEditedHours = true; }}
 						class="border border-border-input rounded-section px-3.5 py-2.5 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
 					/>
 				</div>
