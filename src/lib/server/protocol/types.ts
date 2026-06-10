@@ -197,6 +197,7 @@ export type FetchShopItemsInput = Record<string, never>;
 
 export interface FetchOrdersInput {
   status?: "pending" | "fulfilled" | "cancelled" | "all";
+  filterItemId?: string;
   cursor?: string;
   limit?: number;
   searchUser?: string;

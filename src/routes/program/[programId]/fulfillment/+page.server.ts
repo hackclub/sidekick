@@ -19,13 +19,21 @@ export const load: PageServerLoad = async ({ params, parent, url }) => {
 	const client = new ProtocolClient(program.masterEndpoint, program.secretKey);
 
 	const statusFilter = (url.searchParams.get('status') as 'pending' | 'fulfilled' | 'cancelled' | 'all') || 'pending';
+	const itemFilter = url.searchParams.get('item') || undefined;
 	const searchUser = url.searchParams.get('search') || undefined;
 	const cursor = url.searchParams.get('cursor') || undefined;
 	const sortBy = (url.searchParams.get('sort') as 'id' | 'user' | 'item' | 'quantity' | 'date' | 'status') || 'date';
 	const sortOrder = (url.searchParams.get('sortOrder') as 'asc' | 'desc') || 'asc';
 
+	let allShopItems: import('$lib/server/protocol/types.js').ShopItem[] = [];
+	try {
+		const shopResult = await client.fetchShopItems({});
+		allShopItems = shopResult.items;
+	} catch { /* program may not support shop items */ }
+
 	const result = await client.fetchOrders({
 		status: statusFilter,
+		filterItemId: itemFilter,
 		searchUser,
 		cursor,
 		limit: 50,
@@ -55,9 +63,11 @@ export const load: PageServerLoad = async ({ params, parent, url }) => {
 	return {
 		orders: result.orders,
 		items: result.items,
+		allShopItems,
 		nextCursor: result.nextCursor ?? null,
 		totalCount: result.totalCount,
 		statusFilter,
+		itemFilter: itemFilter ?? '',
 		sortBy,
 		sortOrder,
 		searchUser: searchUser ?? '',

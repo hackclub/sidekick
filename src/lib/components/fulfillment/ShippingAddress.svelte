@@ -25,16 +25,23 @@
 	let revealed = $state(false);
 	let loading = $state(false);
 	let address = $state<AddressData | null>(null);
+	let noAddress = $state(false);
 	let fetchError = $state<string | null>(null);
 
 	async function revealAddress() {
 		loading = true;
 		fetchError = null;
+		noAddress = false;
 
 		try {
 			const res = await fetch(`/api/programs/${programId}/orders/${orderId}/address`, {
 				method: 'POST'
 			});
+			if (res.status === 404) {
+				noAddress = true;
+				revealed = true;
+				return;
+			}
 			if (!res.ok) {
 				throw new Error('Failed to load address');
 			}
@@ -92,6 +99,8 @@
 		{#if fetchError}
 			<p class="text-check-fail text-xs">{fetchError}</p>
 		{/if}
+	{:else if noAddress}
+		<p class="text-sm text-text-tertiary tracking-[-0.3px]">No shipping address on file for this order.</p>
 	{:else if address}
 		<div class="flex flex-col gap-2 w-full text-sm tracking-[-0.3px]">
 			{#each fields as field (field.label)}
