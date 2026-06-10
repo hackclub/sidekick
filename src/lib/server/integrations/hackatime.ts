@@ -192,6 +192,40 @@ export interface RawHeartbeat {
 	source_type: number | string;
 }
 
+const HEARTBEAT_TIMEOUT_S = 120;
+
+function durationFromHeartbeats(heartbeats: RawHeartbeat[]): number {
+	if (heartbeats.length === 0) return 0;
+	const sorted = [...heartbeats].sort((a, b) => a.time - b.time);
+	let total = 0;
+	for (let i = 1; i < sorted.length; i++) {
+		const gap = sorted[i].time - sorted[i - 1].time;
+		if (gap <= HEARTBEAT_TIMEOUT_S) total += gap;
+	}
+	return Math.round(total);
+}
+
+export async function getAiCodingSeconds(
+	userId: string,
+	projectKeys: string[]
+): Promise<number> {
+	const range = await getProjectDateRange(userId, projectKeys);
+	if (!range) return 0;
+
+	const startS = Math.floor(new Date(range.firstDate + 'T00:00:00Z').getTime() / 1000);
+	const endS = Math.floor(new Date(range.lastDate + 'T23:59:59Z').getTime() / 1000);
+	const all = await getRawHeartbeatRange(userId, startS, endS);
+
+	const keySet = new Set(projectKeys.map((k) => k.toLowerCase()));
+	const aiHeartbeats = all.filter(
+		(hb) =>
+			keySet.has((hb.project ?? '').toLowerCase()) &&
+			(hb.category ?? '').toLowerCase() === 'ai coding'
+	);
+
+	return durationFromHeartbeats(aiHeartbeats);
+}
+
 export async function getRawHeartbeatRange(
 	userId: string,
 	startTimestampS: number,
