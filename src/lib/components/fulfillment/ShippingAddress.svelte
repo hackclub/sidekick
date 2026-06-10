@@ -77,7 +77,7 @@
 	);
 </script>
 
-<div class="border border-border-card rounded-card p-8 flex flex-col gap-4 {className}">
+<div class="@container border border-border-card rounded-card p-8 flex flex-col gap-4 {className}">
 	<div class="flex gap-2 items-center">
 		<MapPin size={14} class="text-text-primary" />
 		<span class="font-bold text-[15px] text-text-primary tracking-[-0.4px]">Shipping Address</span>
@@ -104,9 +104,9 @@
 	{:else if address}
 		<div class="flex flex-col gap-2 w-full text-sm tracking-[-0.3px]">
 			{#each fields as field (field.label)}
-				<div class="flex items-center justify-between w-full">
-					<span>{field.label}</span>
-					<span>{field.value}</span>
+				<div class="flex flex-col @xs:flex-row @xs:items-center @xs:justify-between w-full gap-0.5 @xs:gap-2">
+					<span class="shrink-0">{field.label}</span>
+					<span class="truncate min-w-0">{field.value}</span>
 				</div>
 			{/each}
 		</div>
