@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import { applyAction, deserialize } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import type { PageData } from './$types.js';
 	import UserCard from '$lib/components/ui/UserCard.svelte';
@@ -111,7 +112,7 @@
 			return undefined;
 		const ships = data.project.ships;
 		const priorHours = ships
-			.filter((s) => s.id !== data.pendingShip!.id)
+			.filter((s) => s.id !== data.pendingShip!.id && s.status === 'approved')
 			.reduce((sum, s) => sum + s.hoursSubmitted, 0);
 		return Math.max(0, data.pendingShip.hoursSubmitted - priorHours);
 	});
@@ -136,7 +137,7 @@
 		return Math.max(0, baseH - scaledAiH - externalPreviousHours);
 	});
 
-	function handleReviewSubmit(reviewData: {
+	async function handleReviewSubmit(reviewData: {
 		action: string;
 		hoursAssigned?: number;
 		feedbackMessage?: string;
@@ -146,30 +147,23 @@
 	}) {
 		submitting = true;
 
-		const form = document.createElement('form');
-		form.method = 'POST';
-		form.action = '?/review';
-
+		const formData = new FormData();
 		if (data.pendingShip) {
-			const shipInput = document.createElement('input');
-			shipInput.type = 'hidden';
-			shipInput.name = 'shipId';
-			shipInput.value = data.pendingShip.id;
-			form.appendChild(shipInput);
+			formData.set('shipId', data.pendingShip.id);
 		}
-
 		for (const [key, value] of Object.entries(reviewData)) {
 			if (value !== undefined) {
-				const input = document.createElement('input');
-				input.type = 'hidden';
-				input.name = key;
-				input.value = String(value);
-				form.appendChild(input);
+				formData.set(key, String(value));
 			}
 		}
 
-		document.body.appendChild(form);
-		form.submit();
+		const response = await fetch('?/review', { method: 'POST', body: formData });
+		const result = deserialize(await response.text());
+		if (result.type === 'success') {
+			await invalidateAll();
+		}
+		await applyAction(result);
+		submitting = false;
 	}
 
 	async function handleSaveReview(editData: {

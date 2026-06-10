@@ -161,12 +161,18 @@
 	function handleSubmit() {
 		if (!canSubmit)
 			return;
-		onsubmit({
-			action: selectedAction,
-			...(selectedAction === 'approve' && { hoursAssigned, feedbackMessage, justification }),
-			...(selectedAction === 'reject' && { feedbackMessage, internalMessage: internalMessage || undefined }),
-			...((selectedAction === 'comment' || selectedAction === 'internal_comment') && { commentText })
-		});
+		const payload: Parameters<typeof onsubmit>[0] = { action: selectedAction };
+		if (selectedAction === 'approve') {
+			payload.hoursAssigned = hoursAssigned;
+			payload.feedbackMessage = feedbackMessage;
+			payload.justification = justification;
+		} else if (selectedAction === 'reject') {
+			payload.feedbackMessage = feedbackMessage;
+			payload.internalMessage = internalMessage || undefined;
+		} else {
+			payload.commentText = commentText;
+		}
+		onsubmit(payload);
 		clearAllDrafts();
 	}
 

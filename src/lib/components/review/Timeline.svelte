@@ -26,6 +26,9 @@
 
 	const shipHourInfo = $derived.by(() => {
 		const info: Record<string, { delta: number; cumulative: number }> = {};
+		const rejectedShipIds = new Set(
+			events.filter((e) => e.type === 'rejection').map((e) => e.shipId)
+		);
 		let runningSum = 0;
 		const shipEvents = events.filter((e) => e.type === 'ship') as Array<Extract<typeof events[number], { type: 'ship' }>>;
 		const lastShipId = shipEvents.length > 0 ? shipEvents[shipEvents.length - 1].shipId : null;
@@ -33,6 +36,11 @@
 		for (const event of shipEvents) {
 			const hours = shipHours[event.shipId] || event.hoursSubmitted || 0;
 			const isLast = event.shipId === lastShipId;
+
+			if (rejectedShipIds.has(event.shipId)) {
+				info[event.shipId] = { delta: hours, cumulative: hours };
+				continue;
+			}
 
 			if (isLast && runningSum > 0 && hours > runningSum) {
 				const delta = Math.max(0, hours - runningSum);
