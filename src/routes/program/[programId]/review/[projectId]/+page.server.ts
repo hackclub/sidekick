@@ -1,7 +1,7 @@
-import { redirect, error } from '@sveltejs/kit';
+import { redirect, error, fail } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
-import { ProtocolClient } from '$lib/server/protocol/client.js';
+import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
 import { resolveActorIds } from '$lib/server/actors.js';
 import { getProjectDetails, getUserTrustFactor, getAiCodingSeconds } from '$lib/server/integrations/hackatime.js';
 import { findRecordsByUrl, airtableRecordUrl } from '$lib/server/integrations/airtable.js';
@@ -42,7 +42,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	]);
 	lap('protocol (project+timeline+stats)');
 
-	const pendingShip = project.ships.find((s) => s.status === 'pending');
+	const pendingShip = project.ships.find((s) => s.status === 'pending' || s.status === 'pending_hq');
 
 	// Resolve author and all timeline actors in one batch
 	const actorIds = new Set([project.authorId]);
@@ -242,7 +242,108 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		where: { programId: params.programId, projectId: params.projectId }
 	});
 
-	const mergedTimeline = [...timeline.events];
+	const shipStatusMap = Object.fromEntries(project.ships.map((s) => [s.id, s.status]));
+	const pendingHqShipIds = new Set(
+		project.ships.filter((s) => s.status === 'pending_hq').map((s) => s.id)
+	);
+
+	// Group approval events by ship to detect multi-approval (HQ authorization) patterns.
+	const approvalsByShip = new Map<string, Array<Extract<typeof timeline.events[number], { type: 'approval' }>>>();
+	for (const event of timeline.events) {
+		if (event.type === 'approval') {
+			const list = approvalsByShip.get(event.shipId) ?? [];
+			list.push(event);
+			approvalsByShip.set(event.shipId, list);
+		}
+	}
+
+	// Ships with 2+ approvals where the ship is now approved = HQ authorized.
+	// First approval is the reviewer, last is the HQ authorizer.
+	const authorizedByActor: Record<string, string> = {};
+	const hqApprovalEvents = new Set<typeof timeline.events[number]>();
+	for (const [shipId, approvals] of approvalsByShip) {
+		if (approvals.length >= 2 && shipStatusMap[shipId] === 'approved') {
+			const sorted = approvals.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+			authorizedByActor[shipId] = sorted[sorted.length - 1].actorId;
+			hqApprovalEvents.add(sorted[sorted.length - 1]);
+		}
+	}
+
+	// Find approval events whose ship is no longer approved/pending_hq (i.e. deauthorized).
+	// For each, find the subsequent rejection to identify who discarded it.
+	const discardedShipIds = new Set<string>();
+	const discardedByActor: Record<string, string> = {};
+	for (const event of timeline.events) {
+		if (event.type === 'approval') {
+			const status = shipStatusMap[event.shipId];
+			if (status && status !== 'approved' && status !== 'pending_hq') {
+				discardedShipIds.add(event.shipId);
+			}
+		}
+	}
+	for (const event of timeline.events) {
+		if (event.type === 'rejection' && discardedShipIds.has(event.shipId) && !discardedByActor[event.shipId]) {
+			discardedByActor[event.shipId] = event.actorId;
+		}
+	}
+
+	const mergedTimeline = [...timeline.events]
+		.map((event) => {
+			if (event.type === 'approval' && pendingHqShipIds.has(event.shipId)) {
+				return {
+					type: 'pending_approval' as const,
+					id: `hq:${event.shipId}`,
+					shipId: event.shipId,
+					actorId: event.actorId,
+					hoursAssigned: event.hoursAssigned,
+					feedbackMessage: event.feedbackMessage,
+					justification: event.justification,
+					timestamp: event.timestamp
+				};
+			}
+			if (event.type === 'approval' && discardedShipIds.has(event.shipId)) {
+				return {
+					type: 'discarded_approval' as const,
+					id: `disc:${event.shipId}`,
+					shipId: event.shipId,
+					actorId: event.actorId,
+					discardedByActorId: discardedByActor[event.shipId] ?? event.actorId,
+					hoursAssigned: event.hoursAssigned,
+					feedbackMessage: event.feedbackMessage,
+					justification: event.justification,
+					timestamp: event.timestamp
+				};
+			}
+			if (event.type === 'approval' && authorizedByActor[event.shipId] && !hqApprovalEvents.has(event)) {
+				return {
+					type: 'authorized_approval' as const,
+					shipId: event.shipId,
+					actorId: event.actorId,
+					authorizedByActorId: authorizedByActor[event.shipId],
+					hoursAssigned: event.hoursAssigned,
+					hoursDeflated: event.hoursDeflated,
+					feedbackMessage: event.feedbackMessage,
+					justification: event.justification,
+					timestamp: event.timestamp
+				};
+			}
+			return event;
+		})
+		.filter((event) => {
+			if (event.type === 'rejection' && discardedShipIds.has(event.shipId)) {
+				const actorId = discardedByActor[event.shipId];
+				if (actorId === event.actorId) {
+					delete discardedByActor[event.shipId];
+					return false;
+				}
+			}
+			// Filter out the HQ approval event (absorbed into the authorized_approval pill)
+			if (hqApprovalEvents.has(event as typeof timeline.events[number])) {
+				return false;
+			}
+			return true;
+		});
+
 	for (const pa of pendingApprovals) {
 		actorIds.add(pa.reviewerId);
 		if (pa.discardedById) actorIds.add(pa.discardedById);
@@ -417,7 +518,21 @@ export const actions: Actions = {
 				throw error(400, `Unknown action: ${action}`);
 		}
 
-		const result = await client.submitReviewAction(input);
+		let result;
+		try {
+			result = await client.submitReviewAction(input);
+
+			// HQ users skip the pending_hq step — auto-authorize after approve
+			if (action === 'approve' && membership.canAuthorizeReviews) {
+				result = await client.submitReviewAction({ shipId, reviewerId, action: 'authorize' });
+			}
+		} catch (e) {
+			if (e instanceof ProtocolError) {
+				const parsed = JSON.parse(e.body).message ?? e.body;
+				return fail(502, { protocolError: `Upstream error: ${parsed}` });
+			}
+			throw e;
+		}
 
 		await db.auditLog.create({
 			data: {

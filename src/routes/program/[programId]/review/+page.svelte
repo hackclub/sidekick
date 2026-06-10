@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { PageData } from './$types.js';
 	import { resolve } from '$app/paths';
-	import { Scale, Clock, CheckCircle, Hourglass, Trophy } from 'lucide-svelte';
+	import { Scale, Clock, CheckCircle, Hourglass, Trophy, ShieldCheck } from 'lucide-svelte';
 	import BentoGraph from '$lib/components/ui/BentoGraph.svelte';
 	import BentoLeaderboard from '$lib/components/ui/BentoLeaderboard.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
@@ -23,6 +23,7 @@
 	const projectMap = $derived(
 		Object.fromEntries(data.projects.map((p) => [p.id, p]))
 	);
+
 </script>
 
 <svelte:head>
@@ -66,7 +67,9 @@
 		</div>
 		<div>
 			<h1 class="font-bold text-[17px] tracking-[-0.51px]">Review Queue</h1>
-			<p class="text-[13px] text-text-secondary tracking-[-0.3px]">{data.pendingCount} project{data.pendingCount === 1 ? '' : 's'} pending review</p>
+			<p class="text-[13px] text-text-secondary tracking-[-0.3px]">
+			{data.pendingCount} pending review{#if data.pendingHqCount > 0}, {data.pendingHqCount} under HQ review{/if}
+		</p>
 		</div>
 	</div>
 
@@ -101,6 +104,65 @@
 								<span class="text-text-tertiary">&middot; {new Date(pa.createdAt).toLocaleDateString()}</span>
 							</span>
 						</div>
+					</div>
+				</a>
+			{/each}
+		</div>
+	{/if}
+
+	{#if data.hqProjects.length > 0}
+		<div class="flex flex-col gap-2">
+			<div class="flex items-center gap-2">
+				<ShieldCheck size={16} class="text-violet-500" />
+				<h2 class="font-bold text-sm tracking-[-0.3px]">Under HQ Review</h2>
+				<span class="text-xs text-text-tertiary">{data.hqProjects.length} project{data.hqProjects.length === 1 ? '' : 's'} awaiting HQ review</span>
+			</div>
+			{#each data.hqProjects as project (project.id)}
+				{@const hqShip = project.ships.find((s) => s.status === 'pending_hq')}
+				{@const approvedHours = project.ships
+					.filter((s) => s.status === 'approved')
+					.reduce((sum, s) => sum + s.hoursSubmitted, 0)}
+				{@const actor = data.actors[project.authorId]}
+				<a
+					href={resolve(`/program/${data.program.id}/review/${project.id}`)}
+					class="border-2 border-dashed border-violet-300 bg-violet-50/30 rounded-section p-4 flex items-center gap-4 hover:border-violet-400 hover:bg-violet-50/50 transition-colors"
+				>
+					{#if project.screenshotUrl}
+						<img src={project.screenshotUrl} alt="" class="w-16 h-10 rounded-tag object-cover shrink-0" />
+					{:else}
+						<div class="w-16 h-10 rounded-tag bg-surface shrink-0"></div>
+					{/if}
+					<div class="flex-1 min-w-0">
+						<div class="flex items-center gap-1.5 mb-0.5">
+							<span class="text-text-tertiary text-xs font-mono">#{project.id}</span>
+							<span class="font-bold text-sm tracking-[-0.3px] truncate">{project.title}</span>
+						</div>
+						<div class="flex items-center gap-1.5 text-xs text-text-secondary tracking-[-0.24px]">
+							<Avatar name={actor?.name ?? project.authorId} url={actor?.avatarUrl} size="xs" />
+							<span class="truncate">
+								{actor?.name ?? project.authorId}
+								{#if hqShip}
+									<span class="text-text-tertiary">&middot; {new Date(hqShip.submittedAt).toLocaleDateString()}</span>
+								{/if}
+								{#if project.ships.length > 1}
+									<span class="text-violet-500 font-medium">&middot; Update ({project.ships.length} ships)</span>
+								{/if}
+							</span>
+						</div>
+					</div>
+					<div class="flex items-center gap-4 shrink-0 text-xs text-text-secondary">
+						{#if hqShip}
+							<div class="flex items-center gap-1" title="Reported hours (this ship)">
+								<Hourglass size={12} class="text-text-tertiary" />
+								<span>{formatHours(hqShip.hoursSubmitted)}</span>
+							</div>
+						{/if}
+						{#if approvedHours > 0}
+							<div class="flex items-center gap-1" title="Prior approved hours">
+								<CheckCircle size={12} class="text-check-pass" />
+								<span>{formatHours(approvedHours)}</span>
+							</div>
+						{/if}
 					</div>
 				</a>
 			{/each}

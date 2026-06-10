@@ -109,7 +109,7 @@ A **ship** is a submission event - each time a participant submits their project
 | `id`             | `string` | Yes      | Your internal ship identifier.                    |
 | `hoursSubmitted` | `number` | Yes      | Hours the participant claims for this submission. |
 | `submittedAt`    | `string` | Yes      | ISO 8601 timestamp.                               |
-| `status`         | `string` | Yes      | `"pending"`, `"approved"`, or `"rejected"`.       |
+| `status`         | `string` | Yes      | `"pending"`, `"pending_hq"`, `"approved"`, or `"rejected"`. |
 
 Ships are always embedded inside their parent project - they're never returned as standalone objects.
 
@@ -321,11 +321,12 @@ Return aggregate counts for the Sidekick dashboard.
 ```json
 {
   "pendingReviewCount": 12,
+  "pendingHqCount": 5,
   "pendingFulfillmentCount": 34
 }
 ```
 
-`pendingReviewCount` is the number of projects with at least one pending ship. `pendingFulfillmentCount` is the number of orders with status `"pending"`.
+`pendingReviewCount` is the number of projects with at least one `"pending"` ship. `pendingHqCount` is the number of ships with status `"pending_hq"` (awaiting HQ authorization). `pendingFulfillmentCount` is the number of orders with status `"pending"`.
 
 ### `FETCH_PROJECTS`
 
@@ -342,7 +343,7 @@ Return a paginated list of projects with their embedded ships.
 
 | Field    | Type     | Required | Default   | Description                                                                                                                     |
 | -------- | -------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `status` | `string` | No       | all       | Filter: return projects that have at least one ship with this status. Values: `"pending"`, `"approved"`, `"rejected"`, `"all"`. |
+| `status` | `string` | No       | all       | Filter: return projects that have at least one ship with this status. Values: `"pending"`, `"pending_hq"`, `"approved"`, `"rejected"`, `"all"`. |
 | `cursor` | `string` | No       |           | Opaque pagination cursor from a previous response.                                                                              |
 | `limit`  | `number` | No       | up to you | Maximum number of projects to return.                                                                                           |
 
@@ -438,6 +439,28 @@ The `action` field determines which other fields are present:
   "commentText": "Checking if this participant has submissions in other programs."
 }
 ```
+
+**Authorize (HQ approval of a `pending_hq` ship):**
+```json
+{
+  "shipId": "ship_002",
+  "reviewerId": "ident!hqreviewer789",
+  "action": "authorize"
+}
+```
+
+Finalizes a ship in `"pending_hq"` status, transitioning it to `"approved"`. The program should use the hours and feedback from the original reviewer approval. Only valid for ships with status `"pending_hq"`.
+
+**Deauthorize (revert a `pending_hq` ship back to pending):**
+```json
+{
+  "shipId": "ship_002",
+  "reviewerId": "ident!hqreviewer789",
+  "action": "deauthorize"
+}
+```
+
+Reverts a ship from `"pending_hq"` back to `"pending"` so it can be re-reviewed. Only valid for ships with status `"pending_hq"`.
 
 **Response** (all variants):
 ```json

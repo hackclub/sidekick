@@ -2,6 +2,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { applyAction, deserialize } from '$app/forms';
 	import { resolve } from '$app/paths';
+	import { AlertTriangle, X } from 'lucide-svelte';
 	import type { PageData } from './$types.js';
 	import UserCard from '$lib/components/ui/UserCard.svelte';
 	import HourBreakdown from '$lib/components/review/HourBreakdown.svelte';
@@ -23,6 +24,7 @@
 	let submitting = $state(false);
 	let reviewPanelRef = $state<HTMLElement | null>(null);
 	let authorizing = $state<string | null>(null);
+	let protocolError = $state<string | null>(null);
 
 	function normalizeForCompare(s: string): string {
 		return s.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -160,7 +162,10 @@
 		const response = await fetch('?/review', { method: 'POST', body: formData });
 		const result = deserialize(await response.text());
 		if (result.type === 'success') {
+			protocolError = null;
 			await invalidateAll();
+		} else if (result.type === 'failure' && result.data?.protocolError) {
+			protocolError = result.data.protocolError as string;
 		}
 		await applyAction(result);
 		submitting = false;
@@ -202,7 +207,11 @@
 				body: JSON.stringify({ pendingApprovalId })
 			});
 			if (res.ok) {
+				protocolError = null;
 				await invalidateAll();
+			} else {
+				const body = await res.json().catch(() => null);
+				protocolError = body?.message ?? `Authorization failed (HTTP ${res.status})`;
 			}
 		} finally {
 			authorizing = null;
@@ -218,7 +227,11 @@
 				body: JSON.stringify({ pendingApprovalId })
 			});
 			if (res.ok) {
+				protocolError = null;
 				await invalidateAll();
+			} else {
+				const body = await res.json().catch(() => null);
+				protocolError = body?.message ?? `Discard failed (HTTP ${res.status})`;
 			}
 		} finally {
 			authorizing = null;
@@ -316,6 +329,15 @@
 			</div>
 
 			<div class="flex flex-col gap-3" style="grid-area: timeline">
+				{#if protocolError}
+					<div class="flex items-start gap-2 px-4 py-3 rounded-section bg-check-fail/10 border border-check-fail/30 text-sm text-check-fail">
+						<AlertTriangle size={16} class="shrink-0 mt-0.5" />
+						<span class="flex-1">{protocolError}</span>
+						<button onclick={() => (protocolError = null)} class="shrink-0 cursor-pointer hover:opacity-70">
+							<X size={14} />
+						</button>
+					</div>
+				{/if}
 				<Timeline
 					events={data.timeline}
 					actors={data.actors}
@@ -353,12 +375,12 @@
 						repoUrl={data.project.codeUrl}
 						loading={!github}
 						markers={data.timeline
-							.filter((e) => e.type === 'ship' || e.type === 'approval' || e.type === 'rejection')
+							.filter((e) => e.type === 'ship' || e.type === 'approval' || e.type === 'authorized_approval' || e.type === 'rejection')
 							.map((e) => ({
-								type: e.type as 'ship' | 'approval' | 'rejection',
+								type: (e.type === 'authorized_approval' ? 'approval' : e.type) as 'ship' | 'approval' | 'rejection',
 								label: e.type === 'ship'
 									? `${data.actors[e.actorId]?.name ?? 'Unknown'} shipped`
-									: e.type === 'approval'
+									: e.type === 'approval' || e.type === 'authorized_approval'
 										? `Approved for ${(e as Extract<typeof e, { type: 'approval' }>).hoursAssigned}h`
 										: `${data.actors[e.actorId]?.name ?? 'Unknown'} rejected`,
 								date: e.timestamp
