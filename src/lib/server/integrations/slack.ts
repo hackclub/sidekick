@@ -49,3 +49,46 @@ export async function getProfilePicture(slackId: string): Promise<string | null>
 	const profile = await getSlackUserProfile(slackId);
 	return profile?.avatarUrl ?? null;
 }
+
+export async function sendSlackFile(
+	userId: string,
+	fileContent: string,
+	filename: string,
+	message: string
+): Promise<void> {
+	const token = env.SLACK_BOT_TOKEN;
+	if (!token) throw new Error('SLACK_BOT_TOKEN not configured');
+
+	const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+	const dmRes = await fetch('https://slack.com/api/conversations.open', {
+		method: 'POST',
+		headers,
+		body: JSON.stringify({ users: userId })
+	});
+	const dmData = await dmRes.json();
+	if (!dmData.ok) throw new Error(`Failed to open DM: ${dmData.error}`);
+	const channelId = dmData.channel.id;
+
+	const contentBytes = new TextEncoder().encode(fileContent);
+	const uploadRes = await fetch(
+		`https://slack.com/api/files.getUploadURLExternal?filename=${encodeURIComponent(filename)}&length=${contentBytes.length}`,
+		{ headers: { Authorization: `Bearer ${token}` } }
+	);
+	const uploadData = await uploadRes.json();
+	if (!uploadData.ok) throw new Error(`Failed to get upload URL: ${uploadData.error}`);
+
+	await fetch(uploadData.upload_url, { method: 'POST', body: contentBytes });
+
+	const completeRes = await fetch('https://slack.com/api/files.completeUploadExternal', {
+		method: 'POST',
+		headers,
+		body: JSON.stringify({
+			files: [{ id: uploadData.file_id, title: filename }],
+			channel_id: channelId,
+			initial_comment: message
+		})
+	});
+	const completeData = await completeRes.json();
+	if (!completeData.ok) throw new Error(`Failed to complete upload: ${completeData.error}`);
+}

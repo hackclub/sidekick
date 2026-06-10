@@ -6,7 +6,7 @@
 	import OrderTableRow from '$lib/components/fulfillment/OrderTableRow.svelte';
 	import OrderDetailPane from '$lib/components/fulfillment/OrderDetailPane.svelte';
 	import StatusLight from '$lib/components/ui/StatusLight.svelte';
-	import { UserSearch, Funnel, Package, Search, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, RefreshCw, Check, Download, TriangleAlert, X } from 'lucide-svelte';
+	import { UserSearch, Funnel, Package, Search, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, RefreshCw, Check, Download, TriangleAlert, X, Send } from 'lucide-svelte';
 	import type { Order, ShopItem } from '$lib/server/protocol/types.js';
 
 	interface Props {
@@ -361,34 +361,51 @@
 		return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 	}
 
-	let exporting = $state(false);
-	let exportResult = $state<{
+	interface ExportData {
 		csv: string;
 		skippedOrders: { id: string; userName: string }[];
 		totalOrders: number;
 		programName: string;
 		itemName: string | null;
-	} | null>(null);
+	}
 
-	async function startExport() {
+	let csvDropdownOpen = $state(false);
+	let exporting = $state(false);
+	let exportMode = $state<'download' | 'dinobox'>('download');
+	let exportResult = $state<ExportData | null>(null);
+	let dinoboxSending = $state(false);
+	let dinoboxSent = $state(false);
+
+	async function startExport(mode: 'download' | 'dinobox') {
+		csvDropdownOpen = false;
+		exportMode = mode;
 		exporting = true;
 		exportResult = null;
+		dinoboxSent = false;
 		try {
 			const url = new URL($page.url);
 			url.pathname = url.pathname.replace(/\/?$/, '/export-csv');
 			url.searchParams.delete('cursor');
 			const res = await fetch(url.toString(), { method: 'POST' });
 			if (!res.ok) throw new Error('Export failed');
-			const result = await res.json();
+			const result: ExportData = await res.json();
 			if (result.skippedOrders.length > 0) {
 				exportResult = result;
 			} else {
-				downloadCsv(result);
+				executeExport(result);
 			}
 		} catch {
 			alert('Failed to export CSV. Please try again.');
 		} finally {
 			exporting = false;
+		}
+	}
+
+	function executeExport(result: ExportData) {
+		if (exportMode === 'download') {
+			downloadCsv(result);
+		} else {
+			sendToDinobox(result);
 		}
 	}
 
@@ -399,7 +416,7 @@
 		return `${name}-${date}-sidekick-theseus.csv`;
 	}
 
-	function downloadCsv(result: { csv: string; programName: string; itemName: string | null }) {
+	function downloadCsv(result: ExportData) {
 		const blob = new Blob([result.csv], { type: 'text/csv;charset=utf-8' });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
@@ -409,6 +426,44 @@
 		URL.revokeObjectURL(url);
 		exportResult = null;
 	}
+
+	async function sendToDinobox(result: ExportData) {
+		dinoboxSending = true;
+		exportResult = null;
+		try {
+			const url = new URL($page.url);
+			url.pathname = url.pathname.replace(/\/?$/, '/send-dinobox');
+			const res = await fetch(url.toString(), {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					csv: result.csv,
+					filename: buildFilename(result),
+					itemName: result.itemName,
+					programName: result.programName
+				})
+			});
+			if (!res.ok) throw new Error('Failed to send');
+			dinoboxSent = true;
+			setTimeout(() => (dinoboxSent = false), 3000);
+		} catch {
+			alert('Failed to send to Dinobox. Please try again.');
+		} finally {
+			dinoboxSending = false;
+		}
+	}
+
+	function handleCsvDropdownWindowClick(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		if (!target.closest('[data-csv-dropdown]')) csvDropdownOpen = false;
+	}
+
+	$effect(() => {
+		if (csvDropdownOpen) {
+			window.addEventListener('click', handleCsvDropdownWindowClick, true);
+			return () => window.removeEventListener('click', handleCsvDropdownWindowClick, true);
+		}
+	});
 
 	let itemSearchEl = $state<HTMLInputElement | null>(null);
 
@@ -425,7 +480,7 @@
 </svelte:head>
 
 <div class="flex h-full overflow-hidden {isDragging ? 'select-none' : ''}">
-	<div class="flex flex-col gap-3 p-6 min-w-0" style="width: {dividerX}%">
+	<div class="flex flex-col gap-3 p-6 min-w-0" style="width: {selectedOrder ? dividerX : 100}%">
 		<div class="flex items-center justify-between flex-wrap gap-2">
 			<div class="flex gap-2 items-center flex-wrap min-w-0">
 				<form
@@ -545,21 +600,43 @@
 					{data.orders.length} of {data.totalCount}
 				</span>
 				{#if data.canViewAddressData}
-					<button
-						class="border border-border-input rounded-tag flex gap-1.5 items-center px-2.5 py-1 cursor-pointer hover:bg-surface text-sm font-medium text-text-dim whitespace-nowrap"
-						onclick={startExport}
-						disabled={exporting}
-						title="Export to Theseus CSV"
-					>
-						<Download size={13} class="shrink-0" />
-						<span class="hidden sm:inline">
-							{#if exporting}
-								Exporting...
+					<div class="relative" data-csv-dropdown>
+						<button
+							class="border border-border-input rounded-tag flex gap-1.5 items-center px-2.5 py-1 cursor-pointer hover:bg-surface text-sm font-medium text-text-dim whitespace-nowrap"
+							onclick={() => (csvDropdownOpen = !csvDropdownOpen)}
+							disabled={exporting || dinoboxSending}
+						>
+							{#if exporting || dinoboxSending}
+								<RefreshCw size={13} class="shrink-0 animate-spin" />
+								<span class="hidden sm:inline">Exporting...</span>
+							{:else if dinoboxSent}
+								<Check size={13} class="shrink-0 text-check-pass" />
+								<span class="hidden sm:inline text-check-pass">Sent!</span>
 							{:else}
-								Export CSV
+								<Download size={13} class="shrink-0" />
+								<span class="hidden sm:inline">CSV</span>
+								<ChevronDown size={12} class="shrink-0" />
 							{/if}
-						</span>
-					</button>
+						</button>
+						{#if csvDropdownOpen}
+							<div class="absolute top-full right-0 mt-1 bg-page border border-border-card rounded-input shadow-lg z-30 min-w-[180px] py-1">
+								<button
+									class="w-full text-left px-3 py-1.5 text-sm hover:bg-surface cursor-pointer flex items-center gap-2"
+									onclick={() => startExport('download')}
+								>
+									<Download size={13} class="shrink-0" />
+									Download CSV
+								</button>
+								<button
+									class="w-full text-left px-3 py-1.5 text-sm hover:bg-surface cursor-pointer flex items-center gap-2"
+									onclick={() => startExport('dinobox')}
+								>
+									<Send size={13} class="shrink-0" />
+									Send to Dinobox
+								</button>
+							</div>
+						{/if}
+					</div>
 				{/if}
 				<button
 					class="text-text-tertiary hover:text-text-primary cursor-pointer transition-colors shrink-0"
@@ -665,23 +742,23 @@
 		</div>
 	</div>
 
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div
-		class="relative flex-shrink-0 w-5 cursor-col-resize group"
-		onmousedown={startDividerDrag}
-	>
-		<div class="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-px bg-border-card"></div>
-		<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-10 bg-white border border-border-card rounded-[5px] flex items-center justify-center shadow-sm group-hover:border-text-tertiary transition-colors">
-			<div class="flex flex-col gap-[3px]">
-				<div class="w-1.5 h-px rounded-full bg-border-card group-hover:bg-text-tertiary transition-colors"></div>
-				<div class="w-1.5 h-px rounded-full bg-border-card group-hover:bg-text-tertiary transition-colors"></div>
-				<div class="w-1.5 h-px rounded-full bg-border-card group-hover:bg-text-tertiary transition-colors"></div>
+	{#if effectiveOrder && effectiveItem}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="relative flex-shrink-0 w-5 cursor-col-resize group"
+			onmousedown={startDividerDrag}
+		>
+			<div class="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-px bg-border-card"></div>
+			<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-10 bg-white border border-border-card rounded-[5px] flex items-center justify-center shadow-sm group-hover:border-text-tertiary transition-colors">
+				<div class="flex flex-col gap-[3px]">
+					<div class="w-1.5 h-px rounded-full bg-border-card group-hover:bg-text-tertiary transition-colors"></div>
+					<div class="w-1.5 h-px rounded-full bg-border-card group-hover:bg-text-tertiary transition-colors"></div>
+					<div class="w-1.5 h-px rounded-full bg-border-card group-hover:bg-text-tertiary transition-colors"></div>
+				</div>
 			</div>
 		</div>
-	</div>
 
-	<div class="flex-1 min-w-0 overflow-auto">
-		{#if effectiveOrder && effectiveItem}
+		<div class="flex-1 min-w-[480px] overflow-auto">
 			<OrderDetailPane
 				order={effectiveOrder}
 				item={effectiveItem}
@@ -696,12 +773,8 @@
 				oncontextchange={(newCtx) => handleContextChange(effectiveItem!.id, newCtx)}
 				onsendgrant={(ref) => handleReferenceChange(selectedOrder!.id, ref)}
 			/>
-		{:else}
-			<div class="flex items-center justify-center h-full text-text-tertiary text-sm">
-				Select an order to view details
-			</div>
-		{/if}
-	</div>
+		</div>
+	{/if}
 </div>
 
 {#if exportResult}
@@ -744,9 +817,9 @@
 				</button>
 				<button
 					class="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-tag cursor-pointer hover:opacity-90"
-					onclick={() => downloadCsv(exportResult!)}
+					onclick={() => executeExport(exportResult!)}
 				>
-					Download anyway ({exportResult.totalOrders - exportResult.skippedOrders.length} orders)
+					{exportMode === 'dinobox' ? 'Send' : 'Download'} anyway ({exportResult.totalOrders - exportResult.skippedOrders.length} orders)
 				</button>
 			</div>
 		</div>
