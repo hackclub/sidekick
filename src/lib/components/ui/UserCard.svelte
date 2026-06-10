@@ -49,7 +49,7 @@
 	) as 'ok' | 'pending' | 'fail' | 'info' | 'blue';
 </script>
 
-<div class="border border-border-card rounded-card shadow-card p-8 flex flex-col gap-4 {className}">
+<div class="@container border border-border-card rounded-card shadow-card p-8 flex flex-col gap-4 {className}">
 	<div class="flex gap-2 items-center w-full">
 		<div class="flex flex-1 gap-2.5 items-center min-w-0">
 			<Avatar {name} url={avatarUrl} size="lg" />
@@ -94,15 +94,15 @@
 		{/if}
 
 		{#if slackId}
-			<div class="flex items-center justify-between w-full">
-				<div class="flex gap-1.5 items-center">
+			<div class="flex flex-col @xs:flex-row @xs:items-center @xs:justify-between w-full gap-0.5 @xs:gap-2">
+				<div class="flex gap-1.5 items-center shrink-0">
 					<SlackIcon size={14} class="text-text-primary shrink-0" />
 					<span class="text-sm text-text-primary tracking-[-0.3px]">Slack ID</span>
 				</div>
-				<div class="flex gap-2 items-center">
-					<span class="font-mono text-sm text-text-primary tracking-[-0.3px]">{slackId}</span>
+				<div class="flex gap-2 items-center min-w-0">
+					<span class="font-mono text-sm text-text-primary tracking-[-0.3px] truncate">{slackId}</span>
 					{#if slackDeactivated}
-						<div class="flex gap-1.5 items-center">
+						<div class="flex gap-1.5 items-center shrink-0">
 							<StatusLight status="fail" size={8} />
 							<span class="text-sm tracking-[-0.3px] text-check-fail">deactivated</span>
 						</div>
@@ -112,22 +112,22 @@
 		{/if}
 
 		{#if hackatimeId}
-			<div class="flex items-center justify-between w-full">
-				<div class="flex gap-1.5 items-center">
+			<div class="flex flex-col @xs:flex-row @xs:items-center @xs:justify-between w-full gap-0.5 @xs:gap-2">
+				<div class="flex gap-1.5 items-center shrink-0">
 					<Clock size={14} class="text-text-primary" />
 					<span class="text-sm text-text-primary tracking-[-0.3px]">Hackatime ID</span>
 				</div>
-				<span class="font-mono text-sm text-text-primary tracking-[-0.3px]">{hackatimeId}</span>
+				<span class="font-mono text-sm text-text-primary tracking-[-0.3px] truncate min-w-0">{hackatimeId}</span>
 			</div>
 		{/if}
 
 		{#if email}
-			<div class="flex items-center justify-between w-full">
-				<div class="flex gap-1.5 items-center">
+			<div class="flex flex-col @xs:flex-row @xs:items-center @xs:justify-between w-full gap-0.5 @xs:gap-2">
+				<div class="flex gap-1.5 items-center shrink-0">
 					<Mail size={14} class="text-text-primary" />
 					<span class="text-sm text-text-primary tracking-[-0.3px]">Email</span>
 				</div>
-				<span class="font-mono text-sm text-text-primary tracking-[-0.3px]">{email}</span>
+				<span class="font-mono text-sm text-text-primary tracking-[-0.3px] truncate min-w-0">{email}</span>
 			</div>
 		{/if}
 	</div>
