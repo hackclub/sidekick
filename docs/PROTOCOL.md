@@ -530,6 +530,7 @@ Return a paginated list of orders.
 ```json
 {
   "status": "pending",
+  "filterItemId": "item_rpi5",
   "searchUser": "alice",
   "sortBy": "date",
   "sortOrder": "desc",
@@ -537,14 +538,15 @@ Return a paginated list of orders.
 }
 ```
 
-| Field        | Type     | Required | Default      | Description                                                                         |
-| ------------ | -------- | -------- | ------------ | ----------------------------------------------------------------------------------- |
-| `status`     | `string` | No       | all          | `"pending"`, `"fulfilled"`, `"cancelled"`, or `"all"`.                              |
-| `searchUser` | `string` | No       |              | Filter by user name or email (substring match).                                     |
-| `cursor`     | `string` | No       |              | Pagination cursor.                                                                  |
-| `limit`      | `number` | No       | up to you    | Max orders to return.                                                               |
-| `sortBy`     | `string` | No       | `"date"`     | Sort field: `"id"`, `"user"`, `"item"`, `"quantity"`, `"date"`, or `"status"`.      |
-| `sortOrder`  | `string` | No       | `"asc"`      | Sort direction: `"asc"` or `"desc"`.                                                |
+| Field          | Type     | Required | Default      | Description                                                                         |
+| -------------- | -------- | -------- | ------------ | ----------------------------------------------------------------------------------- |
+| `status`       | `string` | No       | all          | `"pending"`, `"fulfilled"`, `"cancelled"`, or `"all"`.                              |
+| `filterItemId` | `string` | No       |              | Only return orders for this shop item ID.                                           |
+| `searchUser`   | `string` | No       |              | Filter by user name or email (substring match).                                     |
+| `cursor`       | `string` | No       |              | Pagination cursor.                                                                  |
+| `limit`        | `number` | No       | up to you    | Max orders to return.                                                               |
+| `sortBy`       | `string` | No       | `"date"`     | Sort field: `"id"`, `"user"`, `"item"`, `"quantity"`, `"date"`, or `"status"`.      |
+| `sortOrder`    | `string` | No       | `"asc"`      | Sort direction: `"asc"` or `"desc"`.                                                |
 
 Sort field mapping: `"id"` → order ID, `"user"` → user name, `"item"` → item name (requires joining with shop items), `"quantity"` → order quantity, `"date"` → `createdAt` timestamp, `"status"` → order status. Sorting must be applied **before** pagination — the cursor must reflect the chosen sort order.
 

@@ -5,7 +5,8 @@
 	import { onMount } from 'svelte';
 	import OrderTableRow from '$lib/components/fulfillment/OrderTableRow.svelte';
 	import OrderDetailPane from '$lib/components/fulfillment/OrderDetailPane.svelte';
-	import { UserSearch, Funnel, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, RefreshCw } from 'lucide-svelte';
+	import StatusLight from '$lib/components/ui/StatusLight.svelte';
+	import { UserSearch, Funnel, Package, Search, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, RefreshCw, Check, Download, TriangleAlert, X } from 'lucide-svelte';
 	import type { Order, ShopItem } from '$lib/server/protocol/types.js';
 
 	interface Props {
@@ -42,42 +43,58 @@
 	}
 
 	type SortKey = 'id' | 'user' | 'item' | 'qty' | 'date' | 'status';
-	interface ColDef { key: SortKey; label: string; minWidth: number; defaultWidth: number }
+	interface ColDef { key: SortKey; label: string; minWidth: number; maxWidth: number }
 
 	const columns: ColDef[] = [
-		{ key: 'id', label: 'ID', minWidth: 50, defaultWidth: 70 },
-		{ key: 'user', label: 'User', minWidth: 120, defaultWidth: 220 },
-		{ key: 'item', label: 'Item', minWidth: 120, defaultWidth: 220 },
-		{ key: 'qty', label: 'Qty', minWidth: 40, defaultWidth: 50 },
-		{ key: 'date', label: 'Created on', minWidth: 100, defaultWidth: 170 },
-		{ key: 'status', label: 'Status', minWidth: 70, defaultWidth: 110 },
+		{ key: 'id', label: 'ID', minWidth: 50, maxWidth: 100 },
+		{ key: 'user', label: 'User', minWidth: 120, maxWidth: 300 },
+		{ key: 'item', label: 'Item', minWidth: 120, maxWidth: 300 },
+		{ key: 'qty', label: 'Qty', minWidth: 40, maxWidth: 70 },
+		{ key: 'date', label: 'Created on', minWidth: 100, maxWidth: 220 },
+		{ key: 'status', label: 'Status', minWidth: 70, maxWidth: 140 },
 	];
 
-	const COL_STORAGE_KEY = 'sidekick:fulfillment:colWidths';
+	let colWidths = $state(columns.map(c => c.minWidth));
+	let resizingCol = $state(-1);
+	let manuallyResized = false;
 
-	function loadWidths(): number[] {
-		if (typeof localStorage === 'undefined')
-			return columns.map(c => c.defaultWidth);
-		try {
-			const saved = localStorage.getItem(COL_STORAGE_KEY);
-			if (saved) {
-				const parsed = JSON.parse(saved);
-				if (Array.isArray(parsed) && parsed.length === columns.length)
-					return parsed;
-			}
-		} catch { /* expected */ }
-		return columns.map(c => c.defaultWidth);
+	function autoFitColumns() {
+		if (!tableEl) return;
+		const cols = tableEl.querySelectorAll<HTMLTableColElement>('colgroup col');
+		const prevWidths = Array.from(cols).map(c => c.style.width);
+		cols.forEach(c => (c.style.width = ''));
+
+		const prevLayout = tableEl.style.tableLayout;
+		const prevW = tableEl.style.width;
+		tableEl.style.tableLayout = 'auto';
+		tableEl.style.width = 'auto';
+
+		const cells = tableEl.querySelectorAll<HTMLElement>('th, td');
+		const prevWhitespace: string[] = [];
+		cells.forEach(c => {
+			prevWhitespace.push(c.style.whiteSpace);
+			c.style.whiteSpace = 'nowrap';
+		});
+
+		const ths = tableEl.querySelectorAll('thead th');
+		const measured = Array.from(ths).map(th => th.getBoundingClientRect().width);
+
+		cells.forEach((c, i) => (c.style.whiteSpace = prevWhitespace[i]));
+		tableEl.style.tableLayout = prevLayout;
+		tableEl.style.width = prevW;
+		cols.forEach((c, i) => (c.style.width = prevWidths[i]));
+
+		colWidths = measured.map((w, i) =>
+			Math.max(columns[i].minWidth, Math.min(Math.ceil(w), columns[i].maxWidth))
+		);
 	}
 
-	let colWidths = $state(columns.map(c => c.defaultWidth));
-	let resizingCol = $state(-1);
-
 	onMount(() => {
-		colWidths = loadWidths();
+		autoFitColumns();
 	});
 
 	function saveWidths() {
-		localStorage.setItem(COL_STORAGE_KEY, JSON.stringify(colWidths));
+		manuallyResized = true;
 	}
 
 	let tableEl = $state<HTMLTableElement | null>(null);
@@ -170,6 +187,9 @@
 		if (shouldScrollToTop) {
 			shouldScrollToTop = false;
 			scrollContainerEl?.scrollTo({ top: 0, behavior: 'smooth' });
+		}
+		if (!manuallyResized) {
+			queueMicrotask(() => autoFitColumns());
 		}
 	});
 
@@ -281,6 +301,123 @@
 	}
 
 	const isDragging = $derived(draggingDivider || resizingCol >= 0);
+
+	let statusDropdownOpen = $state(false);
+	let itemDropdownOpen = $state(false);
+
+	function setStatusFilter(value: string) {
+		clearCursorStack();
+		statusDropdownOpen = false;
+		const url = new URL($page.url);
+		if (value === 'pending') { url.searchParams.delete('status'); }
+		else { url.searchParams.set('status', value); }
+		url.searchParams.delete('cursor');
+		goto(url.toString(), { replaceState: true });
+	}
+
+	function setItemFilter(value: string) {
+		clearCursorStack();
+		itemDropdownOpen = false;
+		const url = new URL($page.url);
+		if (value) { url.searchParams.set('item', value); }
+		else { url.searchParams.delete('item'); }
+		url.searchParams.delete('cursor');
+		goto(url.toString(), { replaceState: true });
+	}
+
+	function handleFilterWindowClick(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		if (!target.closest('[data-filter-status]')) statusDropdownOpen = false;
+		if (!target.closest('[data-filter-item]')) itemDropdownOpen = false;
+	}
+
+	$effect(() => {
+		if (statusDropdownOpen || itemDropdownOpen) {
+			window.addEventListener('click', handleFilterWindowClick, true);
+			return () => window.removeEventListener('click', handleFilterWindowClick, true);
+		}
+	});
+
+	const statusFilterLabel = $derived(
+		data.statusFilter === 'all' ? 'All statuses' :
+		data.statusFilter.charAt(0).toUpperCase() + data.statusFilter.slice(1)
+	);
+
+	const itemFilterLabel = $derived.by(() => {
+		if (!data.itemFilter) return 'All items';
+		const item = data.allShopItems.find(i => i.id === data.itemFilter);
+		return item?.name ?? data.itemFilter;
+	});
+
+	let itemSearchQuery = $state('');
+
+	const filteredShopItems = $derived(
+		itemSearchQuery
+			? data.allShopItems.filter(i => i.name.toLowerCase().includes(itemSearchQuery.toLowerCase()))
+			: data.allShopItems
+	);
+
+	function slugify(name: string): string {
+		return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+	}
+
+	let exporting = $state(false);
+	let exportResult = $state<{
+		csv: string;
+		skippedOrders: { id: string; userName: string }[];
+		totalOrders: number;
+		programName: string;
+		itemName: string | null;
+	} | null>(null);
+
+	async function startExport() {
+		exporting = true;
+		exportResult = null;
+		try {
+			const url = new URL($page.url);
+			url.pathname = url.pathname.replace(/\/?$/, '/export-csv');
+			url.searchParams.delete('cursor');
+			const res = await fetch(url.toString(), { method: 'POST' });
+			if (!res.ok) throw new Error('Export failed');
+			const result = await res.json();
+			if (result.skippedOrders.length > 0) {
+				exportResult = result;
+			} else {
+				downloadCsv(result);
+			}
+		} catch {
+			alert('Failed to export CSV. Please try again.');
+		} finally {
+			exporting = false;
+		}
+	}
+
+	function buildFilename(result: { programName: string; itemName: string | null }): string {
+		const date = new Date().toISOString().slice(0, 10);
+		let name = slugify(result.programName);
+		if (result.itemName) name += `-${slugify(result.itemName)}`;
+		return `${name}-${date}-sidekick-theseus.csv`;
+	}
+
+	function downloadCsv(result: { csv: string; programName: string; itemName: string | null }) {
+		const blob = new Blob([result.csv], { type: 'text/csv;charset=utf-8' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = buildFilename(result);
+		a.click();
+		URL.revokeObjectURL(url);
+		exportResult = null;
+	}
+
+	let itemSearchEl = $state<HTMLInputElement | null>(null);
+
+	$effect(() => {
+		if (itemDropdownOpen) {
+			itemSearchQuery = '';
+			queueMicrotask(() => itemSearchEl?.focus());
+		}
+	});
 </script>
 
 <svelte:head>
@@ -289,32 +426,143 @@
 
 <div class="flex h-full overflow-hidden {isDragging ? 'select-none' : ''}">
 	<div class="flex flex-col gap-3 p-6 min-w-0" style="width: {dividerX}%">
-		<div class="flex items-center justify-between">
-			<div class="flex gap-2 items-center">
+		<div class="flex items-center justify-between flex-wrap gap-2">
+			<div class="flex gap-2 items-center flex-wrap min-w-0">
 				<form
-					class="border border-border-input rounded-tag flex gap-2 items-center px-3 py-1.5 w-[220px]"
+					class="border border-border-input rounded-tag flex gap-2 items-center px-3 py-1.5 w-[220px] min-w-0"
 					onsubmit={(e) => { e.preventDefault(); handleSearch(); }}
 				>
 					<UserSearch size={14} class="text-text-placeholder shrink-0" />
 					<input
 						bind:value={searchInput}
 						placeholder="Search by user..."
-						class="flex-1 bg-transparent text-sm outline-none placeholder:text-text-placeholder font-medium"
+						class="flex-1 bg-transparent text-sm outline-none placeholder:text-text-placeholder font-medium min-w-0"
 					/>
 				</form>
-				<div class="relative">
-					<button class="border border-border-input rounded-tag flex gap-2 items-center px-3 py-1.5 cursor-pointer hover:bg-surface">
-						<Funnel size={14} class="text-text-dim" />
-						<span class="font-medium text-sm text-text-dim capitalize">{data.statusFilter}</span>
+				<div class="relative" data-filter-status>
+					<button
+						class="border border-border-input rounded-tag flex gap-2 items-center px-3 py-1.5 cursor-pointer hover:bg-surface min-w-0"
+						onclick={() => (statusDropdownOpen = !statusDropdownOpen)}
+					>
+						<Funnel size={14} class="text-text-dim shrink-0" />
+						<span class="font-medium text-sm text-text-dim truncate">{statusFilterLabel}</span>
+						<ChevronDown size={12} class="text-text-dim shrink-0" />
 					</button>
+					{#if statusDropdownOpen}
+						<div class="absolute top-full left-0 mt-1 bg-page border border-border-card rounded-input shadow-lg z-30 min-w-[170px] py-1">
+							{#each [
+								{ value: 'all', label: 'All statuses', light: null },
+								{ value: 'pending', label: 'Pending', light: 'pending' as const },
+								{ value: 'fulfilled', label: 'Fulfilled', light: 'ok' as const },
+								{ value: 'cancelled', label: 'Cancelled', light: 'fail' as const },
+							] as opt (opt.value)}
+								<button
+									class="w-full text-left px-3 py-1.5 text-sm hover:bg-surface cursor-pointer flex items-center justify-between gap-2"
+									onclick={() => setStatusFilter(opt.value)}
+								>
+									<span class="flex items-center gap-2">
+										{#if opt.light}
+											<StatusLight status={opt.light} size={8} />
+										{/if}
+										{opt.label}
+									</span>
+									{#if data.statusFilter === opt.value}
+										<Check size={14} class="text-accent" />
+									{/if}
+								</button>
+							{/each}
+						</div>
+					{/if}
 				</div>
+				{#if data.allShopItems.length > 0}
+					<div class="relative" data-filter-item>
+						<button
+							class="border border-border-input rounded-tag flex gap-2 items-center px-3 py-1.5 cursor-pointer hover:bg-surface min-w-0 max-w-[200px]"
+							onclick={() => (itemDropdownOpen = !itemDropdownOpen)}
+						>
+							<Package size={14} class="text-text-dim shrink-0" />
+							<span class="font-medium text-sm text-text-dim truncate">{itemFilterLabel}</span>
+							<ChevronDown size={12} class="text-text-dim shrink-0" />
+						</button>
+						{#if itemDropdownOpen}
+							<div class="absolute top-full left-0 mt-1 bg-page border border-border-card rounded-input shadow-lg z-30 w-[420px] max-h-[400px] flex flex-col">
+								<div class="px-2 py-2 border-b border-border-card">
+									<div class="flex items-center gap-2 px-2 py-1 border border-border-input rounded-tag">
+										<Search size={13} class="text-text-placeholder shrink-0" />
+										<input
+											bind:this={itemSearchEl}
+											bind:value={itemSearchQuery}
+											placeholder="Search items..."
+											class="flex-1 bg-transparent text-sm outline-none placeholder:text-text-placeholder"
+										/>
+									</div>
+								</div>
+								<div class="overflow-y-auto py-1">
+									{#if !itemSearchQuery}
+										<button
+											class="w-full text-left px-3 py-2.5 text-sm hover:bg-surface cursor-pointer flex items-center justify-between gap-2"
+											onclick={() => setItemFilter('')}
+										>
+											<span class="text-text-primary font-medium">All items</span>
+											{#if !data.itemFilter}
+												<Check size={14} class="text-accent shrink-0" />
+											{/if}
+										</button>
+									{/if}
+									{#each filteredShopItems as item (item.id)}
+										<button
+											class="w-full text-left px-3 py-2 hover:bg-surface cursor-pointer flex items-center gap-3"
+											onclick={() => setItemFilter(item.id)}
+										>
+											{#if item.thumbnailUrl}
+												<img
+													src={item.thumbnailUrl}
+													alt=""
+													class="w-8 h-8 rounded object-cover shrink-0 bg-surface"
+												/>
+											{:else}
+												<div class="w-8 h-8 rounded bg-surface flex items-center justify-center shrink-0">
+													<Package size={14} class="text-text-placeholder" />
+												</div>
+											{/if}
+											<span class="flex-1 min-w-0 truncate text-sm text-text-primary">{item.name}</span>
+											{#if data.itemFilter === item.id}
+												<Check size={14} class="text-accent shrink-0" />
+											{/if}
+										</button>
+									{/each}
+									{#if filteredShopItems.length === 0}
+										<div class="px-3 py-4 text-sm text-text-tertiary text-center">No items match your search</div>
+									{/if}
+								</div>
+							</div>
+						{/if}
+					</div>
+				{/if}
 			</div>
-			<div class="flex items-center gap-2">
-				<span class="font-medium text-sm text-text-muted">
-					Showing {data.orders.length} of {data.totalCount} orders.
+			<div class="flex items-center gap-2 shrink-0">
+				<span class="font-medium text-sm text-text-muted whitespace-nowrap">
+					{data.orders.length} of {data.totalCount}
 				</span>
+				{#if data.canViewAddressData}
+					<button
+						class="border border-border-input rounded-tag flex gap-1.5 items-center px-2.5 py-1 cursor-pointer hover:bg-surface text-sm font-medium text-text-dim whitespace-nowrap"
+						onclick={startExport}
+						disabled={exporting}
+						title="Export to Theseus CSV"
+					>
+						<Download size={13} class="shrink-0" />
+						<span class="hidden sm:inline">
+							{#if exporting}
+								Exporting...
+							{:else}
+								Export CSV
+							{/if}
+						</span>
+					</button>
+				{/if}
 				<button
-					class="text-text-tertiary hover:text-text-primary cursor-pointer transition-colors"
+					class="text-text-tertiary hover:text-text-primary cursor-pointer transition-colors shrink-0"
 					onclick={refresh}
 					disabled={refreshing}
 					title="Refresh"
@@ -455,3 +703,52 @@
 		{/if}
 	</div>
 </div>
+
+{#if exportResult}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center"
+		onmousedown={(e) => { if (e.target === e.currentTarget) exportResult = null; }}
+	>
+		<div class="bg-page border border-border-card rounded-card shadow-xl w-[480px] max-h-[80vh] flex flex-col">
+			<div class="flex items-center justify-between px-5 py-4 border-b border-border-card">
+				<div class="flex items-center gap-2">
+					<TriangleAlert size={16} class="text-yellow-500" />
+					<span class="font-bold text-[15px] text-text-primary tracking-[-0.4px]">Missing shipping addresses</span>
+				</div>
+				<button
+					class="text-text-tertiary hover:text-text-primary cursor-pointer"
+					onclick={() => (exportResult = null)}
+				>
+					<X size={16} />
+				</button>
+			</div>
+			<div class="px-5 py-4 flex flex-col gap-3 overflow-y-auto">
+				<p class="text-sm text-text-dim tracking-[-0.3px]">
+					{exportResult.skippedOrders.length} of {exportResult.totalOrders} orders will not be included in the export because they have no shipping address on file:
+				</p>
+				<div class="flex flex-col gap-1 max-h-[200px] overflow-y-auto border border-border-card rounded-input p-2">
+					{#each exportResult.skippedOrders as order (order.id)}
+						<div class="text-sm text-text-primary tracking-[-0.3px] px-2 py-1">
+							<span class="text-text-tertiary">#{order.id}</span> {order.userName}
+						</div>
+					{/each}
+				</div>
+			</div>
+			<div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-border-card">
+				<button
+					class="px-3 py-1.5 text-sm font-medium text-text-dim hover:bg-surface rounded-tag cursor-pointer"
+					onclick={() => (exportResult = null)}
+				>
+					Cancel
+				</button>
+				<button
+					class="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-tag cursor-pointer hover:opacity-90"
+					onclick={() => downloadCsv(exportResult!)}
+				>
+					Download anyway ({exportResult.totalOrders - exportResult.skippedOrders.length} orders)
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}

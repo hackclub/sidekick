@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
-import { ProtocolClient } from '$lib/server/protocol/client.js';
+import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
 import type { RequestHandler } from './$types.js';
 
 export const POST: RequestHandler = async ({ params, locals, getClientAddress }) => {
@@ -17,7 +17,20 @@ export const POST: RequestHandler = async ({ params, locals, getClientAddress })
 	});
 
 	const client = new ProtocolClient(program.masterEndpoint, program.secretKey);
-	const address = await client.revealOrderAddress({ orderId: params.orderId });
+
+	let address;
+	try {
+		address = await client.revealOrderAddress({ orderId: params.orderId });
+	} catch (e) {
+		if (e instanceof ProtocolError) {
+			return json({ noAddress: true }, { status: 404 });
+		}
+		throw e;
+	}
+
+	if (!address?.line1?.trim()) {
+		return json({ noAddress: true }, { status: 404 });
+	}
 
 	await db.auditLog.create({
 		data: {
