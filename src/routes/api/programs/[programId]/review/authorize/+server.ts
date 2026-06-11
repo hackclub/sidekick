@@ -60,13 +60,21 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			throw error(404, 'Pending approval not found');
 		}
 
-		const result = await client.submitReviewAction({
+		await client.submitReviewAction({
 			shipId: pending.shipId,
 			reviewerId: pending.reviewerId,
 			action: 'approve',
 			hoursAssigned: pending.hoursAssigned,
 			feedbackMessage: pending.feedbackMessage,
 			justification: pending.justification
+		});
+
+		const reviewerId = user.slackId || user.hcaId;
+		const result = await client.submitReviewAction({
+			shipId: pending.shipId,
+			reviewerId,
+			action: 'authorize',
+			hoursAssigned: pending.hoursAssigned
 		});
 
 		await db.pendingApproval.delete({ where: { id: pendingApprovalId } });
