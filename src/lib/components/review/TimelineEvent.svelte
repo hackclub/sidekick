@@ -15,6 +15,7 @@
 		event: TEvent;
 		actors: Record<string, { name: string; avatarUrl: string | null }>;
 		shipHourInfo?: Record<string, { delta: number; cumulative: number }>;
+		approvalHourInfo?: Record<string, { cumulative: number }>;
 		canAuthorize?: boolean;
 		onsave?: (data: EditData) => void;
 		onauthorize?: (id: string) => void;
@@ -23,7 +24,7 @@
 		authorizing?: string | null;
 	}
 
-	let { event, actors, shipHourInfo = {}, canAuthorize = false, onsave, onauthorize, ondelete, oneditpending, authorizing = null }: Props = $props();
+	let { event, actors, shipHourInfo = {}, approvalHourInfo = {}, canAuthorize = false, onsave, onauthorize, ondelete, oneditpending, authorizing = null }: Props = $props();
 
 	const actor = $derived(actors[event.actorId] ?? { name: event.actorId, avatarUrl: null });
 
@@ -167,11 +168,15 @@
 					</p>
 				{:else if event.type === 'authorized_approval'}
 					{@const authorizedByActor = actors[event.authorizedByActorId] ?? { name: event.authorizedByActorId, avatarUrl: null }}
+					{@const approvalCumulative = approvalHourInfo[event.shipId]?.cumulative ?? 0}
 					<p class="text-sm tracking-[-0.3px]">
+						<!-- eslint-disable svelte/no-useless-mustaches -->
 						<span class="font-bold">{actor.name}</span> approved for <span class="font-bold">{fmtHours(event.hoursAssigned)}</span>
 						{#if event.hoursDeflated && event.hoursDeflated > 0}
 							<span class="text-text-tertiary">({fmtHours(event.hoursDeflated)} deflation)</span>
 						{/if}
+						{#if approvalCumulative > 0 && approvalCumulative !== event.hoursAssigned}{' '}<span class="text-text-tertiary">(total {fmtHours(approvalCumulative)})</span>{/if}
+						<!-- eslint-enable svelte/no-useless-mustaches -->
 						<span class="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded-tag bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-medium">
 							<ShieldCheck size={10} />
 							Authorized by
@@ -182,11 +187,15 @@
 						</span>
 					</p>
 				{:else if event.type === 'approval'}
+					{@const approvalCumulative = approvalHourInfo[event.shipId]?.cumulative ?? 0}
 					<p class="text-sm tracking-[-0.3px]">
+						<!-- eslint-disable svelte/no-useless-mustaches -->
 						<span class="font-bold">{actor.name}</span> approved for <span class="font-bold">{fmtHours(event.hoursAssigned)}</span>
 						{#if event.hoursDeflated && event.hoursDeflated > 0}
 							<span class="text-text-tertiary">({fmtHours(event.hoursDeflated)} deflation)</span>
 						{/if}
+						{#if approvalCumulative > 0 && approvalCumulative !== event.hoursAssigned}{' '}<span class="text-text-tertiary">(total {fmtHours(approvalCumulative)})</span>{/if}
+						<!-- eslint-enable svelte/no-useless-mustaches -->
 					</p>
 				{:else if event.type === 'pending_approval'}
 					<p class="text-sm tracking-[-0.3px]">
