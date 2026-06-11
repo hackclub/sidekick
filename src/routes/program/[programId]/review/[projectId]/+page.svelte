@@ -249,11 +249,11 @@
 		}
 	}
 
-	async function handleEditPending(pendingApprovalId: string, feedbackMessage: string, justification: string) {
+	async function handleEditPending(pendingApprovalId: string, feedbackMessage: string, justification: string, hoursAssigned: number) {
 		await fetch(`/api/programs/${data.program.id}/review/authorize`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ pendingApprovalId, feedbackMessage, justification })
+			body: JSON.stringify({ pendingApprovalId, feedbackMessage, justification, hoursAssigned })
 		});
 	}
 </script>

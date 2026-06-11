@@ -18,7 +18,7 @@
 		onsave?: (data: EditData) => void;
 		onauthorize?: (id: string) => void;
 		ondelete?: (id: string) => void;
-		oneditpending?: (id: string, feedbackMessage: string, justification: string) => void;
+		oneditpending?: (id: string, feedbackMessage: string, justification: string, hoursAssigned: number) => void;
 		authorizing?: string | null;
 		class?: string;
 	}

@@ -183,7 +183,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		isSuperAdmin: user.isSuperAdmin
 	});
 
-	const { pendingApprovalId, feedbackMessage, justification } = await request.json();
+	const { pendingApprovalId, feedbackMessage, justification, hoursAssigned } = await request.json();
 	if (!pendingApprovalId) throw error(400, 'pendingApprovalId is required');
 
 	if (pendingApprovalId.startsWith('hq:')) {
@@ -201,7 +201,8 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		where: { id: pendingApprovalId },
 		data: {
 			feedbackMessage: feedbackMessage ?? pending.feedbackMessage,
-			justification: justification ?? pending.justification
+			justification: justification ?? pending.justification,
+			hoursAssigned: hoursAssigned != null ? hoursAssigned : pending.hoursAssigned
 		}
 	});
 

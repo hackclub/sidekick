@@ -20,7 +20,7 @@
 		onsave?: (data: EditData) => void;
 		onauthorize?: (id: string) => void;
 		ondelete?: (id: string) => void;
-		oneditpending?: (id: string, feedbackMessage: string, justification: string) => void;
+		oneditpending?: (id: string, feedbackMessage: string, justification: string, hoursAssigned: number) => void;
 		authorizing?: string | null;
 	}
 
@@ -31,8 +31,10 @@
 	let editing = $state(false);
 	let editFeedback = $state('');
 	let editInternal = $state('');
+	let editHours = $state(0);
 	let savedFeedback: string | null = $state(null);
 	let savedInternal: string | null = $state(null);
+	let savedHours: number | null = $state(null);
 
 	const displayFeedback = $derived(
 		savedFeedback ?? (event.type === 'approval' || event.type === 'authorized_approval' || event.type === 'rejection' || event.type === 'pending_approval' ? event.feedbackMessage : '')
@@ -41,9 +43,14 @@
 		savedInternal ?? (event.type === 'approval' || event.type === 'authorized_approval' || event.type === 'pending_approval' ? event.justification : event.type === 'rejection' ? (event.internalMessage ?? '') : '')
 	);
 
+	const displayHours = $derived(
+		savedHours ?? (event.type === 'pending_approval' ? event.hoursAssigned : 0)
+	);
+
 	function startEditing() {
 		editFeedback = displayFeedback;
 		editInternal = displayInternal;
+		editHours = displayHours;
 		editing = true;
 	}
 
@@ -68,7 +75,8 @@
 				internalMessage: editInternal
 			});
 		} else if (event.type === 'pending_approval') {
-			oneditpending?.(event.id, editFeedback, editInternal);
+			savedHours = editHours;
+			oneditpending?.(event.id, editFeedback, editInternal, editHours);
 		}
 		editing = false;
 	}
@@ -199,7 +207,10 @@
 					</p>
 				{:else if event.type === 'pending_approval'}
 					<p class="text-sm tracking-[-0.3px]">
-						<span class="font-bold">{actor.name}</span> approved for <span class="font-bold">{fmtHours(event.hoursAssigned)}</span>
+						<span class="font-bold">{actor.name}</span> approved for <span class="font-bold">{fmtHours(displayHours)}</span>
+						{#if displayHours !== event.hoursAssigned}
+							<span class="text-text-tertiary line-through">{fmtHours(event.hoursAssigned)}</span>
+						{/if}
 						<span class="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded-tag bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-medium">
 							<Clock size={10} />
 							Pending authorization
@@ -378,6 +389,18 @@
 				</div>
 			</div>
 		{:else if event.type === 'pending_approval'}
+			{#if editing}
+				<div class="flex flex-col gap-1 w-full">
+					<label class="font-bold text-sm tracking-[-0.3px]">Hours to assign</label>
+					<input
+						type="number"
+						step="0.01"
+						min="0"
+						bind:value={editHours}
+						class="border border-amber-300 rounded-tag px-2.5 py-2 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
+					/>
+				</div>
+			{/if}
 			<div class="flex gap-1.5 w-full">
 				<div class="border border-dashed border-amber-300 bg-amber-50/50 rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
 					<p class="font-bold text-sm tracking-[-0.3px]">Reviewer message</p>
