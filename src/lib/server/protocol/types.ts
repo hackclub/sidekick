@@ -176,6 +176,7 @@ export type SubmitReviewActionInput = SubmitReviewActionBase &
       }
     | {
         action: "authorize";
+        hoursAssigned?: number;
       }
     | {
         action: "deauthorize";
