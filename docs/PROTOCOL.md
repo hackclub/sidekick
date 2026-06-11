@@ -445,11 +445,12 @@ The `action` field determines which other fields are present:
 {
   "shipId": "ship_002",
   "reviewerId": "ident!hqreviewer789",
-  "action": "authorize"
+  "action": "authorize",
+  "hoursAssigned": 7.0
 }
 ```
 
-Finalizes a ship in `"pending_hq"` status, transitioning it to `"approved"`. The program should use the hours and feedback from the original reviewer approval. Only valid for ships with status `"pending_hq"`.
+Finalizes a ship in `"pending_hq"` status, transitioning it to `"approved"`. If `hoursAssigned` is present, the program should use that value instead of the original reviewer's hours. If omitted, the program should use the hours from the original reviewer approval. Only valid for ships with status `"pending_hq"`.
 
 **Deauthorize (revert a `pending_hq` ship back to pending):**
 ```json
