@@ -13,6 +13,7 @@
 		events: TEvent[];
 		actors: Record<string, { name: string; avatarUrl: string | null }>;
 		shipHours?: Record<string, number>;
+		approvedShipHours?: Record<string, number>;
 		canAuthorize?: boolean;
 		onsave?: (data: EditData) => void;
 		onauthorize?: (id: string) => void;
@@ -22,10 +23,17 @@
 		class?: string;
 	}
 
-	let { events, actors, shipHours = {}, canAuthorize = false, onsave, onauthorize, ondelete, oneditpending, authorizing = null, class: className = '' }: Props = $props();
+	let { events, actors, shipHours = {}, approvedShipHours = {}, canAuthorize = false, onsave, onauthorize, ondelete, oneditpending, authorizing = null, class: className = '' }: Props = $props();
+
+	const shipsWithApproval = $derived(new Set(
+		events
+			.filter((e) => e.type === 'approval' || e.type === 'authorized_approval')
+			.map((e) => e.shipId)
+	));
 
 	const shipHourInfo = $derived.by(() => {
 		const info: Record<string, { delta: number; cumulative: number }> = {};
+		const approvalInfo: Record<string, { cumulative: number }> = {};
 		const rejectedShipIds = new Set(
 			events.filter((e) => e.type === 'rejection').map((e) => e.shipId)
 		);
@@ -35,6 +43,8 @@
 
 		for (const event of shipEvents) {
 			const hours = shipHours[event.shipId] || event.hoursSubmitted || 0;
+			const approved = approvedShipHours[event.shipId] ?? hours;
+			const hasApproval = shipsWithApproval.has(event.shipId);
 			const isLast = event.shipId === lastShipId;
 
 			if (rejectedShipIds.has(event.shipId)) {
@@ -44,13 +54,19 @@
 
 			if (isLast && runningSum > 0 && hours > runningSum) {
 				const delta = Math.max(0, hours - runningSum);
-				info[event.shipId] = { delta, cumulative: hours };
+				info[event.shipId] = { delta, cumulative: hasApproval ? delta : hours };
+				if (hasApproval) {
+					approvalInfo[event.shipId] = { cumulative: runningSum + approved };
+				}
 			} else {
-				runningSum += hours;
-				info[event.shipId] = { delta: hours, cumulative: runningSum };
+				runningSum += approved;
+				info[event.shipId] = { delta: hours, cumulative: hasApproval ? hours : runningSum };
+				if (hasApproval) {
+					approvalInfo[event.shipId] = { cumulative: runningSum };
+				}
 			}
 		}
-		return info;
+		return { ships: info, approvals: approvalInfo };
 	});
 </script>
 
@@ -61,6 +77,6 @@
 	{/if}
 
 	{#each events as event, i (i)}
-		<TimelineEvent {event} {actors} shipHourInfo={shipHourInfo} {canAuthorize} {onsave} {onauthorize} {ondelete} {oneditpending} {authorizing} />
+		<TimelineEvent {event} {actors} shipHourInfo={shipHourInfo.ships} approvalHourInfo={shipHourInfo.approvals} {canAuthorize} {onsave} {onauthorize} {ondelete} {oneditpending} {authorizing} />
 	{/each}
 </div>

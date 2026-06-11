@@ -109,13 +109,24 @@
 		};
 	});
 
+	// Map shipId → approved hours from timeline events (accounts for reviewer deflation)
+	const approvedHoursMap = $derived.by(() => {
+		const map: Record<string, number> = {};
+		for (const event of data.timeline) {
+			if (event.type === 'approval' || event.type === 'authorized_approval') {
+				map[event.shipId] = event.hoursAssigned;
+			}
+		}
+		return map;
+	});
+
 	const shippedDeltaHours = $derived.by(() => {
 		if (!data.pendingShip)
 			return undefined;
 		const ships = data.project.ships;
 		const priorHours = ships
 			.filter((s) => s.id !== data.pendingShip!.id && s.status === 'approved')
-			.reduce((sum, s) => sum + s.hoursSubmitted, 0);
+			.reduce((sum, s) => sum + (approvedHoursMap[s.id] ?? s.hoursSubmitted), 0);
 		return Math.max(0, data.pendingShip.hoursSubmitted - priorHours);
 	});
 
@@ -342,6 +353,7 @@
 					events={data.timeline}
 					actors={data.actors}
 					shipHours={Object.fromEntries(data.project.ships.map((s) => [s.id, s.hoursSubmitted]))}
+					approvedShipHours={approvedHoursMap}
 					canAuthorize={data.canAuthorize}
 					onsave={handleSaveReview}
 					onauthorize={handleAuthorize}
