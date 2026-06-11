@@ -16,7 +16,7 @@
 		approvedShipHours?: Record<string, number>;
 		canAuthorize?: boolean;
 		onsave?: (data: EditData) => void;
-		onauthorize?: (id: string) => void;
+		onauthorize?: (id: string, hoursAssigned?: number) => void;
 		ondelete?: (id: string) => void;
 		oneditpending?: (id: string, feedbackMessage: string, justification: string, hoursAssigned: number) => void;
 		authorizing?: string | null;

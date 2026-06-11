@@ -209,13 +209,13 @@
 		}
 	}
 
-	async function handleAuthorize(pendingApprovalId: string) {
+	async function handleAuthorize(pendingApprovalId: string, hoursAssigned?: number) {
 		authorizing = pendingApprovalId;
 		try {
 			const res = await fetch(`/api/programs/${data.program.id}/review/authorize`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ pendingApprovalId })
+				body: JSON.stringify({ pendingApprovalId, hoursAssigned })
 			});
 			if (res.ok) {
 				protocolError = null;

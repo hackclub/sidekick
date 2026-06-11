@@ -18,7 +18,7 @@
 		approvalHourInfo?: Record<string, { cumulative: number }>;
 		canAuthorize?: boolean;
 		onsave?: (data: EditData) => void;
-		onauthorize?: (id: string) => void;
+		onauthorize?: (id: string, hoursAssigned?: number) => void;
 		ondelete?: (id: string) => void;
 		oneditpending?: (id: string, feedbackMessage: string, justification: string, hoursAssigned: number) => void;
 		authorizing?: string | null;
@@ -248,7 +248,7 @@
 					</button>
 					<button
 						class="flex items-center gap-1.5 px-3 py-1.5 rounded-tag text-xs font-medium bg-check-pass text-white hover:opacity-90 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-						onclick={() => onauthorize?.(event.id)}
+						onclick={() => onauthorize?.(event.id, displayHours)}
 						disabled={authorizing === event.id}
 						title="Authorize this approval"
 					>

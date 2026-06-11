@@ -21,7 +21,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		isSuperAdmin: user.isSuperAdmin
 	});
 
-	const { pendingApprovalId } = await request.json();
+	const { pendingApprovalId, hoursAssigned } = await request.json();
 	if (!pendingApprovalId) throw error(400, 'pendingApprovalId is required');
 
 	const program = await db.program.findUniqueOrThrow({
@@ -36,7 +36,8 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			const result = await client.submitReviewAction({
 				shipId,
 				reviewerId,
-				action: 'authorize'
+				action: 'authorize',
+				hoursAssigned: hoursAssigned ?? undefined
 			});
 
 			await db.auditLog.create({
