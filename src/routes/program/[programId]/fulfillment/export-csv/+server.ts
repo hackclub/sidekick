@@ -46,8 +46,15 @@ async function loadExportData(params: { programId: string }, locals: App.Locals,
 	} while (cursor);
 
 	const csvHeader = 'First Name,Last Name,Line 1,Line 2,City,State / Province,Zip / Postal Code,Country,Email';
-	const rows: string[] = [csvHeader];
 	const skippedOrders: { id: string; userName: string }[] = [];
+
+	let itemNameMap: Record<string, string> = {};
+	try {
+		const shopResult = await client.fetchShopItems({});
+		for (const item of shopResult.items) itemNameMap[item.id] = item.name;
+	} catch { /* ignore */ }
+
+	const exportOrders: { id: string; firstName: string; lastName: string; city: string; stateProvince: string; country: string; row: string }[] = [];
 
 	for (const order of allOrders) {
 		let address: RevealOrderAddressOutput | null = null;
@@ -62,29 +69,38 @@ async function loadExportData(params: { programId: string }, locals: App.Locals,
 			continue;
 		}
 
-		rows.push([
-			csvField(address.firstName),
-			csvField(address.lastName),
-			csvField(address.line1),
-			csvField(isDuplicate(address.line1, address.line2) ? '' : address.line2),
-			csvField(address.city),
-			csvField(address.stateProvince),
-			csvField(address.postalCode),
-			csvField(address.country),
-			csvField(order.userEmail),
-		].join(','));
+		const firstName = address.firstName?.trim() ?? '';
+		const lastName = address.lastName?.trim() ?? '';
+		const city = address.city?.trim() ?? '';
+		const stateProvince = address.stateProvince?.trim() ?? '';
+		const country = address.country?.trim() ?? '';
+
+		exportOrders.push({
+			id: order.id,
+			firstName,
+			lastName,
+			city,
+			stateProvince,
+			country,
+			row: [
+				csvField(address.firstName),
+				csvField(address.lastName),
+				csvField(address.line1),
+				csvField(isDuplicate(address.line1, address.line2) ? '' : address.line2),
+				csvField(address.city),
+				csvField(address.stateProvince),
+				csvField(address.postalCode),
+				csvField(address.country),
+				csvField(order.userEmail),
+			].join(',')
+		});
 	}
 
-	let itemName: string | null = null;
-	if (itemFilter) {
-		try {
-			const shopResult = await client.fetchShopItems({});
-			itemName = shopResult.items.find(i => i.id === itemFilter)?.name ?? null;
-		} catch { /* ignore */ }
-	}
+	const itemName = itemFilter ? (itemNameMap[itemFilter] ?? null) : null;
 
 	return {
-		csv: rows.join('\r\n') + '\r\n',
+		csvHeader,
+		orders: exportOrders,
 		skippedOrders,
 		totalOrders: allOrders.length,
 		programName: program.name,

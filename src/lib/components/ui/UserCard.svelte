@@ -94,7 +94,7 @@
 		{/if}
 
 		{#if slackId}
-			<div class="flex flex-col @xs:flex-row @xs:items-center @xs:justify-between w-full gap-0.5 @xs:gap-2">
+			<div class="flex items-center justify-between w-full gap-2">
 				<div class="flex gap-1.5 items-center shrink-0">
 					<SlackIcon size={14} class="text-text-primary shrink-0" />
 					<span class="text-sm text-text-primary tracking-[-0.3px]">Slack ID</span>
@@ -112,7 +112,7 @@
 		{/if}
 
 		{#if hackatimeId}
-			<div class="flex flex-col @xs:flex-row @xs:items-center @xs:justify-between w-full gap-0.5 @xs:gap-2">
+			<div class="flex items-center justify-between w-full gap-2">
 				<div class="flex gap-1.5 items-center shrink-0">
 					<Clock size={14} class="text-text-primary" />
 					<span class="text-sm text-text-primary tracking-[-0.3px]">Hackatime ID</span>
@@ -122,7 +122,7 @@
 		{/if}
 
 		{#if email}
-			<div class="flex flex-col @xs:flex-row @xs:items-center @xs:justify-between w-full gap-0.5 @xs:gap-2">
+			<div class="flex items-center justify-between w-full gap-2">
 				<div class="flex gap-1.5 items-center shrink-0">
 					<Mail size={14} class="text-text-primary" />
 					<span class="text-sm text-text-primary tracking-[-0.3px]">Email</span>
