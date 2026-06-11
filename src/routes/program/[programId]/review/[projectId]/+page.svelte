@@ -364,8 +364,8 @@
 				{/if}
 			</div>
 
-			<div class="wide:relative" style="grid-area: multi">
-				<div class="flex flex-col gap-3 wide:absolute wide:inset-0 wide:overflow-y-auto">
+			<div class="md:relative md:min-h-[32rem]" style="grid-area: multi">
+				<div class="flex flex-col gap-3 md:absolute md:inset-0 md:overflow-y-auto">
 					<AirtableRecords
 						records={airtable?.airtableRecords ?? []}
 						loading={!airtable}
