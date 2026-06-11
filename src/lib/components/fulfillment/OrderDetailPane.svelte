@@ -3,7 +3,11 @@
 	import StatusLight from '$lib/components/ui/StatusLight.svelte';
 	import UserCard from '$lib/components/ui/UserCard.svelte';
 	import ShippingAddress from './ShippingAddress.svelte';
-	import { marked } from 'marked';
+	import { marked, Renderer } from 'marked';
+
+	const contextRenderer = new Renderer();
+	contextRenderer.link = ({ href, text }) =>
+		`<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`;
 	import type { Order, ShopItem } from '$lib/server/protocol/types.js';
 
 	interface CardGrantTemplateInfo {
@@ -389,12 +393,12 @@
 			{:else}
 				<button
 					class="text-left w-full cursor-pointer hover:opacity-70 transition-opacity"
-					onclick={() => (editingContext = true)}
+					onclick={(e) => { if (!(e.target as HTMLElement).closest('a')) editingContext = true; }}
 				>
 					{#if item.fulfillerContext}
 						<div class="prose prose-sm max-w-none text-sm tracking-[-0.3px]">
 							<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-							{@html marked(item.fulfillerContext)}
+							{@html marked(item.fulfillerContext, { renderer: contextRenderer })}
 						</div>
 					{:else}
 						<span class="text-sm tracking-[-0.3px] text-text-placeholder-light">
