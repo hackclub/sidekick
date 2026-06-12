@@ -405,8 +405,14 @@
 
 	async function removeTheseusApiKey() {
 		removingTheseusKey = true;
+		theseusKeyError = '';
 		try {
-			await fetch(`/api/programs/${data.program.id}/warehouse`, { method: 'DELETE' });
+			const res = await fetch(`/api/programs/${data.program.id}/warehouse`, { method: 'DELETE' });
+			if (!res.ok) {
+				const text = await res.text();
+				theseusKeyError = text;
+				return;
+			}
 			await invalidateAll();
 		} finally {
 			removingTheseusKey = false;
@@ -974,26 +980,31 @@
 						<LabeledField label="Theseus API Key" description="Set a Theseus API key to enable warehouse order fulfillment.">
 							{#snippet icon()}<Package size={16} />{/snippet}
 							{#if data.hasTheseusApiKey}
-								<div class="flex items-center justify-between gap-3">
-									<div class="flex items-center gap-2">
-										<Link size={14} class="text-check-pass" />
-										<span class="text-sm font-semibold text-text-primary">{data.theseusUser?.name || 'Unknown'}</span>
-										{#if data.theseusUser?.email}
-											<span class="text-xs text-text-tertiary font-mono">{data.theseusUser.email}</span>
-										{/if}
+								<div class="flex flex-col gap-2">
+									<div class="flex items-center justify-between gap-3">
+										<div class="flex items-center gap-2">
+											<Link size={14} class="text-check-pass" />
+											<span class="text-sm font-semibold text-text-primary">{data.theseusUser?.name || 'Unknown'}</span>
+											{#if data.theseusUser?.email}
+												<span class="text-xs text-text-tertiary font-mono">{data.theseusUser.email}</span>
+											{/if}
+										</div>
+										<button
+											class="flex items-center gap-1.5 px-3 py-1.5 rounded-tag border border-border-input text-xs font-medium hover:bg-surface cursor-pointer disabled:opacity-50"
+											onclick={removeTheseusApiKey}
+											disabled={removingTheseusKey}
+										>
+											{#if removingTheseusKey}
+												<Loader2 size={12} class="animate-spin" />
+											{:else}
+												<Unlink size={12} />
+											{/if}
+											Remove
+										</button>
 									</div>
-									<button
-										class="flex items-center gap-1.5 px-3 py-1.5 rounded-tag border border-border-input text-xs font-medium hover:bg-surface cursor-pointer disabled:opacity-50"
-										onclick={removeTheseusApiKey}
-										disabled={removingTheseusKey}
-									>
-										{#if removingTheseusKey}
-											<Loader2 size={12} class="animate-spin" />
-										{:else}
-											<Unlink size={12} />
-										{/if}
-										Remove
-									</button>
+									{#if theseusKeyError}
+										<p class="text-xs text-check-fail">{theseusKeyError}</p>
+									{/if}
 								</div>
 							{:else}
 								<div class="flex flex-col gap-2">
