@@ -27,8 +27,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		data: {
 			theseusApiKey: encrypt(apiKey.trim()),
 			theseusUserName: theseusUser.name,
-			theseusUserEmail: theseusUser.email,
-			theseusUserAvatar: theseusUser.avatar
+			theseusUserEmail: theseusUser.email
 		}
 	});
 
@@ -59,8 +58,7 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
 		data: {
 			theseusApiKey: null,
 			theseusUserName: null,
-			theseusUserEmail: null,
-			theseusUserAvatar: null
+			theseusUserEmail: null
 		}
 	});
 

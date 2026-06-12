@@ -196,8 +196,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		hasTheseusApiKey: !!program.theseusApiKey,
 		theseusUser: program.theseusApiKey ? {
 			name: program.theseusUserName ?? '',
-			email: program.theseusUserEmail ?? '',
-			avatar: program.theseusUserAvatar ?? null
+			email: program.theseusUserEmail ?? ''
 		} : null,
 		userHasHcbAuth
 	};

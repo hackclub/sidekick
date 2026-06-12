@@ -983,7 +983,7 @@
 								<div class="flex flex-col gap-2">
 									<div class="flex items-center justify-between gap-3">
 										<div class="flex items-center gap-2">
-											<Avatar name={data.theseusUser?.name || 'Unknown'} url={data.theseusUser?.avatar} size="sm" />
+											<Link size={14} class="text-check-pass" />
 											<span class="text-sm font-semibold text-text-primary">{data.theseusUser?.name || 'Unknown'}</span>
 											{#if data.theseusUser?.email}
 												<span class="text-xs text-text-tertiary font-mono">{data.theseusUser.email}</span>

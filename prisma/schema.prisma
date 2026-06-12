@@ -58,7 +58,6 @@ model Program {
   theseusApiKey          String?
   theseusUserName       String?
   theseusUserEmail      String?
-  theseusUserAvatar     String?
 
   memberships            ProgramMembership[]
   checkResults           CheckResult[]
