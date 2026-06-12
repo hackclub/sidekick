@@ -38,6 +38,27 @@ export interface WarehouseOrderResult {
 	created_at: string;
 }
 
+export interface TheseusUser {
+	id: string;
+	name: string;
+	email: string;
+	avatar: string | null;
+	admin: boolean;
+}
+
+export async function getTheseusUser(apiKey: string): Promise<TheseusUser> {
+	const res = await fetch(`${THESEUS_BASE}/api/v1/user`, {
+		headers: { Authorization: `Bearer ${apiKey}` }
+	});
+
+	if (!res.ok) {
+		const text = await res.text();
+		throw new Error(`Theseus auth failed: ${res.status} ${text}`);
+	}
+
+	return res.json();
+}
+
 export async function createWarehouseOrder(
 	apiKey: string,
 	params: CreateWarehouseOrderParams

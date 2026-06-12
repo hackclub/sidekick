@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { encrypt } from '$lib/server/crypto.js';
+import { getTheseusUser } from '$lib/server/integrations/theseus.js';
 import type { RequestHandler } from './$types.js';
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
@@ -19,9 +20,15 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		throw error(400, 'API key is required');
 	}
 
+	const theseusUser = await getTheseusUser(apiKey.trim());
+
 	await db.program.update({
 		where: { id: params.programId },
-		data: { theseusApiKey: encrypt(apiKey.trim()) }
+		data: {
+			theseusApiKey: encrypt(apiKey.trim()),
+			theseusUserName: theseusUser.name,
+			theseusUserEmail: theseusUser.email
+		}
 	});
 
 	await db.auditLog.create({
@@ -31,11 +38,11 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			action: 'theseus_api_key_set',
 			entityType: 'program',
 			entityId: params.programId,
-			metadata: {}
+			metadata: { theseusUserName: theseusUser.name, theseusUserEmail: theseusUser.email }
 		}
 	});
 
-	return json({ success: true });
+	return json({ success: true, theseusUser: { name: theseusUser.name, email: theseusUser.email } });
 };
 
 export const DELETE: RequestHandler = async ({ params, locals }) => {
@@ -48,7 +55,11 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
 
 	await db.program.update({
 		where: { id: params.programId },
-		data: { theseusApiKey: null }
+		data: {
+			theseusApiKey: null,
+			theseusUserName: null,
+			theseusUserEmail: null
+		}
 	});
 
 	await db.auditLog.create({

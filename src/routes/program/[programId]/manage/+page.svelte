@@ -379,15 +379,23 @@
 		}
 	}
 
+	let theseusKeyError = $state('');
+
 	async function saveTheseusApiKey() {
 		if (!theseusApiKeyInput.trim()) return;
 		savingTheseusKey = true;
+		theseusKeyError = '';
 		try {
-			await fetch(`/api/programs/${data.program.id}/warehouse`, {
+			const res = await fetch(`/api/programs/${data.program.id}/warehouse`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ apiKey: theseusApiKeyInput.trim() })
 			});
+			if (!res.ok) {
+				const text = await res.text();
+				theseusKeyError = text;
+				return;
+			}
 			theseusApiKeyInput = '';
 			await invalidateAll();
 		} finally {
@@ -969,7 +977,10 @@
 								<div class="flex items-center justify-between gap-3">
 									<div class="flex items-center gap-2">
 										<Link size={14} class="text-check-pass" />
-										<span class="text-sm font-semibold text-text-primary">API key configured</span>
+										<span class="text-sm font-semibold text-text-primary">{data.theseusUser?.name || 'Unknown'}</span>
+										{#if data.theseusUser?.email}
+											<span class="text-xs text-text-tertiary font-mono">{data.theseusUser.email}</span>
+										{/if}
 									</div>
 									<button
 										class="flex items-center gap-1.5 px-3 py-1.5 rounded-tag border border-border-input text-xs font-medium hover:bg-surface cursor-pointer disabled:opacity-50"
@@ -985,20 +996,25 @@
 									</button>
 								</div>
 							{:else}
-								<div class="flex gap-2">
-									<input
-										type="password"
-										bind:value={theseusApiKeyInput}
-										placeholder="th_api_live_..."
-										class="flex-1 h-9 px-3 rounded-input border border-border-input text-sm text-text-input tracking-[-0.3px] font-mono focus:outline-none focus:border-border-active transition-colors"
-									/>
-									<button
-										class="h-9 px-4 rounded-input bg-accent text-white text-sm font-medium hover:opacity-90 cursor-pointer disabled:opacity-50"
-										onclick={saveTheseusApiKey}
-										disabled={savingTheseusKey || !theseusApiKeyInput.trim()}
-									>
-										{savingTheseusKey ? 'Saving…' : 'Save'}
-									</button>
+								<div class="flex flex-col gap-2">
+									<div class="flex gap-2">
+										<input
+											type="password"
+											bind:value={theseusApiKeyInput}
+											placeholder="th_api_live_..."
+											class="flex-1 h-9 px-3 rounded-input border border-border-input text-sm text-text-input tracking-[-0.3px] font-mono focus:outline-none focus:border-border-active transition-colors"
+										/>
+										<button
+											class="h-9 px-4 rounded-input bg-accent text-white text-sm font-medium hover:opacity-90 cursor-pointer disabled:opacity-50"
+											onclick={saveTheseusApiKey}
+											disabled={savingTheseusKey || !theseusApiKeyInput.trim()}
+										>
+											{savingTheseusKey ? 'Verifying…' : 'Save'}
+										</button>
+									</div>
+									{#if theseusKeyError}
+										<p class="text-xs text-check-fail">{theseusKeyError}</p>
+									{/if}
 								</div>
 							{/if}
 						</LabeledField>
