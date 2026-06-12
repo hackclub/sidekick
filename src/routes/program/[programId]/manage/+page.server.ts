@@ -82,6 +82,10 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		where: { programId: params.programId }
 	});
 
+	const warehouseTemplates = await db.warehouseTemplate.findMany({
+		where: { programId: params.programId }
+	});
+
 	const hcbUser = await db.user.findUnique({
 		where: { id: user.id },
 		select: { hcbTokenExpiresAt: true }
@@ -181,6 +185,15 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			keywordLock: t.keywordLock,
 			expirationDays: t.expirationDays
 		})),
+		warehouseTemplates: warehouseTemplates.map((t: typeof warehouseTemplates[number]) => ({
+			id: t.id,
+			shopItemId: t.shopItemId,
+			tags: t.tags,
+			userFacingTitle: t.userFacingTitle,
+			metadata: t.metadata,
+			contents: t.contents as Array<{ sku: string; quantity: number }>
+		})),
+		hasTheseusApiKey: !!program.theseusApiKey,
 		userHasHcbAuth
 	};
 };

@@ -55,12 +55,15 @@ model Program {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  memberships        ProgramMembership[]
-  checkResults       CheckResult[]
-  auditLogs          AuditLog[]
-  pendingApprovals   PendingApproval[]
-  pendingInvites     PendingInvite[]
-  cardGrantTemplates CardGrantTemplate[]
+  theseusApiKey          String?
+
+  memberships            ProgramMembership[]
+  checkResults           CheckResult[]
+  auditLogs              AuditLog[]
+  pendingApprovals       PendingApproval[]
+  pendingInvites         PendingInvite[]
+  cardGrantTemplates     CardGrantTemplate[]
+  warehouseTemplates     WarehouseTemplate[]
 }
 
 model ProgramMembership {
@@ -175,6 +178,23 @@ model CardGrantTemplate {
   expirationDays           Int?
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
+
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, shopItemId])
+  @@index([programId])
+}
+
+model WarehouseTemplate {
+  id             String   @id @default(cuid())
+  programId      String
+  shopItemId     String
+  tags           String
+  userFacingTitle String?
+  metadata       Json?
+  contents       Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
 

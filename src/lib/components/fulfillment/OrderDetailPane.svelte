@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { X, NotebookPen, MessageSquareText, ChevronDown, ExternalLink, Pencil, Check, CreditCard, Loader2, TriangleAlert } from 'lucide-svelte';
+	import { X, NotebookPen, MessageSquareText, ChevronDown, ExternalLink, Pencil, Check, CreditCard, Loader2, TriangleAlert, Package } from 'lucide-svelte';
 	import StatusLight from '$lib/components/ui/StatusLight.svelte';
 	import UserCard from '$lib/components/ui/UserCard.svelte';
 	import ShippingAddress from './ShippingAddress.svelte';
@@ -17,12 +17,21 @@
 		oneTimeUse: boolean;
 	}
 
+	interface WarehouseTemplateInfo {
+		shopItemId: string;
+		tags: string;
+		userFacingTitle: string | null;
+		contents: Array<{ sku: string; quantity: number }>;
+	}
+
 	interface Props {
 		order: Order;
 		item: ShopItem;
 		programId: string;
 		cardGrantTemplate?: CardGrantTemplateInfo | null;
+		warehouseTemplate?: WarehouseTemplateInfo | null;
 		hcbOrganization?: { id: string; name: string } | null;
+		hasTheseusApiKey?: boolean;
 		onclose: () => void;
 		onstatuschange?: (newStatus: string) => void;
 		onreferencechange?: (newRef: string) => void;
@@ -32,7 +41,7 @@
 		onsendgrant?: (reference: string) => void;
 	}
 
-	let { order, item, programId, cardGrantTemplate = null, hcbOrganization = null, onclose, onstatuschange, onreferencechange, onnoteschange, onusernoteschange, oncontextchange, onsendgrant }: Props = $props();
+	let { order, item, programId, cardGrantTemplate = null, warehouseTemplate = null, hcbOrganization = null, hasTheseusApiKey = false, onclose, onstatuschange, onreferencechange, onnoteschange, onusernoteschange, oncontextchange, onsendgrant }: Props = $props();
 
 	let editingNotes = $state(false);
 	let notesValue = $state('');
@@ -334,6 +343,46 @@
 
 	function fmtGrantDate(iso: string): string {
 		return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+	}
+
+	let sendingWarehouseOrder = $state(false);
+	let warehouseOrderSent = $state(false);
+	let warehouseOrderError = $state('');
+
+	$effect(() => {
+		void order.id;
+		warehouseOrderSent = false;
+		warehouseOrderError = '';
+	});
+
+	async function sendWarehouseOrder() {
+		if (!warehouseTemplate || !hasTheseusApiKey) return;
+		sendingWarehouseOrder = true;
+		warehouseOrderError = '';
+
+		try {
+			const res = await fetch(`/api/programs/${programId}/warehouse/send-order`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ orderId: order.id })
+			});
+
+			if (!res.ok) {
+				const text = await res.text();
+				warehouseOrderError = `Failed: ${text}`;
+				return;
+			}
+
+			const data = await res.json();
+			warehouseOrderSent = true;
+			refOverride = data.reference;
+			onreferencechange?.(data.reference);
+			onsendgrant?.(data.reference);
+		} catch (e) {
+			warehouseOrderError = e instanceof Error ? e.message : 'Unknown error';
+		} finally {
+			sendingWarehouseOrder = false;
+		}
 	}
 
 	let userSlackId = $state<string | null>(null);
@@ -648,6 +697,63 @@
 			{/if}
 			{#if grantError}
 				<p class="text-xs text-check-fail">{grantError}</p>
+			{/if}
+		</div>
+	{/if}
+
+	{#if warehouseTemplate}
+		<div class="flex flex-col gap-2">
+			{#if warehouseOrderSent}
+				<div class="flex items-center gap-2 px-4 py-3 rounded-section bg-check-pass/10 border border-check-pass/30">
+					<Package size={14} class="text-check-pass shrink-0" />
+					<span class="text-sm font-medium text-check-pass">
+						Warehouse order sent successfully
+					</span>
+				</div>
+			{:else if !hasTheseusApiKey}
+				<button
+					disabled
+					class="flex items-center justify-center gap-2 h-10 px-4 rounded-input bg-surface text-text-tertiary text-sm font-medium cursor-not-allowed"
+					title="Theseus API key not configured — contact a program admin"
+				>
+					<Package size={14} />
+					Send Warehouse Order (API key not configured)
+				</button>
+			{:else}
+				<div class="flex flex-col gap-2 border border-border-card rounded-section p-3">
+					<div class="flex flex-col gap-1">
+						<span class="text-xs font-semibold text-text-secondary">Contents</span>
+						{#each warehouseTemplate.contents as c}
+							<div class="flex items-center justify-between text-xs text-text-primary">
+								<span class="font-mono">{c.sku}</span>
+								<span>&times; {c.quantity * order.quantity}</span>
+							</div>
+						{/each}
+					</div>
+					{#if warehouseTemplate.tags}
+						<div class="flex gap-1 flex-wrap">
+							{#each warehouseTemplate.tags.split(',').map(t => t.trim()).filter(Boolean) as tag}
+								<span class="px-2 py-0.5 rounded-tag bg-surface text-[11px] text-text-secondary">{tag}</span>
+							{/each}
+						</div>
+					{/if}
+					<button
+						class="flex items-center justify-center gap-2 h-10 px-4 rounded-input bg-accent text-white text-sm font-medium hover:opacity-90 cursor-pointer transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+						onclick={sendWarehouseOrder}
+						disabled={sendingWarehouseOrder}
+					>
+						{#if sendingWarehouseOrder}
+							<Loader2 size={14} class="animate-spin" />
+							Sending…
+						{:else}
+							<Package size={14} />
+							Send Warehouse Order
+						{/if}
+					</button>
+				</div>
+			{/if}
+			{#if warehouseOrderError}
+				<p class="text-xs text-check-fail">{warehouseOrderError}</p>
 			{/if}
 		</div>
 	{/if}

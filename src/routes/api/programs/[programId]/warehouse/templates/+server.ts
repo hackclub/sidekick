@@ -11,7 +11,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		isSuperAdmin: user.isSuperAdmin
 	});
 
-	const templates = await db.cardGrantTemplate.findMany({
+	const templates = await db.warehouseTemplate.findMany({
 		where: { programId: params.programId }
 	});
 
@@ -27,51 +27,54 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	});
 
 	const body = await request.json();
-	const { shopItemId, amountCents, purpose, oneTimeUse, preAuthorizationRequired, instructions, merchantLock, categoryLock, keywordLock, expirationDays } = body;
+	const { shopItemId, tags, userFacingTitle, metadata, contents } = body;
 
-	if (!shopItemId || !amountCents || amountCents <= 0) {
-		throw error(400, 'shopItemId and a positive amountCents are required');
+	if (!shopItemId) {
+		throw error(400, 'shopItemId is required');
 	}
 
-	if (purpose && purpose.length > 30) {
-		throw error(400, 'Purpose must be 30 characters or fewer');
+	if (!tags || typeof tags !== 'string' || !tags.trim()) {
+		throw error(400, 'tags is required (comma-separated)');
 	}
 
-	// Ensure no warehouse template exists for this item
-	const existingWarehouse = await db.warehouseTemplate.findUnique({
+	if (!Array.isArray(contents) || contents.length === 0) {
+		throw error(400, 'contents must be a non-empty array of { sku, quantity }');
+	}
+
+	for (const item of contents) {
+		if (!item.sku || typeof item.sku !== 'string') {
+			throw error(400, 'Each content item must have a sku string');
+		}
+		if (!item.quantity || typeof item.quantity !== 'number' || item.quantity < 1) {
+			throw error(400, 'Each content item must have a quantity >= 1');
+		}
+	}
+
+	// Ensure no card grant template exists for this item
+	const existingCardGrant = await db.cardGrantTemplate.findUnique({
 		where: { programId_shopItemId: { programId: params.programId, shopItemId } }
 	});
-	if (existingWarehouse) {
-		throw error(409, 'A warehouse template already exists for this item. Delete it first.');
+	if (existingCardGrant) {
+		throw error(409, 'A card grant template already exists for this item. Delete it first.');
 	}
 
-	const template = await db.cardGrantTemplate.upsert({
+	const template = await db.warehouseTemplate.upsert({
 		where: {
 			programId_shopItemId: { programId: params.programId, shopItemId }
 		},
 		create: {
 			programId: params.programId,
 			shopItemId,
-			amountCents,
-			purpose: purpose || null,
-			oneTimeUse: oneTimeUse ?? false,
-			preAuthorizationRequired: preAuthorizationRequired ?? false,
-			instructions: instructions || null,
-			merchantLock: merchantLock || null,
-			categoryLock: categoryLock || null,
-			keywordLock: keywordLock || null,
-			expirationDays: expirationDays || null
+			tags: tags.trim(),
+			userFacingTitle: userFacingTitle || null,
+			metadata: metadata || null,
+			contents
 		},
 		update: {
-			amountCents,
-			purpose: purpose || null,
-			oneTimeUse: oneTimeUse ?? false,
-			preAuthorizationRequired: preAuthorizationRequired ?? false,
-			instructions: instructions || null,
-			merchantLock: merchantLock || null,
-			categoryLock: categoryLock || null,
-			keywordLock: keywordLock || null,
-			expirationDays: expirationDays || null
+			tags: tags.trim(),
+			userFacingTitle: userFacingTitle || null,
+			metadata: metadata || null,
+			contents
 		}
 	});
 
@@ -79,10 +82,10 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		data: {
 			programId: params.programId,
 			userId: user.id,
-			action: 'card_template_upsert',
-			entityType: 'card_grant_template',
+			action: 'warehouse_template_upsert',
+			entityType: 'warehouse_template',
 			entityId: template.id,
-			metadata: { shopItemId, amountCents }
+			metadata: { shopItemId, tags }
 		}
 	});
 
@@ -102,13 +105,13 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 
 	if (!shopItemId) throw error(400, 'shopItemId is required');
 
-	const template = await db.cardGrantTemplate.findUnique({
+	const template = await db.warehouseTemplate.findUnique({
 		where: { programId_shopItemId: { programId: params.programId, shopItemId } }
 	});
 
 	if (!template) throw error(404, 'Template not found');
 
-	await db.cardGrantTemplate.delete({
+	await db.warehouseTemplate.delete({
 		where: { id: template.id }
 	});
 
@@ -116,8 +119,8 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 		data: {
 			programId: params.programId,
 			userId: user.id,
-			action: 'card_template_delete',
-			entityType: 'card_grant_template',
+			action: 'warehouse_template_delete',
+			entityType: 'warehouse_template',
 			entityId: template.id,
 			metadata: { shopItemId }
 		}

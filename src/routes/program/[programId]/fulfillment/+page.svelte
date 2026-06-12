@@ -1074,7 +1074,9 @@
 				item={effectiveItem}
 				programId={data.program.id}
 				cardGrantTemplate={data.cardGrantTemplates[effectiveOrder.itemId] ?? null}
+				warehouseTemplate={data.warehouseTemplates[effectiveOrder.itemId] ?? null}
 				hcbOrganization={data.hcbOrganization}
+				hasTheseusApiKey={data.hasTheseusApiKey}
 				onclose={() => (selectedOrder = null)}
 				onstatuschange={(newStatus) => handleStatusChange(selectedOrder!.id, newStatus)}
 				onreferencechange={(newRef) => handleReferenceChange(selectedOrder!.id, newRef)}

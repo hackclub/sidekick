@@ -60,6 +60,25 @@ export const load: PageServerLoad = async ({ params, parent, url }) => {
 		};
 	}
 
+	// Load warehouse templates for this program
+	const warehouseTemplateRows = await db.warehouseTemplate.findMany({
+		where: { programId: params.programId }
+	});
+	const warehouseTemplates: Record<string, {
+		shopItemId: string;
+		tags: string;
+		userFacingTitle: string | null;
+		contents: Array<{ sku: string; quantity: number }>;
+	}> = {};
+	for (const t of warehouseTemplateRows) {
+		warehouseTemplates[t.shopItemId] = {
+			shopItemId: t.shopItemId,
+			tags: t.tags,
+			userFacingTitle: t.userFacingTitle,
+			contents: t.contents as Array<{ sku: string; quantity: number }>
+		};
+	}
+
 	return {
 		orders: result.orders,
 		items: result.items,
@@ -74,6 +93,8 @@ export const load: PageServerLoad = async ({ params, parent, url }) => {
 		canUpdateFulfillments: membership.canUpdateFulfillments,
 		canViewAddressData: membership.canViewAddressData,
 		cardGrantTemplates,
+		warehouseTemplates,
+		hasTheseusApiKey: !!program.theseusApiKey,
 		hcbOrganization: program.hcbOrganizationId ? {
 			id: program.hcbOrganizationId,
 			name: program.hcbOrganizationName ?? ''
