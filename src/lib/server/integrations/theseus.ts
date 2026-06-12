@@ -1,4 +1,4 @@
-const THESEUS_BASE = 'https://theseus.hackclub.com';
+const THESEUS_BASE = 'https://mail.hackclub.com';
 
 export interface WarehouseAddress {
 	first_name: string;
