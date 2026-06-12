@@ -6,7 +6,7 @@
 	import OrderTableRow from '$lib/components/fulfillment/OrderTableRow.svelte';
 	import OrderDetailPane from '$lib/components/fulfillment/OrderDetailPane.svelte';
 	import StatusLight from '$lib/components/ui/StatusLight.svelte';
-	import { UserSearch, Funnel, Package, Search, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, RefreshCw, Check, Download, TriangleAlert, X, Send } from 'lucide-svelte';
+	import { UserSearch, Funnel, Package, Search, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, RefreshCw, Check, Download, TriangleAlert, X, Send, ListChecks, ClipboardList, Loader2, Pencil, Unlink } from 'lucide-svelte';
 	import type { Order, ShopItem } from '$lib/server/protocol/types.js';
 
 	interface Props {
@@ -501,6 +501,265 @@
 			queueMicrotask(() => itemSearchEl?.focus());
 		}
 	});
+
+	// -- Mass-fulfill --
+
+	interface TheseusRecord {
+		letterId: string;
+		fullText: string;
+		status: 'mailed' | 'printed';
+	}
+
+	interface MassFulfillRow {
+		letterId: string;
+		letterName: string;
+		orderId: string | null;
+		orderUserName: string | null;
+		orderAddressName: string | null;
+		confidence: 'high' | 'medium' | 'low' | null;
+	}
+
+	interface AvailableOrder {
+		id: string;
+		userName: string;
+		addressName: string;
+	}
+
+	let massFulfillDropdownOpen = $state(false);
+	let massFulfillStep = $state<'paste' | 'matching' | 'preview' | 'executing' | 'done' | null>(null);
+	let massFulfillInput = $state('');
+	let massFulfillRows = $state<MassFulfillRow[]>([]);
+	let massFulfillAvailableOrders = $state<AvailableOrder[]>([]);
+	let massFulfillExcluded = $state(new Set<string>());
+	let massFulfillResult = $state<{ fulfilled: number; errors: { orderId: string; error: string }[] } | null>(null);
+
+	// Order picker state
+	let editingRowLetterId = $state<string | null>(null);
+	let orderPickerSearch = $state('');
+	let orderPickerPos = $state({ top: 0, left: 0, width: 0 });
+	let orderPickerSearchEl = $state<HTMLInputElement | null>(null);
+
+	const assignedOrderIds = $derived(new Set(massFulfillRows.filter(r => r.orderId).map(r => r.orderId!)));
+
+	const massFulfillIncluded = $derived(
+		massFulfillRows.filter(r => r.orderId !== null && !massFulfillExcluded.has(r.letterId))
+	);
+
+	const massFulfillAssignedCount = $derived(massFulfillRows.filter(r => r.orderId !== null).length);
+	const massFulfillUnassignedCount = $derived(massFulfillRows.filter(r => r.orderId === null).length);
+
+	const filteredPickerOrders = $derived(
+		orderPickerSearch
+			? massFulfillAvailableOrders.filter(o => {
+				const q = orderPickerSearch.toLowerCase();
+				return o.addressName.toLowerCase().includes(q) ||
+					o.userName.toLowerCase().includes(q) ||
+					o.id.toLowerCase().includes(q);
+			})
+			: massFulfillAvailableOrders
+	);
+
+	const editingRow = $derived(
+		editingRowLetterId ? massFulfillRows.find(r => r.letterId === editingRowLetterId) ?? null : null
+	);
+
+	function parseTheseusTable(text: string): TheseusRecord[] {
+		const collapsed = text.replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+		const segments = collapsed.split(/(?=ltr![a-z0-9]+)/i);
+
+		const records: TheseusRecord[] = [];
+		for (const segment of segments) {
+			const trimmed = segment.trim();
+			if (!trimmed.startsWith('ltr!')) continue;
+
+			const idEnd = trimmed.indexOf(' ');
+			if (idEnd === -1) continue;
+
+			const letterId = trimmed.slice(0, idEnd);
+			let rest = trimmed.slice(idEnd).trim();
+
+			let status: 'mailed' | 'printed' | null = null;
+			if (/\bmailed\s*$/.test(rest)) {
+				status = 'mailed';
+				rest = rest.replace(/\s+mailed\s*$/, '').trim();
+			} else if (/\bprinted\s*$/.test(rest)) {
+				status = 'printed';
+				rest = rest.replace(/\s+printed\s*$/, '').trim();
+			}
+
+			if (!status) continue;
+			records.push({ letterId, fullText: rest, status });
+		}
+
+		return records;
+	}
+
+	function openMassFulfill() {
+		massFulfillDropdownOpen = false;
+		massFulfillStep = 'paste';
+		massFulfillInput = '';
+		massFulfillRows = [];
+		massFulfillAvailableOrders = [];
+		massFulfillExcluded = new Set();
+		massFulfillResult = null;
+		editingRowLetterId = null;
+	}
+
+	async function parseAndMatch() {
+		const allRecords = parseTheseusTable(massFulfillInput);
+		const mailedRecords = allRecords.filter(r => r.status === 'mailed');
+
+		if (mailedRecords.length === 0) {
+			alert('No mailed records found in the pasted text.');
+			return;
+		}
+
+		massFulfillStep = 'matching';
+
+		try {
+			const url = new URL($page.url);
+			url.pathname = url.pathname.replace(/\/?$/, '/mass-fulfill');
+			const res = await fetch(url.toString(), {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					action: 'match',
+					records: mailedRecords.map(r => ({ letterId: r.letterId, fullText: r.fullText }))
+				})
+			});
+
+			if (!res.ok) throw new Error('Match request failed');
+			const result = await res.json();
+
+			massFulfillRows = result.rows;
+			massFulfillAvailableOrders = result.availableOrders;
+			massFulfillExcluded = new Set();
+			massFulfillStep = 'preview';
+		} catch {
+			alert('Failed to match records. Please try again.');
+			massFulfillStep = 'paste';
+		}
+	}
+
+	function assignOrder(letterId: string, order: AvailableOrder | null) {
+		massFulfillRows = massFulfillRows.map(row => {
+			if (order && row.letterId !== letterId && row.orderId === order.id) {
+				return { ...row, orderId: null, orderUserName: null, orderAddressName: null, confidence: null };
+			}
+			if (row.letterId === letterId) {
+				return {
+					...row,
+					orderId: order?.id ?? null,
+					orderUserName: order?.userName ?? null,
+					orderAddressName: order?.addressName ?? null,
+					confidence: order ? 'high' as const : null
+				};
+			}
+			return row;
+		});
+		editingRowLetterId = null;
+	}
+
+	function openOrderPicker(letterId: string, event: MouseEvent) {
+		const el = event.currentTarget as HTMLElement;
+		const rect = el.getBoundingClientRect();
+		orderPickerPos = { top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 300) };
+		editingRowLetterId = letterId;
+		orderPickerSearch = '';
+		queueMicrotask(() => orderPickerSearchEl?.focus());
+	}
+
+	function closeOrderPicker() {
+		editingRowLetterId = null;
+	}
+
+	async function executeMassFulfill() {
+		const toFulfill = massFulfillIncluded.map(r => ({
+			orderId: r.orderId!,
+			letterId: r.letterId,
+			reference: `https://mail.hackclub.com/letters/${r.letterId}`
+		}));
+
+		massFulfillStep = 'executing';
+
+		try {
+			const url = new URL($page.url);
+			url.pathname = url.pathname.replace(/\/?$/, '/mass-fulfill');
+			const res = await fetch(url.toString(), {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'execute', matches: toFulfill })
+			});
+
+			if (!res.ok) throw new Error('Execute request failed');
+			massFulfillResult = await res.json();
+			massFulfillStep = 'done';
+
+			for (const r of massFulfillIncluded) {
+				orderOverrides[r.orderId!] = {
+					...orderOverrides[r.orderId!],
+					status: 'fulfilled',
+					reference: `https://mail.hackclub.com/letters/${r.letterId}`
+				};
+			}
+		} catch {
+			alert('Failed to execute mass fulfillment. Please try again.');
+			massFulfillStep = 'preview';
+		}
+	}
+
+	function closeMassFulfill() {
+		massFulfillStep = null;
+		editingRowLetterId = null;
+		if (massFulfillResult && massFulfillResult.fulfilled > 0) {
+			invalidateAll();
+		}
+	}
+
+	function toggleMassFulfillExclusion(letterId: string) {
+		const row = massFulfillRows.find(r => r.letterId === letterId);
+		if (!row?.orderId) return;
+		const next = new Set(massFulfillExcluded);
+		if (next.has(letterId)) next.delete(letterId);
+		else next.add(letterId);
+		massFulfillExcluded = next;
+	}
+
+	function toggleAllMassFulfill() {
+		const assignedRows = massFulfillRows.filter(r => r.orderId !== null);
+		const allExcluded = assignedRows.every(r => massFulfillExcluded.has(r.letterId));
+		if (allExcluded) {
+			massFulfillExcluded = new Set();
+		} else {
+			massFulfillExcluded = new Set(assignedRows.map(r => r.letterId));
+		}
+	}
+
+	function handleMassFulfillDropdownClick(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		if (!target.closest('[data-massfulfill-dropdown]')) massFulfillDropdownOpen = false;
+	}
+
+	function handleOrderPickerOutsideClick(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		if (!target.closest('[data-order-picker]') && !target.closest('[data-order-cell]')) {
+			closeOrderPicker();
+		}
+	}
+
+	$effect(() => {
+		if (massFulfillDropdownOpen) {
+			window.addEventListener('click', handleMassFulfillDropdownClick, true);
+			return () => window.removeEventListener('click', handleMassFulfillDropdownClick, true);
+		}
+	});
+
+	$effect(() => {
+		if (editingRowLetterId) {
+			window.addEventListener('click', handleOrderPickerOutsideClick, true);
+			return () => window.removeEventListener('click', handleOrderPickerOutsideClick, true);
+		}
+	});
 </script>
 
 <svelte:head>
@@ -661,6 +920,29 @@
 								>
 									<Send size={13} class="shrink-0" />
 									Send to Dinobox
+								</button>
+							</div>
+						{/if}
+					</div>
+				{/if}
+				{#if data.canUpdateFulfillments}
+					<div class="relative" data-massfulfill-dropdown>
+						<button
+							class="border border-border-input rounded-tag flex gap-1.5 items-center px-2.5 py-1 cursor-pointer hover:bg-surface text-sm font-medium text-text-dim whitespace-nowrap"
+							onclick={() => (massFulfillDropdownOpen = !massFulfillDropdownOpen)}
+						>
+							<ListChecks size={13} class="shrink-0" />
+							<span class="hidden sm:inline">Mass-fulfill</span>
+							<ChevronDown size={12} class="shrink-0" />
+						</button>
+						{#if massFulfillDropdownOpen}
+							<div class="absolute top-full right-0 mt-1 bg-page border border-border-card rounded-input shadow-lg z-30 min-w-[220px] py-1">
+								<button
+									class="w-full text-left px-3 py-1.5 text-sm hover:bg-surface cursor-pointer flex items-center gap-2"
+									onclick={openMassFulfill}
+								>
+									<ClipboardList size={13} class="shrink-0" />
+									From Theseus table paste
 								</button>
 							</div>
 						{/if}
@@ -907,6 +1189,257 @@
 					</button>
 				</div>
 			</div>
+		</div>
+	</div>
+{/if}
+
+{#if massFulfillStep}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center"
+		onmousedown={(e) => { if (e.target === e.currentTarget && massFulfillStep !== 'matching' && massFulfillStep !== 'executing') closeMassFulfill(); }}
+	>
+		<div class="bg-page border border-border-card rounded-card shadow-xl w-[700px] xl:w-[900px] max-h-[80vh] flex flex-col">
+			<div class="flex items-center justify-between px-5 py-4 border-b border-border-card">
+				<div class="flex items-center gap-2">
+					<ListChecks size={16} class="text-text-primary" />
+					<span class="font-bold text-[15px] text-text-primary tracking-[-0.4px]">Mass-fulfill</span>
+				</div>
+				{#if massFulfillStep !== 'matching' && massFulfillStep !== 'executing'}
+					<button
+						class="text-text-tertiary hover:text-text-primary cursor-pointer"
+						onclick={closeMassFulfill}
+					>
+						<X size={16} />
+					</button>
+				{/if}
+			</div>
+
+			{#if massFulfillStep === 'paste'}
+				<div class="px-5 py-4 flex flex-col gap-3 overflow-y-auto">
+					<p class="text-sm text-text-dim tracking-[-0.3px]">
+						Paste a Theseus letter table below. Only records marked as <span class="font-medium text-text-primary">mailed</span> will be fulfilled — <span class="text-text-tertiary">printed</span> records are skipped.
+					</p>
+					<textarea
+						bind:value={massFulfillInput}
+						placeholder={"ltr!abc123    John Smith 123 Main St Springfield IL  62701    mailed\nltr!def456    Jane Doe 456 Oak Ave Chicago IL  60601    printed"}
+						class="w-full h-48 px-3 py-2 text-sm font-mono bg-surface border border-border-input rounded-input resize-y outline-none focus:border-accent placeholder:text-text-placeholder"
+					></textarea>
+				</div>
+				<div class="flex items-center justify-end px-5 py-4 border-t border-border-card gap-2">
+					<button
+						class="px-3 py-1.5 text-sm font-medium text-text-dim hover:bg-surface rounded-tag cursor-pointer"
+						onclick={closeMassFulfill}
+					>
+						Cancel
+					</button>
+					<button
+						class="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-tag cursor-pointer hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+						disabled={!massFulfillInput.trim()}
+						onclick={parseAndMatch}
+					>
+						Parse & Match
+					</button>
+				</div>
+
+			{:else if massFulfillStep === 'matching'}
+				<div class="px-5 py-12 flex flex-col items-center gap-3">
+					<Loader2 size={24} class="animate-spin text-accent" />
+					<p class="text-sm text-text-dim tracking-[-0.3px]">Matching records to pending orders...</p>
+				</div>
+
+			{:else if massFulfillStep === 'preview'}
+				<div class="px-5 py-4 flex flex-col gap-3 overflow-y-auto">
+					<p class="text-sm text-text-dim tracking-[-0.3px]">
+						Matched {massFulfillAssignedCount} of {massFulfillRows.length} mailed records to pending orders.
+						{#if massFulfillUnassignedCount > 0}
+							<span class="text-yellow-600">{massFulfillUnassignedCount} unassigned</span> — click to assign manually.
+						{/if}
+					</p>
+
+					<div class="border border-border-card rounded-input overflow-hidden flex flex-col max-h-[400px]">
+						<div class="flex items-center border-b border-border-card bg-surface text-sm shrink-0">
+							<div class="w-8 px-2 py-1.5 flex items-center justify-center">
+								<input
+									type="checkbox"
+									checked={massFulfillAssignedCount > 0 && massFulfillExcluded.size === 0}
+									indeterminate={massFulfillExcluded.size > 0 && massFulfillExcluded.size < massFulfillAssignedCount}
+									disabled={massFulfillAssignedCount === 0}
+									onchange={toggleAllMassFulfill}
+									class="cursor-pointer accent-accent"
+								/>
+							</div>
+							<div class="flex-[1.5] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Letter ID</div>
+							<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Letter name</div>
+							<div class="flex-[3] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Assigned order</div>
+						</div>
+						<div class="overflow-y-auto">
+							{#each massFulfillRows as row (row.letterId)}
+								{@const isAssigned = row.orderId !== null}
+								{@const isExcluded = massFulfillExcluded.has(row.letterId)}
+								<div
+									class="flex items-center w-full text-sm border-b border-border-card last:border-b-0
+										{isAssigned ? 'hover:bg-surface/50' : 'bg-yellow-500/5'}"
+								>
+									<div class="w-8 px-2 py-1.5 flex items-center justify-center">
+										{#if isAssigned}
+											<input
+												type="checkbox"
+												checked={!isExcluded}
+												onchange={() => toggleMassFulfillExclusion(row.letterId)}
+												class="cursor-pointer accent-accent"
+											/>
+										{:else}
+											<div class="w-3.5 h-3.5 rounded-sm border border-border-input opacity-30"></div>
+										{/if}
+									</div>
+									<div class="flex-[1.5] tracking-[-0.3px] px-2 py-1.5 truncate font-mono text-xs {isAssigned ? 'text-text-dim' : 'text-text-tertiary'}">{row.letterId}</div>
+									<div class="flex-[2] tracking-[-0.3px] px-2 py-1.5 truncate {isAssigned ? 'text-text-primary' : 'text-text-tertiary'}">{row.letterName}</div>
+									<button
+										type="button"
+										class="flex-[3] px-2 py-1 flex items-center gap-1.5 min-w-0 cursor-pointer text-left"
+										data-order-cell
+										onclick={(e) => openOrderPicker(row.letterId, e)}
+									>
+										{#if isAssigned}
+											<span class="truncate text-text-primary tracking-[-0.3px]">{row.orderAddressName}</span>
+											{#if row.orderAddressName !== row.orderUserName}
+												<span class="shrink-0 text-text-tertiary text-xs truncate max-w-[100px]" title={row.orderUserName ?? ''}>{row.orderUserName}</span>
+											{/if}
+											<span class="shrink-0 text-text-tertiary font-mono text-xs">#{row.orderId}</span>
+											{#if row.confidence === 'low'}
+												<span class="shrink-0 px-1 py-0.5 text-[10px] font-medium rounded bg-yellow-500/15 text-yellow-600">fuzzy</span>
+											{:else if row.confidence === 'medium'}
+												<span class="shrink-0 px-1 py-0.5 text-[10px] font-medium rounded bg-yellow-500/10 text-yellow-600/80">~</span>
+											{/if}
+											<Pencil size={11} class="shrink-0 text-text-placeholder hover:text-text-dim" />
+										{:else}
+											<span class="text-text-placeholder italic text-xs">Click to assign...</span>
+										{/if}
+									</button>
+								</div>
+							{/each}
+						</div>
+					</div>
+				</div>
+				<div class="flex items-center justify-between px-5 py-4 border-t border-border-card">
+					<span class="text-sm text-text-dim tracking-[-0.3px]">
+						{massFulfillIncluded.length} of {massFulfillAssignedCount} assigned orders selected
+					</span>
+					<div class="flex items-center gap-2">
+						<button
+							class="px-3 py-1.5 text-sm font-medium text-text-dim hover:bg-surface rounded-tag cursor-pointer"
+							onclick={closeMassFulfill}
+						>
+							Cancel
+						</button>
+						<button
+							class="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-tag cursor-pointer hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+							disabled={massFulfillIncluded.length === 0}
+							onclick={executeMassFulfill}
+						>
+							Fulfill ({massFulfillIncluded.length})
+						</button>
+					</div>
+				</div>
+
+			{:else if massFulfillStep === 'executing'}
+				<div class="px-5 py-12 flex flex-col items-center gap-3">
+					<Loader2 size={24} class="animate-spin text-accent" />
+					<p class="text-sm text-text-dim tracking-[-0.3px]">Fulfilling {massFulfillIncluded.length} orders...</p>
+				</div>
+
+			{:else if massFulfillStep === 'done' && massFulfillResult}
+				<div class="px-5 py-4 flex flex-col gap-3">
+					<div class="flex items-start gap-2 px-3 py-2.5 bg-green-500/10 rounded-input">
+						<Check size={14} class="text-green-600 shrink-0 mt-0.5" />
+						<span class="text-sm text-text-primary tracking-[-0.3px]">
+							{massFulfillResult.fulfilled} {massFulfillResult.fulfilled === 1 ? 'order' : 'orders'} marked as fulfilled
+						</span>
+					</div>
+					{#if massFulfillResult.errors.length > 0}
+						<div class="flex items-start gap-2 px-3 py-2.5 bg-red-500/10 rounded-input">
+							<TriangleAlert size={14} class="text-red-500 shrink-0 mt-0.5" />
+							<div class="flex flex-col gap-1">
+								<span class="text-sm text-text-primary tracking-[-0.3px]">
+									{massFulfillResult.errors.length} {massFulfillResult.errors.length === 1 ? 'order' : 'orders'} failed
+								</span>
+								<div class="flex flex-col gap-0.5">
+									{#each massFulfillResult.errors as err (err.orderId)}
+										<span class="text-xs text-text-dim tracking-[-0.2px]">
+											<span class="text-text-tertiary font-mono">#{err.orderId}</span> {err.error}
+										</span>
+									{/each}
+								</div>
+							</div>
+						</div>
+					{/if}
+				</div>
+				<div class="flex items-center justify-end px-5 py-4 border-t border-border-card">
+					<button
+						class="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-tag cursor-pointer hover:opacity-90"
+						onclick={closeMassFulfill}
+					>
+						Done
+					</button>
+				</div>
+			{/if}
+		</div>
+	</div>
+{/if}
+
+{#if editingRowLetterId && massFulfillStep === 'preview'}
+	<!-- Order picker dropdown (rendered outside modal to avoid clipping) -->
+	<div
+		data-order-picker
+		class="fixed z-[60] bg-page border border-border-card rounded-input shadow-xl flex flex-col max-h-[280px]"
+		style="top: {orderPickerPos.top}px; left: {orderPickerPos.left}px; width: {orderPickerPos.width}px"
+	>
+		<div class="px-2 py-2 border-b border-border-card">
+			<div class="flex items-center gap-2 px-2 py-1 border border-border-input rounded-tag">
+				<Search size={12} class="text-text-placeholder shrink-0" />
+				<input
+					bind:this={orderPickerSearchEl}
+					bind:value={orderPickerSearch}
+					placeholder="Search orders..."
+					class="flex-1 bg-transparent text-sm outline-none placeholder:text-text-placeholder"
+					onkeydown={(e) => { if (e.key === 'Escape') closeOrderPicker(); }}
+				/>
+			</div>
+		</div>
+		<div class="overflow-y-auto py-1">
+			{#if editingRow?.orderId}
+				<button
+					class="w-full text-left px-3 py-1.5 text-sm hover:bg-surface cursor-pointer flex items-center gap-2 text-red-500/80"
+					onclick={() => assignOrder(editingRowLetterId!, null)}
+				>
+					<Unlink size={12} class="shrink-0" />
+					Unassign
+				</button>
+				<div class="border-t border-border-card my-1"></div>
+			{/if}
+			{#each filteredPickerOrders as order (order.id)}
+				{@const isCurrentlyAssigned = assignedOrderIds.has(order.id)}
+				{@const isThisRow = editingRow?.orderId === order.id}
+				<button
+					class="w-full text-left px-3 py-1.5 text-sm hover:bg-surface cursor-pointer flex items-center gap-2 {isThisRow ? 'bg-accent/10' : ''}"
+					onclick={() => assignOrder(editingRowLetterId!, order)}
+				>
+					<span class="flex-1 min-w-0 truncate text-text-primary">{order.addressName}</span>
+					{#if order.addressName !== order.userName}
+						<span class="shrink-0 text-text-tertiary text-xs truncate max-w-[80px]" title={order.userName}>{order.userName}</span>
+					{/if}
+					<span class="shrink-0 text-text-tertiary font-mono text-xs">#{order.id}</span>
+					{#if isThisRow}
+						<Check size={12} class="shrink-0 text-accent" />
+					{:else if isCurrentlyAssigned}
+						<span class="shrink-0 px-1 py-0.5 text-[10px] font-medium rounded bg-surface text-text-tertiary">assigned</span>
+					{/if}
+				</button>
+			{/each}
+			{#if filteredPickerOrders.length === 0}
+				<div class="px-3 py-3 text-sm text-text-tertiary text-center">No matching orders</div>
+			{/if}
 		</div>
 	</div>
 {/if}
