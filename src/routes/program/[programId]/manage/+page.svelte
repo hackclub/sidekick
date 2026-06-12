@@ -901,7 +901,7 @@
 			<ManageSection title="Shop Items" description="Configure fulfillment templates for shop items — either HCB card grants or Theseus warehouse orders.">
 				{#snippet icon()}<Store size={16} class="text-text-secondary" />{/snippet}
 				<div class="flex flex-col gap-4">
-					<div class="border border-dashed border-border-card rounded-section p-6 flex flex-col gap-6">
+					<div class="border border-dashed border-border-card rounded-section p-6">
 						<LabeledField label="HCB Organization" description="Link an HCB organization to enable card grant distribution.">
 							{#snippet icon()}<CreditCard size={16} />{/snippet}
 							{#if data.program.hcbOrganizationId}
@@ -960,7 +960,9 @@
 								</button>
 							{/if}
 						</LabeledField>
+					</div>
 
+					<div class="border border-dashed border-border-card rounded-section p-6">
 						<LabeledField label="Theseus API Key" description="Set a Theseus API key to enable warehouse order fulfillment.">
 							{#snippet icon()}<Package size={16} />{/snippet}
 							{#if data.hasTheseusApiKey}
