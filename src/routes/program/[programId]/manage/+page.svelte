@@ -337,7 +337,6 @@
 
 	async function saveWarehouseTemplate(itemId: string) {
 		const form = getWarehouseTemplateForm(itemId);
-		if (!form.tags.trim()) return;
 		const contents = form.contents
 			.filter(c => c.sku.trim())
 			.map(c => ({ sku: c.sku.trim(), quantity: parseInt(c.quantity) || 1 }));
@@ -437,10 +436,18 @@
 		return templateForms[itemId];
 	}
 
+	function initForms(id: string) {
+		getTemplateForm(id);
+		getWarehouseTemplateForm(id);
+	}
+
 	function toggleItem(id: string) {
 		expandedItems[id] = !expandedItems[id];
 		if (expandedItems[id]) {
-			getTemplateForm(id);
+			initForms(id);
+			if (!(id in selectedTemplateType)) {
+				selectedTemplateType = { ...selectedTemplateType, [id]: getTemplateTypeForItem(id) ?? 'card_grant' };
+			}
 		}
 	}
 
@@ -1043,6 +1050,7 @@
 								{@const cardTemplate = getTemplateForItem(item.id)}
 								{@const whTemplate = getWarehouseTemplateForItem(item.id)}
 								{@const existingType = getTemplateTypeForItem(item.id)}
+								{@const selectedType = selectedTemplateType[item.id] ?? existingType ?? 'card_grant'}
 								<div class="border border-border-card rounded-section bg-page">
 									<button
 										class="w-full flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-surface/50 transition-colors"
@@ -1090,24 +1098,24 @@
 													<button
 														type="button"
 														class="flex-1 py-1.5 rounded-tag text-xs font-medium text-center cursor-pointer transition-colors
-															{getSelectedTemplateType(item.id) === 'card_grant' ? 'bg-accent text-white' : 'bg-surface text-text-secondary hover:bg-surface/80'}"
-														onclick={() => { selectedTemplateType[item.id] = 'card_grant'; }}
+															{selectedType === 'card_grant' ? 'bg-accent text-white' : 'bg-surface text-text-secondary hover:bg-surface/80'}"
+														onclick={() => { selectedTemplateType = { ...selectedTemplateType, [item.id]: 'card_grant' }; }}
 													>
 														<CreditCard size={12} class="inline mr-1" />Card Grant
 													</button>
 													<button
 														type="button"
 														class="flex-1 py-1.5 rounded-tag text-xs font-medium text-center cursor-pointer transition-colors
-															{getSelectedTemplateType(item.id) === 'warehouse' ? 'bg-accent text-white' : 'bg-surface text-text-secondary hover:bg-surface/80'}"
-														onclick={() => { selectedTemplateType[item.id] = 'warehouse'; }}
+															{selectedType === 'warehouse' ? 'bg-accent text-white' : 'bg-surface text-text-secondary hover:bg-surface/80'}"
+														onclick={() => { selectedTemplateType = { ...selectedTemplateType, [item.id]: 'warehouse' }; }}
 													>
 														<Package size={12} class="inline mr-1" />Warehouse
 													</button>
 												</div>
 											{/if}
 
-											{#if getSelectedTemplateType(item.id) === 'card_grant'}
-												{@const form = getTemplateForm(item.id)}
+											{#if selectedType === 'card_grant'}
+												{@const form = templateForms[item.id]}
 												<div class="grid grid-cols-2 gap-3">
 													<div class="flex flex-col gap-1">
 														<label for="amount-{item.id}" class="text-xs font-semibold text-text-secondary">Amount ($)</label>
@@ -1244,9 +1252,9 @@
 													</button>
 												</div>
 											{:else}
-												{@const wForm = getWarehouseTemplateForm(item.id)}
+												{@const wForm = warehouseTemplateForms[item.id]}
 												<div class="flex flex-col gap-1">
-													<label for="wh-tags-{item.id}" class="text-xs font-semibold text-text-secondary">Tags <span class="font-normal text-text-tertiary">(required, comma-separated)</span></label>
+													<label for="wh-tags-{item.id}" class="text-xs font-semibold text-text-secondary">Tags <span class="font-normal text-text-tertiary">(comma-separated)</span></label>
 													<input
 														id="wh-tags-{item.id}"
 														type="text"
@@ -1322,7 +1330,7 @@
 													<button
 														class="px-3 py-1.5 rounded-tag bg-accent text-white text-xs font-medium hover:opacity-90 cursor-pointer disabled:opacity-50"
 														onclick={() => saveWarehouseTemplate(item.id)}
-														disabled={savingWarehouseTemplate === item.id || !wForm.tags.trim() || !wForm.contents.some(c => c.sku.trim())}
+														disabled={savingWarehouseTemplate === item.id || !wForm.contents.some(c => c.sku.trim())}
 													>
 														{#if savingWarehouseTemplate === item.id}
 															<Loader2 size={12} class="animate-spin inline mr-1" />

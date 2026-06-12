@@ -33,10 +33,6 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		throw error(400, 'shopItemId is required');
 	}
 
-	if (!tags || typeof tags !== 'string' || !tags.trim()) {
-		throw error(400, 'tags is required (comma-separated)');
-	}
-
 	if (!Array.isArray(contents) || contents.length === 0) {
 		throw error(400, 'contents must be a non-empty array of { sku, quantity }');
 	}
@@ -65,13 +61,13 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		create: {
 			programId: params.programId,
 			shopItemId,
-			tags: tags.trim(),
+			tags: (tags ?? '').trim(),
 			userFacingTitle: userFacingTitle || null,
 			metadata: metadata || null,
 			contents
 		},
 		update: {
-			tags: tags.trim(),
+			tags: (tags ?? '').trim(),
 			userFacingTitle: userFacingTitle || null,
 			metadata: metadata || null,
 			contents
