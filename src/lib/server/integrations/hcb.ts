@@ -168,6 +168,44 @@ export async function topUpCardGrant(
 	return res.json();
 }
 
+export interface HcbTransferResult {
+	id: string;
+	object: string;
+	status: string;
+	amount_cents: number;
+	from: { id: string; name: string; slug: string };
+	to: { id: string; name: string; slug: string };
+	sender: { id: string; name: string };
+}
+
+export async function createHcbTransfer(
+	accessToken: string,
+	sourceOrgSlug: string,
+	toOrganizationId: string,
+	amountCents: number,
+	name: string
+): Promise<HcbTransferResult> {
+	const res = await fetch(`${HCB_BASE}/api/v4/organizations/${encodeURIComponent(sourceOrgSlug)}/transfers`, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${accessToken}`,
+			'Content-Type': 'application/json'
+		},
+		body: JSON.stringify({
+			to_organization_id: toOrganizationId,
+			amount_cents: amountCents,
+			name
+		})
+	});
+
+	if (!res.ok) {
+		const text = await res.text();
+		throw new Error(`HCB transfer failed: ${res.status} ${text}`);
+	}
+
+	return res.json();
+}
+
 export async function getValidHcbToken(userId: string): Promise<string | null> {
 	const user = await db.user.findUnique({
 		where: { id: userId },

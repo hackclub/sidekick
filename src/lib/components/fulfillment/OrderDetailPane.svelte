@@ -356,7 +356,7 @@
 	});
 
 	async function sendWarehouseOrder() {
-		if (!warehouseTemplate || !hasTheseusApiKey) return;
+		if (!warehouseTemplate || !hasTheseusApiKey || !hcbOrganization) return;
 		sendingWarehouseOrder = true;
 		warehouseOrderError = '';
 
@@ -366,6 +366,14 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ orderId: order.id })
 			});
+
+			if (res.status === 401) {
+				const data = await res.json();
+				if (data.needsAuth) {
+					window.location.href = `/auth/hcb?returnUrl=${encodeURIComponent(window.location.pathname)}`;
+					return;
+				}
+			}
 
 			if (!res.ok) {
 				const text = await res.text();
@@ -710,14 +718,14 @@
 						Warehouse order sent successfully
 					</span>
 				</div>
-			{:else if !hasTheseusApiKey}
+			{:else if !hasTheseusApiKey || !hcbOrganization}
 				<button
 					disabled
 					class="flex items-center justify-center gap-2 h-10 px-4 rounded-input bg-surface text-text-tertiary text-sm font-medium cursor-not-allowed"
-					title="Theseus API key not configured — contact a program admin"
+					title={!hasTheseusApiKey ? 'Theseus API key not configured' : 'HCB organization not configured'}
 				>
 					<Package size={14} />
-					Send Warehouse Order (API key not configured)
+					Send Warehouse Order ({!hasTheseusApiKey ? 'API key not configured' : 'HCB not configured'})
 				</button>
 			{:else}
 				<div class="flex flex-col gap-2 border border-border-card rounded-section p-3">

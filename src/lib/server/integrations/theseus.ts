@@ -35,6 +35,9 @@ export interface WarehouseOrderResult {
 	user_facing_title: string | null;
 	tracking_number: string | null;
 	tracking_url: string | null;
+	contents_cost: string | null;
+	labor_cost: string | null;
+	postage_cost: string | null;
 	created_at: string;
 }
 

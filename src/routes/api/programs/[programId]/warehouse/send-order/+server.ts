@@ -4,8 +4,15 @@ import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
 import { decrypt } from '$lib/server/crypto.js';
 import { createWarehouseOrder } from '$lib/server/integrations/theseus.js';
+import { getValidHcbToken, createHcbTransfer } from '$lib/server/integrations/hcb.js';
 import type { CreateWarehouseOrderParams } from '$lib/server/integrations/theseus.js';
 import type { RequestHandler } from './$types.js';
+
+function parseDecimalCents(value: string | null): number {
+	if (!value) return 0;
+	const parsed = parseFloat(value);
+	return isNaN(parsed) ? 0 : Math.round(parsed * 100);
+}
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const user = locals.user;
@@ -34,7 +41,16 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		throw error(400, 'No Theseus API key configured for this program');
 	}
 
+	if (!program.hcbOrganizationSlug) {
+		throw error(400, 'No HCB organization linked to this program');
+	}
+
 	const apiKey = decrypt(program.theseusApiKey);
+
+	const hcbToken = await getValidHcbToken(user.id);
+	if (!hcbToken) {
+		return json({ needsAuth: true }, { status: 401 });
+	}
 
 	const client = new ProtocolClient(program.masterEndpoint, program.secretKey);
 	const orderDetail = await client.fetchOrderDetail({ orderId });
@@ -99,7 +115,28 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 
 	const result = await createWarehouseOrder(apiKey, orderParams);
 
-	const reference = `warehouse:${result.id}`;
+	const totalCostCents = parseDecimalCents(result.contents_cost)
+		+ parseDecimalCents(result.labor_cost)
+		+ parseDecimalCents(result.postage_cost);
+
+	const fmtCost = (v: string | null) => '$' + (parseFloat(v ?? '0') || 0).toFixed(2);
+	const skuList = contents.length === 1 && contents[0].quantity === 1
+		? contents[0].sku
+		: contents.map(c => `${c.quantity}x ${c.sku}`).join(', ');
+	const transferName = `Warehouse order for ${skuList} (contents: ${fmtCost(result.contents_cost)}, labor: ${fmtCost(result.labor_cost)}, postage: ${fmtCost(result.postage_cost)}) via sidekick.ascpixi.dev`;
+
+	let transfer = null;
+	if (totalCostCents > 0) {
+		transfer = await createHcbTransfer(
+			hcbToken,
+			program.hcbOrganizationSlug,
+			'hq',
+			totalCostCents,
+			transferName
+		);
+	}
+
+	const reference = `https://mail.hackclub.com/packages/${result.id}`;
 	await client.updateOrderFields({ orderId, reference });
 
 	await db.auditLog.create({
@@ -113,10 +150,12 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 				warehouseOrderId: result.id,
 				shopItemId: orderDetail.item.id,
 				quantity: orderDetail.order.quantity,
-				email: orderDetail.order.userEmail
+				email: orderDetail.order.userEmail,
+				totalCostCents,
+				hcbTransferId: transfer?.id ?? null
 			}
 		}
 	});
 
-	return json({ success: true, warehouseOrder: result, reference });
+	return json({ success: true, warehouseOrder: result, reference, totalCostCents, transfer });
 };
