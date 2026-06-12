@@ -29,7 +29,10 @@
 		CreditCard,
 		Link,
 		Unlink,
-		Banknote
+		Banknote,
+		Package,
+		Plus,
+		X
 	} from 'lucide-svelte';
 	import ManageLayout from '$lib/components/manage/ManageLayout.svelte';
 	import ManageSection from '$lib/components/manage/ManageSection.svelte';
@@ -274,8 +277,146 @@
 	let savingTemplate = $state<string | null>(null);
 	let deletingTemplate = $state<string | null>(null);
 
+	interface WarehouseTemplateForm {
+		tags: string;
+		userFacingTitle: string;
+		contents: Array<{ sku: string; quantity: string }>;
+	}
+
+	let warehouseTemplateForms: Record<string, WarehouseTemplateForm> = $state({});
+	let savingWarehouseTemplate = $state<string | null>(null);
+	let deletingWarehouseTemplate = $state<string | null>(null);
+	let theseusApiKeyInput = $state('');
+	let savingTheseusKey = $state(false);
+	let removingTheseusKey = $state(false);
+
+	type TemplateType = 'card_grant' | 'warehouse';
+	let selectedTemplateType: Record<string, TemplateType> = $state({});
+
+	function getTemplateTypeForItem(itemId: string): TemplateType | null {
+		if (data.cardGrantTemplates.find((t: { shopItemId: string }) => t.shopItemId === itemId)) return 'card_grant';
+		if (data.warehouseTemplates.find((t: { shopItemId: string }) => t.shopItemId === itemId)) return 'warehouse';
+		return null;
+	}
+
+	function getSelectedTemplateType(itemId: string): TemplateType {
+		if (selectedTemplateType[itemId]) return selectedTemplateType[itemId];
+		const existing = getTemplateTypeForItem(itemId);
+		return existing ?? 'card_grant';
+	}
+
 	function getTemplateForItem(itemId: string) {
 		return data.cardGrantTemplates.find((t) => t.shopItemId === itemId);
+	}
+
+	function getWarehouseTemplateForItem(itemId: string) {
+		return data.warehouseTemplates.find((t: { shopItemId: string }) => t.shopItemId === itemId);
+	}
+
+	function getWarehouseTemplateForm(itemId: string): WarehouseTemplateForm {
+		if (!warehouseTemplateForms[itemId]) {
+			const existing = getWarehouseTemplateForItem(itemId);
+			warehouseTemplateForms[itemId] = {
+				tags: existing?.tags ?? '',
+				userFacingTitle: existing?.userFacingTitle ?? '',
+				contents: existing?.contents?.map((c: { sku: string; quantity: number }) => ({ sku: c.sku, quantity: c.quantity.toString() })) ?? [{ sku: '', quantity: '1' }]
+			};
+		}
+		return warehouseTemplateForms[itemId];
+	}
+
+	function addContentRow(itemId: string) {
+		const form = getWarehouseTemplateForm(itemId);
+		form.contents = [...form.contents, { sku: '', quantity: '1' }];
+	}
+
+	function removeContentRow(itemId: string, index: number) {
+		const form = getWarehouseTemplateForm(itemId);
+		form.contents = form.contents.filter((_, i) => i !== index);
+	}
+
+	async function saveWarehouseTemplate(itemId: string) {
+		const form = getWarehouseTemplateForm(itemId);
+		if (!form.tags.trim()) return;
+		const contents = form.contents
+			.filter(c => c.sku.trim())
+			.map(c => ({ sku: c.sku.trim(), quantity: parseInt(c.quantity) || 1 }));
+		if (contents.length === 0) return;
+
+		savingWarehouseTemplate = itemId;
+		try {
+			await fetch(`/api/programs/${data.program.id}/warehouse/templates`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					shopItemId: itemId,
+					tags: form.tags,
+					userFacingTitle: form.userFacingTitle || undefined,
+					contents
+				})
+			});
+			savingWarehouseTemplate = null;
+			await invalidateAll();
+			delete warehouseTemplateForms[itemId];
+		} finally {
+			savingWarehouseTemplate = null;
+		}
+	}
+
+	async function deleteWarehouseTemplate(itemId: string) {
+		deletingWarehouseTemplate = itemId;
+		try {
+			await fetch(`/api/programs/${data.program.id}/warehouse/templates`, {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ shopItemId: itemId })
+			});
+			deletingWarehouseTemplate = null;
+			await invalidateAll();
+			delete warehouseTemplateForms[itemId];
+		} finally {
+			deletingWarehouseTemplate = null;
+		}
+	}
+
+	let theseusKeyError = $state('');
+
+	async function saveTheseusApiKey() {
+		if (!theseusApiKeyInput.trim()) return;
+		savingTheseusKey = true;
+		theseusKeyError = '';
+		try {
+			const res = await fetch(`/api/programs/${data.program.id}/warehouse`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ apiKey: theseusApiKeyInput.trim() })
+			});
+			if (!res.ok) {
+				const text = await res.text();
+				theseusKeyError = text;
+				return;
+			}
+			theseusApiKeyInput = '';
+			await invalidateAll();
+		} finally {
+			savingTheseusKey = false;
+		}
+	}
+
+	async function removeTheseusApiKey() {
+		removingTheseusKey = true;
+		theseusKeyError = '';
+		try {
+			const res = await fetch(`/api/programs/${data.program.id}/warehouse`, { method: 'DELETE' });
+			if (!res.ok) {
+				const text = await res.text();
+				theseusKeyError = text;
+				return;
+			}
+			await invalidateAll();
+		} finally {
+			removingTheseusKey = false;
+		}
 	}
 
 	function getTemplateForm(itemId: string): TemplateForm {
@@ -771,7 +912,7 @@
 			</ManageSection>
 
 			{#if data.currentMembership.isRoot}
-			<ManageSection title="Shop Items" description="Configure HCB card grant templates for shop items.">
+			<ManageSection title="Shop Items" description="Configure fulfillment templates for shop items — either HCB card grants or Theseus warehouse orders.">
 				{#snippet icon()}<Store size={16} class="text-text-secondary" />{/snippet}
 				<div class="flex flex-col gap-4">
 					<div class="border border-dashed border-border-card rounded-section p-6">
@@ -835,7 +976,62 @@
 						</LabeledField>
 					</div>
 
-					{#if data.program.hcbOrganizationId && data.shopItems.length > 0}
+					<div class="border border-dashed border-border-card rounded-section p-6">
+						<LabeledField label="Theseus API Key" description="Set a Theseus API key to enable warehouse order fulfillment.">
+							{#snippet icon()}<Package size={16} />{/snippet}
+							{#if data.hasTheseusApiKey}
+								<div class="flex flex-col gap-2">
+									<div class="flex items-center justify-between gap-3">
+										<div class="flex items-center gap-2">
+											<Link size={14} class="text-check-pass" />
+											<span class="text-sm font-semibold text-text-primary">{data.theseusUser?.name || 'Unknown'}</span>
+											{#if data.theseusUser?.email}
+												<span class="text-xs text-text-tertiary font-mono">{data.theseusUser.email}</span>
+											{/if}
+										</div>
+										<button
+											class="flex items-center gap-1.5 px-3 py-1.5 rounded-tag border border-border-input text-xs font-medium hover:bg-surface cursor-pointer disabled:opacity-50"
+											onclick={removeTheseusApiKey}
+											disabled={removingTheseusKey}
+										>
+											{#if removingTheseusKey}
+												<Loader2 size={12} class="animate-spin" />
+											{:else}
+												<Unlink size={12} />
+											{/if}
+											Remove
+										</button>
+									</div>
+									{#if theseusKeyError}
+										<p class="text-xs text-check-fail">{theseusKeyError}</p>
+									{/if}
+								</div>
+							{:else}
+								<div class="flex flex-col gap-2">
+									<div class="flex gap-2">
+										<input
+											type="password"
+											bind:value={theseusApiKeyInput}
+											placeholder="th_api_live_..."
+											class="flex-1 h-9 px-3 rounded-input border border-border-input text-sm text-text-input tracking-[-0.3px] font-mono focus:outline-none focus:border-border-active transition-colors"
+										/>
+										<button
+											class="h-9 px-4 rounded-input bg-accent text-white text-sm font-medium hover:opacity-90 cursor-pointer disabled:opacity-50"
+											onclick={saveTheseusApiKey}
+											disabled={savingTheseusKey || !theseusApiKeyInput.trim()}
+										>
+											{savingTheseusKey ? 'Verifying…' : 'Save'}
+										</button>
+									</div>
+									{#if theseusKeyError}
+										<p class="text-xs text-check-fail">{theseusKeyError}</p>
+									{/if}
+								</div>
+							{/if}
+						</LabeledField>
+					</div>
+
+					{#if (data.program.hcbOrganizationId || data.hasTheseusApiKey) && data.shopItems.length > 0}
 						<input
 							type="search"
 							placeholder="Filter shop items…"
@@ -844,7 +1040,9 @@
 						/>
 						<div class="flex flex-col gap-2 max-h-[640px] overflow-y-auto overflow-x-visible">
 							{#each filteredShopItems as item (item.id)}
-								{@const template = getTemplateForItem(item.id)}
+								{@const cardTemplate = getTemplateForItem(item.id)}
+								{@const whTemplate = getWarehouseTemplateForItem(item.id)}
+								{@const existingType = getTemplateTypeForItem(item.id)}
 								<div class="border border-border-card rounded-section bg-page">
 									<button
 										class="w-full flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-surface/50 transition-colors"
@@ -864,10 +1062,15 @@
 											{/if}
 										</div>
 										<div class="flex items-center gap-2 shrink-0">
-											{#if template}
+											{#if cardTemplate}
 												<span class="flex items-center gap-1 text-[11px] font-medium text-check-pass">
 													<CircleCheck size={13} />
-													${(template.amountCents / 100).toFixed(2)} grant
+													${(cardTemplate.amountCents / 100).toFixed(2)} grant
+												</span>
+											{:else if whTemplate}
+												<span class="flex items-center gap-1 text-[11px] font-medium text-check-pass">
+													<CircleCheck size={13} />
+													Warehouse
 												</span>
 											{:else}
 												<span class="text-[11px] text-text-tertiary">No template</span>
@@ -881,149 +1084,259 @@
 									</button>
 
 									{#if expandedItems[item.id]}
-										{@const form = getTemplateForm(item.id)}
 										<div class="px-4 pb-4 flex flex-col gap-3 border-t border-border-card pt-4">
-											<div class="grid grid-cols-2 gap-3">
-												<div class="flex flex-col gap-1">
-													<label for="amount-{item.id}" class="text-xs font-semibold text-text-secondary">Amount ($)</label>
-													<div class="relative">
-														<span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary text-sm">$</span>
+											{#if !existingType}
+												<div class="flex gap-2">
+													<button
+														type="button"
+														class="flex-1 py-1.5 rounded-tag text-xs font-medium text-center cursor-pointer transition-colors
+															{getSelectedTemplateType(item.id) === 'card_grant' ? 'bg-accent text-white' : 'bg-surface text-text-secondary hover:bg-surface/80'}"
+														onclick={() => { selectedTemplateType[item.id] = 'card_grant'; }}
+													>
+														<CreditCard size={12} class="inline mr-1" />Card Grant
+													</button>
+													<button
+														type="button"
+														class="flex-1 py-1.5 rounded-tag text-xs font-medium text-center cursor-pointer transition-colors
+															{getSelectedTemplateType(item.id) === 'warehouse' ? 'bg-accent text-white' : 'bg-surface text-text-secondary hover:bg-surface/80'}"
+														onclick={() => { selectedTemplateType[item.id] = 'warehouse'; }}
+													>
+														<Package size={12} class="inline mr-1" />Warehouse
+													</button>
+												</div>
+											{/if}
+
+											{#if getSelectedTemplateType(item.id) === 'card_grant'}
+												{@const form = getTemplateForm(item.id)}
+												<div class="grid grid-cols-2 gap-3">
+													<div class="flex flex-col gap-1">
+														<label for="amount-{item.id}" class="text-xs font-semibold text-text-secondary">Amount ($)</label>
+														<div class="relative">
+															<span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary text-sm">$</span>
+															<input
+																id="amount-{item.id}"
+																type="number"
+																step="0.01"
+																min="0.01"
+																bind:value={form.amountDollars}
+																placeholder="25.00"
+																class="w-full h-9 pl-7 pr-3 rounded-input border border-border-input text-sm text-text-input focus:outline-none focus:border-border-active"
+															/>
+														</div>
+													</div>
+													<div class="flex flex-col gap-1">
+														<label for="purpose-{item.id}" class="text-xs font-semibold text-text-secondary">Purpose <span class="font-normal text-text-tertiary">({form.purpose.length}/30)</span></label>
 														<input
-															id="amount-{item.id}"
-															type="number"
-															step="0.01"
-															min="0.01"
-															bind:value={form.amountDollars}
-															placeholder="25.00"
-															class="w-full h-9 pl-7 pr-3 rounded-input border border-border-input text-sm text-text-input focus:outline-none focus:border-border-active"
+															id="purpose-{item.id}"
+															type="text"
+															maxlength="30"
+															bind:value={form.purpose}
+															placeholder="e.g. Prize fulfillment"
+															class="w-full h-9 px-3 rounded-input border border-border-input text-sm text-text-input focus:outline-none focus:border-border-active"
 														/>
 													</div>
 												</div>
+
+												<div class="flex gap-4">
+													<Checkbox checked={form.oneTimeUse} onchange={() => { form.oneTimeUse = !form.oneTimeUse; }}>
+														<div class="flex flex-col gap-0.5">
+															<span class="text-sm font-semibold text-text-primary">One-time use</span>
+															<span class="text-xs text-text-tertiary">Card can only be used once</span>
+														</div>
+													</Checkbox>
+													<Checkbox checked={form.preAuthorizationRequired} onchange={() => { form.preAuthorizationRequired = !form.preAuthorizationRequired; }}>
+														<div class="flex flex-col gap-0.5">
+															<span class="text-sm font-semibold text-text-primary">Pre-authorization required</span>
+															<span class="text-xs text-text-tertiary">Requires approval before use</span>
+														</div>
+													</Checkbox>
+												</div>
+
 												<div class="flex flex-col gap-1">
-													<label for="purpose-{item.id}" class="text-xs font-semibold text-text-secondary">Purpose <span class="font-normal text-text-tertiary">({form.purpose.length}/30)</span></label>
-													<input
-														id="purpose-{item.id}"
-														type="text"
-														maxlength="30"
-														bind:value={form.purpose}
-														placeholder="e.g. Prize fulfillment"
-														class="w-full h-9 px-3 rounded-input border border-border-input text-sm text-text-input focus:outline-none focus:border-border-active"
-													/>
+													<label for="instructions-{item.id}" class="text-xs font-semibold text-text-secondary">Instructions</label>
+													<textarea
+														id="instructions-{item.id}"
+														bind:value={form.instructions}
+														rows="2"
+														placeholder="Instructions for the cardholder..."
+														class="w-full px-3 py-2 rounded-input border border-border-input text-sm text-text-input resize-y focus:outline-none focus:border-border-active"
+													></textarea>
 												</div>
-											</div>
 
-											<div class="flex gap-4">
-												<Checkbox checked={form.oneTimeUse} onchange={() => { form.oneTimeUse = !form.oneTimeUse; }}>
-													<div class="flex flex-col gap-0.5">
-														<span class="text-sm font-semibold text-text-primary">One-time use</span>
-														<span class="text-xs text-text-tertiary">Card can only be used once</span>
-													</div>
-												</Checkbox>
-												<Checkbox checked={form.preAuthorizationRequired} onchange={() => { form.preAuthorizationRequired = !form.preAuthorizationRequired; }}>
-													<div class="flex flex-col gap-0.5">
-														<span class="text-sm font-semibold text-text-primary">Pre-authorization required</span>
-														<span class="text-xs text-text-tertiary">Requires approval before use</span>
-													</div>
-												</Checkbox>
-											</div>
-
-											<div class="flex flex-col gap-1">
-												<label for="instructions-{item.id}" class="text-xs font-semibold text-text-secondary">Instructions</label>
-												<textarea
-													id="instructions-{item.id}"
-													bind:value={form.instructions}
-													rows="2"
-													placeholder="Instructions for the cardholder..."
-													class="w-full px-3 py-2 rounded-input border border-border-input text-sm text-text-input resize-y focus:outline-none focus:border-border-active"
-												></textarea>
-											</div>
-
-											<div class="flex flex-col gap-1">
-												<label for="merchant-{item.id}" class="text-xs font-semibold text-text-secondary">Merchant lock</label>
-												<div class="flex gap-2">
-													<input
-														id="merchant-{item.id}"
-														type="text"
-														bind:value={form.merchantLock}
-														placeholder="Comma-separated merchant IDs"
-														class="flex-1 h-9 px-3 rounded-input border border-border-input text-sm font-mono text-text-input focus:outline-none focus:border-border-active"
-													/>
-													<button
-														type="button"
-														class="size-9 rounded-input border border-border-input flex items-center justify-center text-text-subtle hover:bg-surface cursor-pointer shrink-0"
-														title="Look up known merchants"
-														onclick={(e) => openPopup(item.id, 'merchant', e)}
-													>
-														<Search size={14} />
-													</button>
-												</div>
-											</div>
-
-											<div class="flex flex-col gap-1">
-												<label for="category-{item.id}" class="text-xs font-semibold text-text-secondary">Category lock</label>
-												<div class="flex gap-2">
-													<input
-														id="category-{item.id}"
-														type="text"
-														bind:value={form.categoryLock}
-														placeholder="Comma-separated categories"
-														class="flex-1 h-9 px-3 rounded-input border border-border-input text-sm font-mono text-text-input focus:outline-none focus:border-border-active"
-													/>
-													<button
-														type="button"
-														class="size-9 rounded-input border border-border-input flex items-center justify-center text-text-subtle hover:bg-surface cursor-pointer shrink-0"
-														title="Look up spending categories"
-														onclick={(e) => openPopup(item.id, 'category', e)}
-													>
-														<Search size={14} />
-													</button>
-												</div>
-											</div>
-
-											<div class="grid grid-cols-1 gap-3">
 												<div class="flex flex-col gap-1">
-													<label for="expiration-{item.id}" class="text-xs font-semibold text-text-secondary">Expiration (days)</label>
-													<input
-														id="expiration-{item.id}"
-														type="number"
-														min="1"
-														bind:value={form.expirationDays}
-														placeholder="30"
-														class="w-full h-9 px-3 rounded-input border border-border-input text-sm text-text-input focus:outline-none focus:border-border-active"
-													/>
+													<label for="merchant-{item.id}" class="text-xs font-semibold text-text-secondary">Merchant lock</label>
+													<div class="flex gap-2">
+														<input
+															id="merchant-{item.id}"
+															type="text"
+															bind:value={form.merchantLock}
+															placeholder="Comma-separated merchant IDs"
+															class="flex-1 h-9 px-3 rounded-input border border-border-input text-sm font-mono text-text-input focus:outline-none focus:border-border-active"
+														/>
+														<button
+															type="button"
+															class="size-9 rounded-input border border-border-input flex items-center justify-center text-text-subtle hover:bg-surface cursor-pointer shrink-0"
+															title="Look up known merchants"
+															onclick={(e) => openPopup(item.id, 'merchant', e)}
+														>
+															<Search size={14} />
+														</button>
+													</div>
 												</div>
-											</div>
 
-											<div class="flex gap-2 justify-end pt-1">
-												{#if template}
+												<div class="flex flex-col gap-1">
+													<label for="category-{item.id}" class="text-xs font-semibold text-text-secondary">Category lock</label>
+													<div class="flex gap-2">
+														<input
+															id="category-{item.id}"
+															type="text"
+															bind:value={form.categoryLock}
+															placeholder="Comma-separated categories"
+															class="flex-1 h-9 px-3 rounded-input border border-border-input text-sm font-mono text-text-input focus:outline-none focus:border-border-active"
+														/>
+														<button
+															type="button"
+															class="size-9 rounded-input border border-border-input flex items-center justify-center text-text-subtle hover:bg-surface cursor-pointer shrink-0"
+															title="Look up spending categories"
+															onclick={(e) => openPopup(item.id, 'category', e)}
+														>
+															<Search size={14} />
+														</button>
+													</div>
+												</div>
+
+												<div class="grid grid-cols-1 gap-3">
+													<div class="flex flex-col gap-1">
+														<label for="expiration-{item.id}" class="text-xs font-semibold text-text-secondary">Expiration (days)</label>
+														<input
+															id="expiration-{item.id}"
+															type="number"
+															min="1"
+															bind:value={form.expirationDays}
+															placeholder="30"
+															class="w-full h-9 px-3 rounded-input border border-border-input text-sm text-text-input focus:outline-none focus:border-border-active"
+														/>
+													</div>
+												</div>
+
+												<div class="flex gap-2 justify-end pt-1">
+													{#if cardTemplate}
+														<button
+															class="px-3 py-1.5 rounded-tag text-check-fail border border-check-fail/30 hover:bg-check-fail/5 text-xs font-medium cursor-pointer disabled:opacity-50"
+															onclick={() => deleteTemplate(item.id)}
+															disabled={deletingTemplate === item.id}
+														>
+															{#if deletingTemplate === item.id}
+																<Loader2 size={12} class="animate-spin inline mr-1" />
+															{/if}
+															Delete Template
+														</button>
+													{/if}
 													<button
-														class="px-3 py-1.5 rounded-tag text-check-fail border border-check-fail/30 hover:bg-check-fail/5 text-xs font-medium cursor-pointer disabled:opacity-50"
-														onclick={() => deleteTemplate(item.id)}
-														disabled={deletingTemplate === item.id}
+														class="px-3 py-1.5 rounded-tag bg-accent text-white text-xs font-medium hover:opacity-90 cursor-pointer disabled:opacity-50"
+														onclick={() => saveTemplate(item.id)}
+														disabled={savingTemplate === item.id || !form.amountDollars}
 													>
-														{#if deletingTemplate === item.id}
+														{#if savingTemplate === item.id}
 															<Loader2 size={12} class="animate-spin inline mr-1" />
 														{/if}
-														Delete Template
+														{cardTemplate ? 'Update Template' : 'Create Template'}
 													</button>
-												{/if}
-												<button
-													class="px-3 py-1.5 rounded-tag bg-accent text-white text-xs font-medium hover:opacity-90 cursor-pointer disabled:opacity-50"
-													onclick={() => saveTemplate(item.id)}
-													disabled={savingTemplate === item.id || !form.amountDollars}
-												>
-													{#if savingTemplate === item.id}
-														<Loader2 size={12} class="animate-spin inline mr-1" />
+												</div>
+											{:else}
+												{@const wForm = getWarehouseTemplateForm(item.id)}
+												<div class="flex flex-col gap-1">
+													<label for="wh-tags-{item.id}" class="text-xs font-semibold text-text-secondary">Tags <span class="font-normal text-text-tertiary">(required, comma-separated)</span></label>
+													<input
+														id="wh-tags-{item.id}"
+														type="text"
+														bind:value={wForm.tags}
+														placeholder="e.g. stickers,hackclub"
+														class="w-full h-9 px-3 rounded-input border border-border-input text-sm text-text-input focus:outline-none focus:border-border-active"
+													/>
+												</div>
+
+												<div class="flex flex-col gap-1">
+													<label for="wh-title-{item.id}" class="text-xs font-semibold text-text-secondary">User-facing title</label>
+													<input
+														id="wh-title-{item.id}"
+														type="text"
+														bind:value={wForm.userFacingTitle}
+														placeholder="e.g. Hack Club Sticker Pack"
+														class="w-full h-9 px-3 rounded-input border border-border-input text-sm text-text-input focus:outline-none focus:border-border-active"
+													/>
+												</div>
+
+												<div class="flex flex-col gap-2">
+													<div class="flex items-center justify-between">
+														<span class="text-xs font-semibold text-text-secondary">Contents (SKU + Quantity)</span>
+														<button
+															type="button"
+															class="flex items-center gap-1 text-xs text-accent hover:opacity-70 cursor-pointer"
+															onclick={() => addContentRow(item.id)}
+														>
+															<Plus size={12} /> Add row
+														</button>
+													</div>
+													{#each wForm.contents as row, idx}
+														<div class="flex gap-2 items-center">
+															<input
+																type="text"
+																bind:value={row.sku}
+																placeholder="SKU"
+																class="flex-1 h-9 px-3 rounded-input border border-border-input text-sm font-mono text-text-input focus:outline-none focus:border-border-active"
+															/>
+															<input
+																type="number"
+																min="1"
+																bind:value={row.quantity}
+																placeholder="Qty"
+																class="w-20 h-9 px-3 rounded-input border border-border-input text-sm text-text-input focus:outline-none focus:border-border-active"
+															/>
+															{#if wForm.contents.length > 1}
+																<button
+																	type="button"
+																	class="size-9 rounded-input border border-border-input flex items-center justify-center text-text-tertiary hover:text-check-fail hover:bg-check-fail/5 cursor-pointer shrink-0"
+																	onclick={() => removeContentRow(item.id, idx)}
+																>
+																	<X size={14} />
+																</button>
+															{/if}
+														</div>
+													{/each}
+												</div>
+
+												<div class="flex gap-2 justify-end pt-1">
+													{#if whTemplate}
+														<button
+															class="px-3 py-1.5 rounded-tag text-check-fail border border-check-fail/30 hover:bg-check-fail/5 text-xs font-medium cursor-pointer disabled:opacity-50"
+															onclick={() => deleteWarehouseTemplate(item.id)}
+															disabled={deletingWarehouseTemplate === item.id}
+														>
+															{#if deletingWarehouseTemplate === item.id}
+																<Loader2 size={12} class="animate-spin inline mr-1" />
+															{/if}
+															Delete Template
+														</button>
 													{/if}
-													{template ? 'Update Template' : 'Create Template'}
-												</button>
-											</div>
+													<button
+														class="px-3 py-1.5 rounded-tag bg-accent text-white text-xs font-medium hover:opacity-90 cursor-pointer disabled:opacity-50"
+														onclick={() => saveWarehouseTemplate(item.id)}
+														disabled={savingWarehouseTemplate === item.id || !wForm.tags.trim() || !wForm.contents.some(c => c.sku.trim())}
+													>
+														{#if savingWarehouseTemplate === item.id}
+															<Loader2 size={12} class="animate-spin inline mr-1" />
+														{/if}
+														{whTemplate ? 'Update Template' : 'Create Template'}
+													</button>
+												</div>
+											{/if}
 										</div>
 									{/if}
 								</div>
 							{/each}
 						</div>
-					{:else if data.program.hcbOrganizationId}
+					{:else if data.program.hcbOrganizationId || data.hasTheseusApiKey}
 						<p class="text-sm text-text-tertiary py-4 text-center">No shop items found. Items appear here once your program has fulfillment items configured.</p>
 					{/if}
 				</div>
