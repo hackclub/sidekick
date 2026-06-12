@@ -989,7 +989,7 @@
 									<input
 										type="password"
 										bind:value={theseusApiKeyInput}
-										placeholder="Theseus API key"
+										placeholder="th_api_live_..."
 										class="flex-1 h-9 px-3 rounded-input border border-border-input text-sm text-text-input tracking-[-0.3px] font-mono focus:outline-none focus:border-border-active transition-colors"
 									/>
 									<button
