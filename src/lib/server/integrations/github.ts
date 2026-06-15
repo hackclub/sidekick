@@ -4,6 +4,23 @@ import { createLogger } from '../logger.js';
 const log = createLogger('github');
 const BASE_URL = 'https://api.github.com';
 
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const responseCache = new Map<string, { data: unknown; expiresAt: number }>();
+
+function getCached<T>(key: string): T | undefined {
+	const entry = responseCache.get(key);
+	if (!entry) return undefined;
+	if (Date.now() > entry.expiresAt) {
+		responseCache.delete(key);
+		return undefined;
+	}
+	return entry.data as T;
+}
+
+function setCache(key: string, data: unknown): void {
+	responseCache.set(key, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
 interface RepoInfo {
 	isPublic: boolean;
 	defaultBranch: string;
@@ -54,12 +71,20 @@ async function authFetch(path: string, params?: Record<string, string>): Promise
 	let response = await fetch(url.toString(), { headers });
 
 	// Fine-grained PATs return 403 or 404 for repos outside their scope.
-	// Fall back to unauthenticated for those cases.
+	// Fall back to unauthenticated for those cases — but NOT for rate limiting,
+	// where unauthenticated would be even more restricted (60/hr vs 5000/hr).
 	if ((response.status === 403 || response.status === 404) && token) {
-		log.debug('authFetch falling back to unauthenticated', { path, status: response.status });
-		// eslint-disable-next-line @typescript-eslint/no-unused-vars
-		const { Authorization: _auth, ...unauthHeaders } = headers;
-		response = await fetch(url.toString(), { headers: unauthHeaders });
+		const rateLimitRemaining = response.headers.get('x-ratelimit-remaining');
+		if (rateLimitRemaining === '0') {
+			const reset = response.headers.get('x-ratelimit-reset');
+			const resetAt = reset ? new Date(parseInt(reset) * 1000).toISOString() : 'unknown';
+			log.warn('authFetch rate limited', { path, resetAt });
+		} else {
+			log.debug('authFetch falling back to unauthenticated', { path, status: response.status });
+			// eslint-disable-next-line @typescript-eslint/no-unused-vars
+			const { Authorization: _auth, ...unauthHeaders } = headers;
+			response = await fetch(url.toString(), { headers: unauthHeaders });
+		}
 	}
 
 	timer.end({ status: response.status });
@@ -102,6 +127,13 @@ export function parseRepoUrl(url: string): { owner: string; repo: string } | nul
 
 export async function getRepoInfo(owner: string, repo: string): Promise<RepoInfo> {
 	log.debug('getRepoInfo called', { owner, repo });
+	const cacheKey = `repo:${owner}/${repo}`;
+	const cached = getCached<RepoInfo>(cacheKey);
+	if (cached) {
+		log.debug('getRepoInfo cache hit', { owner, repo });
+		return cached;
+	}
+
 	const response = await authFetch(
 		`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
 	);
@@ -113,6 +145,7 @@ export async function getRepoInfo(owner: string, repo: string): Promise<RepoInfo
 		description: data.description ?? null
 	};
 	log.debug('getRepoInfo result', { owner, repo, isPublic: result.isPublic, defaultBranch: result.defaultBranch });
+	setCache(cacheKey, result);
 	return result;
 }
 
@@ -122,6 +155,13 @@ export async function getCommits(
 	opts?: { since?: string; until?: string; perPage?: number }
 ): Promise<Commit[]> {
 	log.debug('getCommits called', { owner, repo, since: opts?.since, until: opts?.until, perPage: opts?.perPage });
+	const cacheKey = `commits:${owner}/${repo}:${opts?.since ?? ''}:${opts?.until ?? ''}:${opts?.perPage ?? ''}`;
+	const cached = getCached<Commit[]>(cacheKey);
+	if (cached) {
+		log.debug('getCommits cache hit', { owner, repo, commitCount: cached.length });
+		return cached;
+	}
+
 	const timer = log.time('getCommits');
 	const perPage = opts?.perPage ?? 100;
 	const allCommits: Commit[] = [];
@@ -191,24 +231,36 @@ export async function getCommits(
 	}
 
 	timer.end({ owner, repo, totalCommits: allCommits.length });
+	setCache(cacheKey, allCommits);
 	return allCommits;
 }
 
 export async function getReadme(owner: string, repo: string): Promise<string | null> {
 	log.debug('getReadme called', { owner, repo });
+	const cacheKey = `readme:${owner}/${repo}`;
+	const cached = getCached<string | null>(cacheKey);
+	if (cached !== undefined) {
+		log.debug('getReadme cache hit', { owner, repo });
+		return cached;
+	}
+
 	try {
 		const response = await authFetch(
 			`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/readme`
 		);
 		const data = await response.json();
 
+		let content: string | null;
 		if (data.content && data.encoding === 'base64') {
 			log.debug('getReadme success', { owner, repo });
-			return atob(data.content.replace(/\n/g, ''));
+			content = atob(data.content.replace(/\n/g, ''));
+		} else {
+			log.debug('getReadme success (non-base64)', { owner, repo });
+			content = data.content ?? null;
 		}
 
-		log.debug('getReadme success (non-base64)', { owner, repo });
-		return data.content ?? null;
+		setCache(cacheKey, content);
+		return content;
 	} catch (err) {
 		log.debug('getReadme failed', { owner, repo });
 		return null;
@@ -220,10 +272,18 @@ export async function getLanguages(
 	repo: string
 ): Promise<Record<string, number>> {
 	log.debug('getLanguages called', { owner, repo });
+	const cacheKey = `languages:${owner}/${repo}`;
+	const cached = getCached<Record<string, number>>(cacheKey);
+	if (cached) {
+		log.debug('getLanguages cache hit', { owner, repo });
+		return cached;
+	}
+
 	const response = await authFetch(
 		`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/languages`
 	);
 	const languages = await response.json();
 	log.debug('getLanguages result', { owner, repo, languageCount: Object.keys(languages).length });
+	setCache(cacheKey, languages);
 	return languages;
 }
