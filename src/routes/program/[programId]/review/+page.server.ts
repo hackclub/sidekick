@@ -54,6 +54,15 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		(p) => p.ships.some((s) => s.status === 'pending_hq')
 	);
 
+	// Sort by earliest pending ship submission date so longest-waiting projects
+	// appear first in the review queue.
+	const getPendingDate = (p: typeof projectsResult.projects[0], shipStatus: string) => {
+		const ship = p.ships.find((s) => s.status === shipStatus);
+		return ship ? new Date(ship.submittedAt).getTime() : Infinity;
+	};
+	projectsResult.projects.sort((a, b) => getPendingDate(a, 'pending') - getPendingDate(b, 'pending'));
+	hqProjects.sort((a, b) => getPendingDate(a, 'pending_hq') - getPendingDate(b, 'pending_hq'));
+
 	const authorIds = [...new Set([
 		...projectsResult.projects.map((p) => p.authorId),
 		...hqProjects.map((p) => p.authorId)
