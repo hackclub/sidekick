@@ -82,8 +82,12 @@
 	}
 
 	function timeAgo(timestamp: string): string {
-		const diff = Date.now() - new Date(timestamp).getTime();
+		const date = new Date(timestamp);
+		const diff = Date.now() - date.getTime();
 		const mins = Math.floor(diff / 60000);
+		const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+		if (date.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+		const absolute = date.toLocaleDateString('en-US', opts);
 		if (mins < 1)
 			return 'just now';
 		if (mins < 60)
@@ -93,8 +97,8 @@
 			return `${hours}h ago`;
 		const days = Math.floor(hours / 24);
 		if (days === 1)
-			return '1 day ago';
-		return `${days} days ago`;
+			return `1 day ago (${absolute})`;
+		return `${days} days ago (${absolute})`;
 	}
 
 	const URL_RE = /(https?:\/\/[^\s<>)"']+)/g;
