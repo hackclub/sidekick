@@ -8,10 +8,9 @@ import { getValidHcbToken, createHcbTransfer } from '$lib/server/integrations/hc
 import type { CreateWarehouseOrderParams } from '$lib/server/integrations/theseus.js';
 import type { RequestHandler } from './$types.js';
 
-function parseDecimalCents(value: string | null): number {
+function toCents(value: number | null): number {
 	if (!value) return 0;
-	const parsed = parseFloat(value);
-	return isNaN(parsed) ? 0 : Math.round(parsed * 100);
+	return Math.round(value * 100);
 }
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
@@ -115,18 +114,55 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 
 	const result = await createWarehouseOrder(apiKey, orderParams);
 
-	const totalCostCents = parseDecimalCents(result.contents_cost)
-		+ parseDecimalCents(result.labor_cost)
-		+ parseDecimalCents(result.postage_cost);
+	if (!result.id) {
+		throw error(502, 'Theseus returned a warehouse order without an ID');
+	}
 
-	const fmtCost = (v: string | null) => '$' + (parseFloat(v ?? '0') || 0).toFixed(2);
+	const reference = `https://mail.hackclub.com/packages/${result.id}`;
+
+	const totalCostCents = toCents(result.contents_cost)
+		+ toCents(result.labor_cost)
+		+ toCents(result.postage_cost);
+
+	if (totalCostCents <= 0) {
+		// Still set the reference and log, but report the missing cost
+		await client.updateOrderFields({ orderId, reference });
+		await db.auditLog.create({
+			data: {
+				programId: params.programId,
+				userId: user.id,
+				action: 'warehouse_order_sent',
+				entityType: 'order',
+				entityId: orderId,
+				metadata: {
+					warehouseOrderId: result.id,
+					shopItemId: orderDetail.item.id,
+					quantity: orderDetail.order.quantity,
+					email: orderDetail.order.userEmail,
+					totalCostCents: 0,
+					hcbTransferId: null,
+					warning: 'Theseus returned zero cost — no HCB transfer created'
+				}
+			}
+		});
+		return json({
+			success: true,
+			warning: 'Warehouse order created, but Theseus reported $0.00 total cost — no HCB disbursement was sent. You may need to create it manually.',
+			warehouseOrder: result,
+			reference,
+			totalCostCents: 0,
+			transfer: null
+		});
+	}
+
+	const fmtCost = (v: number | null) => '$' + (v ?? 0).toFixed(2);
 	const skuList = contents.length === 1 && contents[0].quantity === 1
 		? contents[0].sku
 		: contents.map(c => `${c.quantity}x ${c.sku}`).join(', ');
 	const transferName = `Warehouse order for ${skuList} (contents: ${fmtCost(result.contents_cost)}, labor: ${fmtCost(result.labor_cost)}, postage: ${fmtCost(result.postage_cost)}) via sidekick.ascpixi.dev`;
 
-	let transfer = null;
-	if (totalCostCents > 0) {
+	let transfer;
+	try {
 		transfer = await createHcbTransfer(
 			hcbToken,
 			program.hcbOrganizationSlug,
@@ -134,9 +170,37 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			totalCostCents,
 			transferName
 		);
+	} catch (e) {
+		// Warehouse order already placed — don't lose that info
+		await client.updateOrderFields({ orderId, reference });
+		await db.auditLog.create({
+			data: {
+				programId: params.programId,
+				userId: user.id,
+				action: 'warehouse_order_sent',
+				entityType: 'order',
+				entityId: orderId,
+				metadata: {
+					warehouseOrderId: result.id,
+					shopItemId: orderDetail.item.id,
+					quantity: orderDetail.order.quantity,
+					email: orderDetail.order.userEmail,
+					totalCostCents,
+					hcbTransferId: null,
+					error: `HCB transfer failed: ${e instanceof Error ? e.message : String(e)}`
+				}
+			}
+		});
+		return json({
+			success: true,
+			warning: `Warehouse order created, but the HCB disbursement of ${fmtCost(totalCostCents / 100)} failed: ${e instanceof Error ? e.message : String(e)}. You will need to transfer funds manually.`,
+			warehouseOrder: result,
+			reference,
+			totalCostCents,
+			transfer: null
+		});
 	}
 
-	const reference = `https://mail.hackclub.com/packages/${result.id}`;
 	await client.updateOrderFields({ orderId, reference });
 
 	await db.auditLog.create({
@@ -152,7 +216,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 				quantity: orderDetail.order.quantity,
 				email: orderDetail.order.userEmail,
 				totalCostCents,
-				hcbTransferId: transfer?.id ?? null
+				hcbTransferId: transfer.id
 			}
 		}
 	});

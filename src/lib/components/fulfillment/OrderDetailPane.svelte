@@ -348,17 +348,20 @@
 	let sendingWarehouseOrder = $state(false);
 	let warehouseOrderSent = $state(false);
 	let warehouseOrderError = $state('');
+	let warehouseOrderWarning = $state('');
 
 	$effect(() => {
 		void order.id;
 		warehouseOrderSent = false;
 		warehouseOrderError = '';
+		warehouseOrderWarning = '';
 	});
 
 	async function sendWarehouseOrder() {
 		if (!warehouseTemplate || !hasTheseusApiKey || !hcbOrganization) return;
 		sendingWarehouseOrder = true;
 		warehouseOrderError = '';
+		warehouseOrderWarning = '';
 
 		try {
 			const res = await fetch(`/api/programs/${programId}/warehouse/send-order`, {
@@ -383,6 +386,9 @@
 
 			const data = await res.json();
 			warehouseOrderSent = true;
+			if (data.warning) {
+				warehouseOrderWarning = data.warning;
+			}
 			refOverride = data.reference;
 			onreferencechange?.(data.reference);
 			onsendgrant?.(data.reference);
@@ -718,6 +724,12 @@
 						Warehouse order sent successfully
 					</span>
 				</div>
+				{#if warehouseOrderWarning}
+					<div class="flex items-start gap-2 px-4 py-3 rounded-section bg-amber-50 border border-amber-200">
+						<TriangleAlert size={14} class="text-amber-700 shrink-0 mt-0.5" />
+						<span class="text-xs text-amber-700">{warehouseOrderWarning}</span>
+					</div>
+				{/if}
 			{:else if !hasTheseusApiKey || !hcbOrganization}
 				<button
 					disabled

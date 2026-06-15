@@ -1,4 +1,6 @@
-const THESEUS_BASE = 'https://mail.hackclub.com';
+import { env } from '$env/dynamic/private';
+
+const THESEUS_BASE = env.THESEUS_API_URL || 'https://mail.hackclub.com';
 
 export interface WarehouseAddress {
 	first_name: string;
@@ -29,16 +31,13 @@ export interface CreateWarehouseOrderParams {
 }
 
 export interface WarehouseOrderResult {
-	id: number;
+	id: string;
 	status: string;
 	recipient_email: string;
-	user_facing_title: string | null;
 	tracking_number: string | null;
-	tracking_url: string | null;
-	contents_cost: string | null;
-	labor_cost: string | null;
-	postage_cost: string | null;
-	created_at: string;
+	contents_cost: number | null;
+	labor_cost: number | null;
+	postage_cost: number | null;
 }
 
 export interface TheseusUser {
@@ -80,5 +79,6 @@ export async function createWarehouseOrder(
 		throw new Error(`Warehouse order creation failed: ${res.status} ${text}`);
 	}
 
-	return res.json();
+	const data = await res.json();
+	return data.warehouse_order;
 }
