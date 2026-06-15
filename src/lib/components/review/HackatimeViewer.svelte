@@ -3,6 +3,7 @@
 	import { isQuirkHeartbeat } from '$lib/heartbeat-quirks.js';
 	import { Activity, LoaderCircle, FolderCode, ExternalLink, Check } from 'lucide-svelte';
 	import Checkbox from '$lib/components/ui/Checkbox.svelte';
+	import Tooltip from '$lib/components/ui/Tooltip.svelte';
 	import HeartbeatFrequencyBar from './HeartbeatFrequencyBar.svelte';
 	import HeartbeatScatter from './HeartbeatScatter.svelte';
 	import HeartbeatTable from './HeartbeatTable.svelte';
@@ -82,7 +83,6 @@
 
 	let activityCache = $state<Record<string, DayActivity[]>>({});
 	let overviewLoading = $state(false);
-	let overflowTooltip = $state<{ x: number; y: number } | null>(null);
 	let scrollContainer = $state<HTMLElement | null>(null);
 	let joeCopied = $state(false);
 	let showQuirks = $state(false);
@@ -383,7 +383,7 @@
 </script>
 
 <div class="border border-border-card rounded-card shadow-card overflow-hidden flex flex-col {className}">
-	<div class="flex items-center justify-between px-6 py-4 border-b border-border-card">
+	<div class="flex items-center px-6 py-4 border-b border-border-card">
 		<div class="flex items-center gap-2.5">
 			<Activity size={18} class="text-text-secondary" />
 			<div class="flex flex-col gap-0.5">
@@ -403,15 +403,6 @@
 				</p>
 			</div>
 		</div>
-
-		{#if quirkCount > 0}
-			<Checkbox checked={showQuirks} onchange={() => (showQuirks = !showQuirks)}>
-				<div class="flex flex-col gap-0.5">
-					<span class="text-sm text-text-primary tracking-[-0.3px]">Quirk heartbeats</span>
-					<span class="text-[11px] text-text-tertiary tracking-[-0.2px]">Show heartbeats that are probably caused by WakaTime plugin quirks</span>
-				</div>
-			</Checkbox>
-		{/if}
 	</div>
 
 	<div class="flex items-center justify-between px-6 py-2.5 border-b border-border-card bg-surface/30">
@@ -425,32 +416,40 @@
 					</span>
 				{/each}
 				{#if overflowProjects.length > 0}
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
-					<span
-						class="overflow-pill text-[12px] font-medium text-text-secondary bg-page border border-border-card rounded-tag px-2 py-0.5 cursor-default"
-						onmouseenter={(e) => {
-							const rect = e.currentTarget.getBoundingClientRect();
-							overflowTooltip = { x: rect.left + rect.width / 2, y: rect.top };
-						}}
-						onmouseleave={() => (overflowTooltip = null)}
-					>
-						+{overflowProjects.length}
-					</span>
+					<Tooltip>
+						{#snippet tip()}
+							{#each overflowProjects as proj (proj.name)}
+								<span class="whitespace-nowrap text-[12px] text-text-primary">{proj.name} <span class="text-text-tertiary">{formatHours(proj.totalSeconds)}</span></span>
+							{/each}
+						{/snippet}
+						<span class="text-[12px] font-medium text-text-secondary bg-page border border-border-card rounded-tag px-2 py-0.5 cursor-default">
+							+{overflowProjects.length}
+						</span>
+					</Tooltip>
 				{/if}
 			</div>
 		</div>
-		<button
-			class="flex items-center gap-1 text-[11px] px-2 py-1 rounded-tag cursor-pointer transition-colors shrink-0 ml-4 {joeCopied ? 'bg-check-pass/10 text-check-pass border border-check-pass/30' : 'bg-page border border-border-card text-text-secondary hover:text-text-primary'}"
-			onclick={copyJoeLink}
-		>
-			{#if joeCopied}
-				<Check size={12} />
-				Copied
-			{:else}
-				<ExternalLink size={12} />
-				Copy Joe link
+		<div class="flex items-center gap-3 shrink-0 ml-4">
+			{#if quirkCount > 0}
+				<Tooltip text="Show heartbeats that are probably caused by WakaTime plugin quirks">
+					<Checkbox compact checked={showQuirks} onchange={() => (showQuirks = !showQuirks)}>
+						<span class="text-[12px] text-text-primary tracking-[-0.2px]">Quirk heartbeats</span>
+					</Checkbox>
+				</Tooltip>
 			{/if}
-		</button>
+			<button
+				class="flex items-center gap-1 text-[11px] px-2 py-1 rounded-tag cursor-pointer transition-colors shrink-0 {joeCopied ? 'bg-check-pass/10 text-check-pass border border-check-pass/30' : 'bg-page border border-border-card text-text-secondary hover:text-text-primary'}"
+				onclick={copyJoeLink}
+			>
+				{#if joeCopied}
+					<Check size={12} />
+					Copied
+				{:else}
+					<ExternalLink size={12} />
+					Copy Joe link
+				{/if}
+			</button>
+		</div>
 	</div>
 
 	<div class="border-b border-border-card bg-surface/20 relative">
@@ -552,30 +551,3 @@
 	{/if}
 </div>
 
-{#if overflowTooltip}
-	<div
-		class="overflow-tooltip"
-		style="left: {overflowTooltip.x}px; top: {overflowTooltip.y}px;"
-	>
-		{#each overflowProjects as proj (proj.name)}
-			<span class="whitespace-nowrap text-[12px] text-text-primary">{proj.name} <span class="text-text-tertiary">{formatHours(proj.totalSeconds)}</span></span>
-		{/each}
-	</div>
-{/if}
-
-<style>
-	.overflow-tooltip {
-		position: fixed;
-		transform: translate(-50%, calc(-100% - 6px));
-		background: var(--color-page, #fff);
-		border: 1px solid var(--color-border-card);
-		border-radius: 8px;
-		padding: 6px 10px;
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-		z-index: 50;
-		pointer-events: none;
-	}
-</style>

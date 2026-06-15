@@ -6,25 +6,27 @@
 		checked: boolean;
 		onchange: () => void;
 		disabled?: boolean;
+		compact?: boolean;
 		children: Snippet;
 	}
 
-	let { checked, onchange, disabled = false, children }: Props = $props();
+	let { checked, onchange, disabled = false, compact = false, children }: Props = $props();
 </script>
 
 <button
 	type="button"
-	class="flex items-start gap-2.5 text-left group
+	class="flex gap-2.5 text-left group
+		{compact ? 'items-center' : 'items-start'}
 		{disabled ? 'cursor-default opacity-60' : 'cursor-pointer'}"
 	onclick={onchange}
 	{disabled}
 >
 	{#if checked}
-		<div class="size-[18px] bg-accent rounded-[4px] flex items-center justify-center shrink-0 mt-px">
+		<div class="size-[18px] bg-accent rounded-[4px] flex items-center justify-center shrink-0 {compact ? '' : 'mt-px'}">
 			<Check size={13} class="text-white" strokeWidth={3} />
 		</div>
 	{:else}
-		<div class="size-[18px] border-2 border-border-card rounded-[4px] shrink-0 mt-px {!disabled ? 'group-hover:border-accent/50' : ''}"></div>
+		<div class="size-[18px] border-2 border-border-card rounded-[4px] shrink-0 {compact ? '' : 'mt-px'} {!disabled ? 'group-hover:border-accent/50' : ''}"></div>
 	{/if}
 
 	{@render children()}
