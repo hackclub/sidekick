@@ -67,7 +67,9 @@
 					return;
 				}
 				const result = await res.json();
-				polledChecks = result.checks;
+				if (result.checks.length > 0) {
+					polledChecks = result.checks;
+				}
 				log.trace('Check poll result', { pollCount, allCompleted: result.allCompleted, checkCount: result.checks?.length });
 				if (result.allCompleted) {
 					log.info('All checks completed', { pollCount });
