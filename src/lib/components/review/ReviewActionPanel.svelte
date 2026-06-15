@@ -404,55 +404,59 @@
 				/>
 			</div>
 
-			{#each approveFields ?? [] as fieldDef (fieldDef.name)}
-				{#if fieldDef.type === 'boolean'}
-					<Checkbox
-						checked={!!customFields[fieldDef.name]}
-						onchange={() => setCustomField(fieldDef.name, !customFields[fieldDef.name])}
-					>
-						<div class="flex flex-col">
-							<span class="font-bold text-sm tracking-[-0.3px]">
-								{fieldDef.label}
-								{#if !fieldDef.required}
-									<span class="font-normal text-text-secondary">(optional)</span>
-								{/if}
-							</span>
-							{#if fieldDef.placeholder}
-								<span class="text-sm text-text-secondary">{fieldDef.placeholder}</span>
-							{/if}
-						</div>
-					</Checkbox>
-				{:else}
-					<div class="flex items-baseline gap-3">
-						<label class="font-bold text-sm tracking-[-0.3px] shrink-0" for="field-{fieldDef.name}">
-							{fieldDef.label}
-							{#if !fieldDef.required}
-								<span class="font-normal text-text-secondary">(optional)</span>
-							{/if}
-						</label>
-						{#if fieldDef.type === 'integer'}
-							<input
-								id="field-{fieldDef.name}"
-								type="number"
-								step="1"
-								value={customFields[fieldDef.name] ?? ''}
-								oninput={(e) => setCustomField(fieldDef.name, parseInt(e.currentTarget.value) || 0)}
-								placeholder={fieldDef.placeholder ?? ''}
-								class="border border-border-input rounded-section px-3.5 py-2.5 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
-							/>
+			{#if (approveFields ?? []).length > 0}
+				<div class="flex flex-col gap-4 py-1">
+					{#each approveFields ?? [] as fieldDef (fieldDef.name)}
+						{#if fieldDef.type === 'boolean'}
+							<Checkbox
+								checked={!!customFields[fieldDef.name]}
+								onchange={() => setCustomField(fieldDef.name, !customFields[fieldDef.name])}
+							>
+								<div class="flex flex-col">
+									<span class="font-bold text-sm tracking-[-0.3px]">
+										{fieldDef.label}
+										{#if !fieldDef.required}
+											<span class="font-normal text-text-secondary">(optional)</span>
+										{/if}
+									</span>
+									{#if fieldDef.placeholder}
+										<span class="text-sm text-text-secondary">{fieldDef.placeholder}</span>
+									{/if}
+								</div>
+							</Checkbox>
 						{:else}
-							<input
-								id="field-{fieldDef.name}"
-								type="text"
-								value={customFields[fieldDef.name] ?? ''}
-								oninput={(e) => setCustomField(fieldDef.name, e.currentTarget.value)}
-								placeholder={fieldDef.placeholder ?? ''}
-								class="border border-border-input rounded-section px-3.5 py-2.5 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
-							/>
+							<div class="flex items-baseline gap-3">
+								<label class="font-bold text-sm tracking-[-0.3px] shrink-0" for="field-{fieldDef.name}">
+									{fieldDef.label}
+									{#if !fieldDef.required}
+										<span class="font-normal text-text-secondary">(optional)</span>
+									{/if}
+								</label>
+								{#if fieldDef.type === 'integer'}
+									<input
+										id="field-{fieldDef.name}"
+										type="number"
+										step="1"
+										value={customFields[fieldDef.name] ?? ''}
+										oninput={(e) => setCustomField(fieldDef.name, parseInt(e.currentTarget.value) || 0)}
+										placeholder={fieldDef.placeholder ?? ''}
+										class="border border-border-input rounded-section px-3.5 py-2.5 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
+									/>
+								{:else}
+									<input
+										id="field-{fieldDef.name}"
+										type="text"
+										value={customFields[fieldDef.name] ?? ''}
+										oninput={(e) => setCustomField(fieldDef.name, e.currentTarget.value)}
+										placeholder={fieldDef.placeholder ?? ''}
+										class="border border-border-input rounded-section px-3.5 py-2.5 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
+									/>
+								{/if}
+							</div>
 						{/if}
-					</div>
-				{/if}
-			{/each}
+					{/each}
+				</div>
+			{/if}
 
 			{#if changelogResult}
 				<div class="flex flex-col gap-2 border border-border-card rounded-section bg-surface/50 p-4">
@@ -521,55 +525,59 @@
 				/>
 			</div>
 
-			{#each rejectFields ?? [] as fieldDef (fieldDef.name)}
-				{#if fieldDef.type === 'boolean'}
-					<Checkbox
-						checked={!!customFields[fieldDef.name]}
-						onchange={() => setCustomField(fieldDef.name, !customFields[fieldDef.name])}
-					>
-						<div class="flex flex-col">
-							<span class="font-bold text-sm tracking-[-0.3px]">
-								{fieldDef.label}
-								{#if !fieldDef.required}
-									<span class="font-normal text-text-secondary">(optional)</span>
-								{/if}
-							</span>
-							{#if fieldDef.placeholder}
-								<span class="text-sm text-text-secondary">{fieldDef.placeholder}</span>
-							{/if}
-						</div>
-					</Checkbox>
-				{:else}
-					<div class="flex items-baseline gap-3">
-						<label class="font-bold text-sm tracking-[-0.3px] shrink-0" for="field-{fieldDef.name}">
-							{fieldDef.label}
-							{#if !fieldDef.required}
-								<span class="font-normal text-text-secondary">(optional)</span>
-							{/if}
-						</label>
-						{#if fieldDef.type === 'integer'}
-							<input
-								id="field-{fieldDef.name}"
-								type="number"
-								step="1"
-								value={customFields[fieldDef.name] ?? ''}
-								oninput={(e) => setCustomField(fieldDef.name, parseInt(e.currentTarget.value) || 0)}
-								placeholder={fieldDef.placeholder ?? ''}
-								class="border border-border-input rounded-section px-3.5 py-2.5 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
-							/>
+			{#if (rejectFields ?? []).length > 0}
+				<div class="flex flex-col gap-4 py-1">
+					{#each rejectFields ?? [] as fieldDef (fieldDef.name)}
+						{#if fieldDef.type === 'boolean'}
+							<Checkbox
+								checked={!!customFields[fieldDef.name]}
+								onchange={() => setCustomField(fieldDef.name, !customFields[fieldDef.name])}
+							>
+								<div class="flex flex-col">
+									<span class="font-bold text-sm tracking-[-0.3px]">
+										{fieldDef.label}
+										{#if !fieldDef.required}
+											<span class="font-normal text-text-secondary">(optional)</span>
+										{/if}
+									</span>
+									{#if fieldDef.placeholder}
+										<span class="text-sm text-text-secondary">{fieldDef.placeholder}</span>
+									{/if}
+								</div>
+							</Checkbox>
 						{:else}
-							<input
-								id="field-{fieldDef.name}"
-								type="text"
-								value={customFields[fieldDef.name] ?? ''}
-								oninput={(e) => setCustomField(fieldDef.name, e.currentTarget.value)}
-								placeholder={fieldDef.placeholder ?? ''}
-								class="border border-border-input rounded-section px-3.5 py-2.5 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
-							/>
+							<div class="flex items-baseline gap-3">
+								<label class="font-bold text-sm tracking-[-0.3px] shrink-0" for="field-{fieldDef.name}">
+									{fieldDef.label}
+									{#if !fieldDef.required}
+										<span class="font-normal text-text-secondary">(optional)</span>
+									{/if}
+								</label>
+								{#if fieldDef.type === 'integer'}
+									<input
+										id="field-{fieldDef.name}"
+										type="number"
+										step="1"
+										value={customFields[fieldDef.name] ?? ''}
+										oninput={(e) => setCustomField(fieldDef.name, parseInt(e.currentTarget.value) || 0)}
+										placeholder={fieldDef.placeholder ?? ''}
+										class="border border-border-input rounded-section px-3.5 py-2.5 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
+									/>
+								{:else}
+									<input
+										id="field-{fieldDef.name}"
+										type="text"
+										value={customFields[fieldDef.name] ?? ''}
+										oninput={(e) => setCustomField(fieldDef.name, e.currentTarget.value)}
+										placeholder={fieldDef.placeholder ?? ''}
+										class="border border-border-input rounded-section px-3.5 py-2.5 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
+									/>
+								{/if}
+							</div>
 						{/if}
-					</div>
-				{/if}
-			{/each}
+					{/each}
+				</div>
+			{/if}
 
 		{:else}
 			<div class="flex flex-col gap-1.5">
