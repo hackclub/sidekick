@@ -155,6 +155,7 @@ model PendingApproval {
   hoursAssigned   Float
   feedbackMessage String
   justification   String
+  fields          Json?
   status          String   @default("pending")
   discardedById   String?
   createdAt       DateTime @default(now())

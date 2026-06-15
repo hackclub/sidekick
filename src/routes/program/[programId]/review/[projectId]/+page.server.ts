@@ -304,6 +304,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 					hoursAssigned: event.hoursAssigned,
 					feedbackMessage: event.feedbackMessage,
 					justification: event.justification,
+					fields: event.fields,
 					timestamp: event.timestamp
 				};
 			}
@@ -317,6 +318,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 					hoursAssigned: event.hoursAssigned,
 					feedbackMessage: event.feedbackMessage,
 					justification: event.justification,
+					fields: event.fields,
 					timestamp: event.timestamp
 				};
 			}
@@ -330,6 +332,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 					hoursDeflated: event.hoursDeflated,
 					feedbackMessage: event.feedbackMessage,
 					justification: event.justification,
+					fields: event.fields,
 					timestamp: event.timestamp
 				};
 			}
@@ -364,6 +367,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 				hoursAssigned: pa.hoursAssigned,
 				feedbackMessage: pa.feedbackMessage,
 				justification: pa.justification,
+				fields: (pa.fields as Record<string, string | number | boolean>) ?? undefined,
 				timestamp: pa.createdAt.toISOString()
 			});
 		} else {
@@ -375,6 +379,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 				hoursAssigned: pa.hoursAssigned,
 				feedbackMessage: pa.feedbackMessage,
 				justification: pa.justification,
+				fields: (pa.fields as Record<string, string | number | boolean>) ?? undefined,
 				timestamp: pa.createdAt.toISOString()
 			});
 		}
@@ -440,6 +445,8 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const action = formData.get('action') as string;
 		const shipId = formData.get('shipId') as string;
+		const fieldsRaw = formData.get('fields') as string | null;
+		const fields = fieldsRaw ? JSON.parse(fieldsRaw) as Record<string, string | number | boolean> : undefined;
 
 		log.info('review action', { action, shipId, projectId: params.projectId, userId: user.id });
 
@@ -463,12 +470,14 @@ export const actions: Actions = {
 					reviewerId,
 					hoursAssigned: parseFloat(formData.get('hoursAssigned') as string),
 					feedbackMessage: formData.get('feedbackMessage') as string,
-					justification: formData.get('justification') as string
+					justification: formData.get('justification') as string,
+					fields: fields ?? undefined
 				},
 				update: {
 					hoursAssigned: parseFloat(formData.get('hoursAssigned') as string),
 					feedbackMessage: formData.get('feedbackMessage') as string,
-					justification: formData.get('justification') as string
+					justification: formData.get('justification') as string,
+					fields: fields ?? undefined
 				}
 			});
 
@@ -502,7 +511,8 @@ export const actions: Actions = {
 					action: 'approve',
 					hoursAssigned: parseFloat(formData.get('hoursAssigned') as string),
 					feedbackMessage: formData.get('feedbackMessage') as string,
-					justification: formData.get('justification') as string
+					justification: formData.get('justification') as string,
+					fields
 				};
 				break;
 			case 'reject':
@@ -510,7 +520,8 @@ export const actions: Actions = {
 					...base,
 					action: 'reject',
 					feedbackMessage: formData.get('feedbackMessage') as string,
-					internalMessage: (formData.get('internalMessage') as string) || undefined
+					internalMessage: (formData.get('internalMessage') as string) || undefined,
+					fields
 				};
 				break;
 			case 'comment':

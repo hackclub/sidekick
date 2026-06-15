@@ -133,6 +133,23 @@
 	{/each}
 {/snippet}
 
+{#snippet fieldValues(fields: Record<string, string | number | boolean> | undefined)}
+	{#if fields && Object.keys(fields).length > 0}
+		<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-secondary mt-0.5">
+			{#each Object.entries(fields) as [key, value] (key)}
+				<span>
+					<span class="font-medium">{key}:</span>
+					{#if typeof value === 'boolean'}
+						<span class={value ? 'text-check-pass' : 'text-check-fail'}>{value ? 'Yes' : 'No'}</span>
+					{:else}
+						<span>{value}</span>
+					{/if}
+				</span>
+			{/each}
+		</div>
+	{/if}
+{/snippet}
+
 <div class="flex gap-3 items-start w-full">
 	<div class="flex gap-3 items-center shrink-0">
 		<div class="size-6 flex items-center justify-center">
@@ -350,6 +367,7 @@
 					</div>
 				{/if}
 			</div>
+			{@render fieldValues(event.fields)}
 		{:else if event.type === 'authorized_approval'}
 			<div class="flex gap-1.5 w-full">
 				<div class="bg-surface rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
@@ -361,6 +379,7 @@
 					<p class="text-sm tracking-[-0.3px] break-words">{@render linkedText(displayInternal)}</p>
 				</div>
 			</div>
+			{@render fieldValues(event.fields)}
 		{:else if event.type === 'approval'}
 			<div class="flex gap-1.5 w-full">
 				<div class="bg-surface rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
@@ -388,6 +407,7 @@
 					{/if}
 				</div>
 			</div>
+			{@render fieldValues(event.fields)}
 		{:else if event.type === 'pending_approval'}
 			{#if editing}
 				<div class="flex flex-col gap-1 w-full">
@@ -427,6 +447,7 @@
 					{/if}
 				</div>
 			</div>
+			{@render fieldValues(event.fields)}
 		{:else if event.type === 'discarded_approval'}
 			<div class="flex gap-1.5 w-full opacity-50">
 				<div class="border border-border-card bg-surface/50 rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
@@ -438,6 +459,7 @@
 					<p class="text-sm tracking-[-0.3px] text-text-tertiary break-words">{@render linkedText(event.justification)}</p>
 				</div>
 			</div>
+			{@render fieldValues(event.fields)}
 		{:else if event.type === 'comment'}
 			<div class="{event.isInternal ? 'bg-accent-bg-warm border border-dashed border-accent' : 'bg-surface'} rounded-tag p-3">
 				<p class="text-sm tracking-[-0.3px]">{@render linkedText(event.message)}</p>

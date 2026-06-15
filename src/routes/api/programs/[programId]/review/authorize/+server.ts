@@ -74,7 +74,8 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 				action: 'approve',
 				hoursAssigned: pending.hoursAssigned,
 				feedbackMessage: pending.feedbackMessage,
-				justification: pending.justification
+				justification: pending.justification,
+				fields: (pending.fields as Record<string, string | number | boolean>) ?? undefined
 			});
 		} catch (e) {
 			if (!(e instanceof ProtocolError)) throw e;
