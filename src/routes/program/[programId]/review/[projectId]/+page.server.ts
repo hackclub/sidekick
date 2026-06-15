@@ -3,7 +3,8 @@ import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
 import { resolveActorIds } from '$lib/server/actors.js';
-import { getProjectDetails, getUserTrustFactor, getAiCodingSeconds } from '$lib/server/integrations/hackatime.js';
+import { getProjectDetails, getUserTrustFactor, getAiCodingSeconds, getTrustLogs } from '$lib/server/integrations/hackatime.js';
+import type { TrustLog } from '$lib/server/integrations/hackatime.js';
 import { findRecordsByUrl, airtableRecordUrl } from '$lib/server/integrations/airtable.js';
 import { parseRepoUrl, getCommits, getRepoInfo, getReadme } from '$lib/server/integrations/github.js';
 import { getLapseTimelapses } from '$lib/server/integrations/lapse.js';
@@ -109,24 +110,26 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 
 	const hackatimeData = (async () => {
 		if (!(hackatimeUser && project.hackatimeProjectKeys.length > 0)) {
-			return { hackatime: null as { totalSeconds: number; aiSeconds: number } | null, trustLevel: null as string | null, projectBreakdown: [] as { name: string; totalSeconds: number }[] };
+			return { hackatime: null as { totalSeconds: number; aiSeconds: number } | null, trustLevel: null as string | null, trustLogs: [] as TrustLog[], projectBreakdown: [] as { name: string; totalSeconds: number }[] };
 		}
 		try {
-			const [projectDetails, trust, aiSeconds] = await Promise.all([
+			const [projectDetails, trust, aiSeconds, trustLogs] = await Promise.all([
 				getProjectDetails(hackatimeUser, project.hackatimeProjectKeys),
 				getUserTrustFactor(hackatimeUser),
-				getAiCodingSeconds(hackatimeUser, project.hackatimeProjectKeys)
+				getAiCodingSeconds(hackatimeUser, project.hackatimeProjectKeys),
+				getTrustLogs(hackatimeUser).catch((e) => { log.warn('trust logs fetch failed', { error: e }); return [] as TrustLog[]; })
 			]);
 			const totalSeconds = projectDetails.projects.reduce((s, p) => s + p.totalSeconds, 0);
 			log.debug('hackatime data loaded', { totalSeconds, aiSeconds, trustLevel: trust.trustLevel });
 			return {
 				hackatime: { totalSeconds, aiSeconds },
 				trustLevel: trust.trustLevel,
+				trustLogs,
 				projectBreakdown: projectDetails.projects.map((p) => ({ name: p.name, totalSeconds: p.totalSeconds }))
 			};
 		} catch (e) {
 			log.error('hackatime integration failed', e);
-			return { hackatime: null, trustLevel: null, projectBreakdown: [] };
+			return { hackatime: null, trustLevel: null, trustLogs: [], projectBreakdown: [] };
 		}
 	})();
 

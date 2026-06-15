@@ -81,7 +81,11 @@
 			if (parsed.selectedAction) {
 				selectedAction = parsed.selectedAction;
 			}
-				return { ...blank, ...parsed.drafts };
+				const merged = { ...blank, ...parsed.drafts };
+			for (const key of Object.keys(blank) as ActionType[]) {
+				merged[key] = { ...emptyDraft(), ...merged[key] };
+			}
+			return merged;
 		} catch { return blank; }
 	}
 
