@@ -358,6 +358,7 @@
 					hackatimeId={data.author.hackatimeId}
 					email={data.author.email}
 					trustLevel={hackatime?.trustLevel ?? null}
+					trustLogs={hackatime?.trustLogs ?? []}
 					loading={!hackatime}
 				/>
 				<HourBreakdown

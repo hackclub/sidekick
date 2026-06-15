@@ -15,6 +15,16 @@ interface TrustFactor {
 	trustValue: number;
 }
 
+export interface TrustLog {
+	id: number;
+	createdAt: string;
+	previousTrustLevel: string;
+	newTrustLevel: string;
+	reason: string | null;
+	changedBy: string | null;
+	changedByAvatarUrl: string | null;
+}
+
 interface Heartbeat {
 	id: string;
 	entity: string;
@@ -164,6 +174,48 @@ export async function getUserTrustFactor(
 	};
 	log.debug('getUserTrustFactor result', { userId, trustLevel: result.trustLevel });
 	return result;
+}
+
+interface RawTrustLog {
+	id: number;
+	created_at: string;
+	previous_trust_level: string;
+	new_trust_level: string;
+	reason: string | null;
+	changed_by: { id: number; display_name: string; username: string } | null;
+}
+
+export async function getTrustLogs(userId: string): Promise<TrustLog[]> {
+	log.debug('getTrustLogs called', { userId });
+	const response = await authFetch('/api/admin/v1/user/trust_logs', { id: userId });
+	const data = await response.json();
+	const rawLogs: RawTrustLog[] = data.trust_logs ?? [];
+
+	const uniqueUsernames = [...new Set(rawLogs.map((r) => r.changed_by?.username).filter(Boolean))] as string[];
+	const avatarMap = new Map<number, string>();
+	if (uniqueUsernames.length > 0) {
+		const results = await Promise.all(uniqueUsernames.map((u) => searchUsers(u).catch(() => [])));
+		for (const users of results) {
+			for (const u of users) {
+				if (!avatarMap.has(u.id)) {
+					const url = u.slackAvatarUrl ?? u.githubAvatarUrl;
+					if (url) avatarMap.set(u.id, url);
+				}
+			}
+		}
+	}
+
+	const logs: TrustLog[] = rawLogs.map((r) => ({
+		id: r.id,
+		createdAt: r.created_at,
+		previousTrustLevel: r.previous_trust_level,
+		newTrustLevel: r.new_trust_level,
+		reason: r.reason,
+		changedBy: r.changed_by?.display_name ?? r.changed_by?.username ?? null,
+		changedByAvatarUrl: r.changed_by ? (avatarMap.get(r.changed_by.id) ?? null) : null
+	}));
+	log.debug('getTrustLogs result', { userId, logCount: logs.length });
+	return logs;
 }
 
 export async function getHeartbeatsByUserAgent(
