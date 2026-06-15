@@ -27,11 +27,24 @@ export interface Project {
   metadata?: Record<string, unknown>;
 }
 
+export interface ReviewFieldDefinition {
+  name: string;
+  label: string;
+  type: "string" | "integer" | "boolean";
+  required?: boolean;
+  placeholder?: string;
+  defaultValue?: string | number | boolean;
+}
+
+export type ReviewFieldValues = Record<string, string | number | boolean>;
+
 export interface Ship {
   id: string;
   hoursSubmitted: number;
   submittedAt: string; // ISO 8601
   status: "pending" | "pending_hq" | "approved" | "rejected";
+  approveFields?: ReviewFieldDefinition[];
+  rejectFields?: ReviewFieldDefinition[];
 }
 
 export interface ProjectChange {
@@ -59,6 +72,7 @@ export type TimelineEvent =
       hoursDeflated?: number;
       feedbackMessage: string;
       justification: string;
+      fields?: ReviewFieldValues;
       timestamp: string;
     }
   | {
@@ -69,6 +83,7 @@ export type TimelineEvent =
       hoursAssigned: number;
       feedbackMessage: string;
       justification: string;
+      fields?: ReviewFieldValues;
       timestamp: string;
     }
   | {
@@ -80,6 +95,7 @@ export type TimelineEvent =
       hoursDeflated?: number;
       feedbackMessage: string;
       justification: string;
+      fields?: ReviewFieldValues;
       timestamp: string;
     }
   | {
@@ -91,6 +107,7 @@ export type TimelineEvent =
       hoursAssigned: number;
       feedbackMessage: string;
       justification: string;
+      fields?: ReviewFieldValues;
       timestamp: string;
     }
   | {
@@ -99,6 +116,7 @@ export type TimelineEvent =
       actorId: string;
       feedbackMessage: string;
       internalMessage?: string;
+      fields?: ReviewFieldValues;
       timestamp: string;
     }
   | {
@@ -168,11 +186,13 @@ export type SubmitReviewActionInput = SubmitReviewActionBase &
         hoursAssigned: number;
         feedbackMessage: string;
         justification: string;
+        fields?: ReviewFieldValues;
       }
     | {
         action: "reject";
         feedbackMessage: string;
         internalMessage?: string;
+        fields?: ReviewFieldValues;
       }
     | {
         action: "authorize";
@@ -199,11 +219,13 @@ export type UpdateReviewActionInput = {
       type: "approval";
       feedbackMessage: string;
       justification: string;
+      fields?: ReviewFieldValues;
     }
   | {
       type: "rejection";
       feedbackMessage: string;
       internalMessage?: string;
+      fields?: ReviewFieldValues;
     }
 );
 

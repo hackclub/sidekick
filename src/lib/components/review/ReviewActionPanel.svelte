@@ -3,6 +3,7 @@
 	import { CircleCheck, CircleX, MessageSquare, Eye, AlertTriangle, Loader2, X, Copy, Sparkles } from 'lucide-svelte';
 	import MarkdownTextarea from '$lib/components/ui/MarkdownTextarea.svelte';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
+	import type { ReviewFieldDefinition, ReviewFieldValues } from '$lib/server/protocol/types.js';
 
 	const log = createLogger('ReviewActionPanel');
 
@@ -39,15 +40,18 @@
 			justification?: string;
 			internalMessage?: string;
 			commentText?: string;
+			fields?: ReviewFieldValues;
 		}) => void;
 		submitting?: boolean;
 		prefill?: PrefillData | null;
 		changelog?: ChangelogContext | null;
 		overview?: OverviewContext | null;
 		draftKey?: string;
+		approveFields?: ReviewFieldDefinition[];
+		rejectFields?: ReviewFieldDefinition[];
 	}
 
-	let { remainingHours, onsubmit, submitting = false, prefill = null, changelog = null, overview = null, draftKey = '' }: Props = $props();
+	let { remainingHours, onsubmit, submitting = false, prefill = null, changelog = null, overview = null, draftKey = '', approveFields = [], rejectFields = [] }: Props = $props();
 
 	let selectedAction: ActionType = $state('approve');
 	let hoursAssigned = $state(0);
@@ -58,8 +62,8 @@
 		}
 	});
 
-	type DraftFields = { feedbackMessage: string; justification: string; internalMessage: string; commentText: string };
-	const emptyDraft = (): DraftFields => ({ feedbackMessage: '', justification: '', internalMessage: '', commentText: '' });
+	type DraftFields = { feedbackMessage: string; justification: string; internalMessage: string; commentText: string; customFields: ReviewFieldValues };
+	const emptyDraft = (): DraftFields => ({ feedbackMessage: '', justification: '', internalMessage: '', commentText: '', customFields: {} });
 
 	function storageKey() { return draftKey ? `review-draft:${draftKey}` : ''; }
 
@@ -99,6 +103,32 @@
 	const justification = $derived(drafts[selectedAction].justification);
 	const internalMessage = $derived(drafts[selectedAction].internalMessage);
 	const commentText = $derived(drafts[selectedAction].commentText);
+	const customFields = $derived(drafts[selectedAction].customFields);
+
+	const activeFieldDefs = $derived(
+		selectedAction === 'approve' ? (approveFields ?? []) :
+		selectedAction === 'reject' ? (rejectFields ?? []) :
+		[]
+	);
+
+	function setCustomField(name: string, value: string | number | boolean) {
+		drafts[selectedAction] = { ...drafts[selectedAction], customFields: { ...drafts[selectedAction].customFields, [name]: value } };
+	}
+
+	function getCustomFieldDefault(def: ReviewFieldDefinition): string | number | boolean {
+		if (def.defaultValue !== undefined) return def.defaultValue;
+		if (def.type === 'boolean') return false;
+		if (def.type === 'integer') return 0;
+		return '';
+	}
+
+	$effect(() => {
+		for (const def of activeFieldDefs) {
+			if (def.defaultValue !== undefined && customFields[def.name] === undefined) {
+				setCustomField(def.name, def.defaultValue);
+			}
+		}
+	});
 
 	function setDraft(field: keyof DraftFields, value: string) {
 		drafts[selectedAction] = { ...drafts[selectedAction], [field]: value };
@@ -142,19 +172,44 @@
 
 	const exceedsRemaining = $derived(hoursAssigned > remainingHours + 0.005);
 
+	function requiredCustomFieldsFilled(): boolean {
+		for (const def of activeFieldDefs) {
+			if (!def.required) continue;
+			const val = customFields[def.name];
+			if (val === undefined || val === null) return false;
+			if (def.type === 'string' && typeof val === 'string' && !val.trim()) return false;
+		}
+		return true;
+	}
+
 	const canSubmit = $derived.by(() => {
 		if (submitting)
 			return false;
 		switch (selectedAction) {
 			case 'approve':
-				return hoursAssigned > 0 && feedbackMessage.trim() && justification.trim();
+				return hoursAssigned > 0 && feedbackMessage.trim() && justification.trim() && requiredCustomFieldsFilled();
 			case 'reject':
-				return feedbackMessage.trim().length > 0;
+				return feedbackMessage.trim().length > 0 && requiredCustomFieldsFilled();
 			case 'comment':
 			case 'internal_comment':
 				return commentText.trim().length > 0;
 		}
 	});
+
+	function buildFieldValues(): ReviewFieldValues | undefined {
+		if (activeFieldDefs.length === 0) return undefined;
+		const values: ReviewFieldValues = {};
+		for (const def of activeFieldDefs) {
+			const val = customFields[def.name];
+			const dflt = getCustomFieldDefault(def);
+			if (val !== undefined && val !== null && val !== '' && val !== dflt) {
+				values[def.name] = val;
+			} else if (def.required) {
+				values[def.name] = val ?? dflt;
+			}
+		}
+		return Object.keys(values).length > 0 ? values : undefined;
+	}
 
 	function handleSubmit() {
 		if (!canSubmit)
@@ -165,9 +220,11 @@
 			payload.hoursAssigned = hoursAssigned;
 			payload.feedbackMessage = feedbackMessage;
 			payload.justification = justification;
+			payload.fields = buildFieldValues();
 		} else if (selectedAction === 'reject') {
 			payload.feedbackMessage = feedbackMessage;
 			payload.internalMessage = internalMessage || undefined;
+			payload.fields = buildFieldValues();
 		} else {
 			payload.commentText = commentText;
 		}
@@ -346,6 +403,48 @@
 				/>
 			</div>
 
+			{#each approveFields ?? [] as fieldDef (fieldDef.name)}
+				<div class="flex flex-col gap-1.5">
+					<label class="font-bold text-sm tracking-[-0.3px]" for="field-{fieldDef.name}">
+						{fieldDef.label}
+						{#if !fieldDef.required}
+							<span class="font-normal text-text-secondary">(optional)</span>
+						{/if}
+					</label>
+					{#if fieldDef.type === 'boolean'}
+						<label class="flex items-center gap-2 cursor-pointer">
+							<input
+								id="field-{fieldDef.name}"
+								type="checkbox"
+								checked={!!customFields[fieldDef.name]}
+								onchange={(e) => setCustomField(fieldDef.name, e.currentTarget.checked)}
+								class="size-4 accent-accent"
+							/>
+							<span class="text-sm text-text-secondary">{fieldDef.placeholder ?? ''}</span>
+						</label>
+					{:else if fieldDef.type === 'integer'}
+						<input
+							id="field-{fieldDef.name}"
+							type="number"
+							step="1"
+							value={customFields[fieldDef.name] ?? ''}
+							oninput={(e) => setCustomField(fieldDef.name, parseInt(e.currentTarget.value) || 0)}
+							placeholder={fieldDef.placeholder ?? ''}
+							class="border border-border-input rounded-section px-3.5 py-2.5 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
+						/>
+					{:else}
+						<input
+							id="field-{fieldDef.name}"
+							type="text"
+							value={customFields[fieldDef.name] ?? ''}
+							oninput={(e) => setCustomField(fieldDef.name, e.currentTarget.value)}
+							placeholder={fieldDef.placeholder ?? ''}
+							class="border border-border-input rounded-section px-3.5 py-2.5 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
+						/>
+					{/if}
+				</div>
+			{/each}
+
 			{#if changelogResult}
 				<div class="flex flex-col gap-2 border border-border-card rounded-section bg-surface/50 p-4">
 					<div class="flex items-center justify-between">
@@ -412,6 +511,48 @@
 					rows={3}
 				/>
 			</div>
+
+			{#each rejectFields ?? [] as fieldDef (fieldDef.name)}
+				<div class="flex flex-col gap-1.5">
+					<label class="font-bold text-sm tracking-[-0.3px]" for="field-{fieldDef.name}">
+						{fieldDef.label}
+						{#if !fieldDef.required}
+							<span class="font-normal text-text-secondary">(optional)</span>
+						{/if}
+					</label>
+					{#if fieldDef.type === 'boolean'}
+						<label class="flex items-center gap-2 cursor-pointer">
+							<input
+								id="field-{fieldDef.name}"
+								type="checkbox"
+								checked={!!customFields[fieldDef.name]}
+								onchange={(e) => setCustomField(fieldDef.name, e.currentTarget.checked)}
+								class="size-4 accent-accent"
+							/>
+							<span class="text-sm text-text-secondary">{fieldDef.placeholder ?? ''}</span>
+						</label>
+					{:else if fieldDef.type === 'integer'}
+						<input
+							id="field-{fieldDef.name}"
+							type="number"
+							step="1"
+							value={customFields[fieldDef.name] ?? ''}
+							oninput={(e) => setCustomField(fieldDef.name, parseInt(e.currentTarget.value) || 0)}
+							placeholder={fieldDef.placeholder ?? ''}
+							class="border border-border-input rounded-section px-3.5 py-2.5 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
+						/>
+					{:else}
+						<input
+							id="field-{fieldDef.name}"
+							type="text"
+							value={customFields[fieldDef.name] ?? ''}
+							oninput={(e) => setCustomField(fieldDef.name, e.currentTarget.value)}
+							placeholder={fieldDef.placeholder ?? ''}
+							class="border border-border-input rounded-section px-3.5 py-2.5 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
+						/>
+					{/if}
+				</div>
+			{/each}
 
 		{:else}
 			<div class="flex flex-col gap-1.5">

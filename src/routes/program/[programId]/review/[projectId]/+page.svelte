@@ -177,6 +177,7 @@
 		justification?: string;
 		internalMessage?: string;
 		commentText?: string;
+		fields?: Record<string, string | number | boolean>;
 	}) {
 		submitting = true;
 		log.info('Submitting review', { action: reviewData.action, shipId: data.pendingShip?.id });
@@ -188,7 +189,11 @@
 		}
 		for (const [key, value] of Object.entries(reviewData)) {
 			if (value !== undefined) {
-				formData.set(key, String(value));
+				if (key === 'fields') {
+					formData.set(key, JSON.stringify(value));
+				} else {
+					formData.set(key, String(value));
+				}
 			}
 		}
 
@@ -420,6 +425,8 @@
 							changelog={changelogContext}
 							overview={overviewContext}
 							draftKey={data.project.id}
+							approveFields={data.pendingShip.approveFields}
+							rejectFields={data.pendingShip.rejectFields}
 						/>
 					</div>
 				{/if}

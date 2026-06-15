@@ -21,12 +21,13 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	});
 
 	const body = await request.json();
-	const { type, reviewerId, feedbackMessage, justification, internalMessage } = body as {
+	const { type, reviewerId, feedbackMessage, justification, internalMessage, fields } = body as {
 		type: 'approval' | 'rejection';
 		reviewerId: string;
 		feedbackMessage: string;
 		justification?: string;
 		internalMessage?: string;
+		fields?: Record<string, string | number | boolean>;
 	};
 
 	if (!reviewerId) throw error(400, 'reviewerId is required');
@@ -42,7 +43,8 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 			reviewerId,
 			type: 'approval',
 			feedbackMessage,
-			justification: justification ?? ''
+			justification: justification ?? '',
+			fields
 		};
 	} else {
 		input = {
@@ -50,7 +52,8 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 			reviewerId,
 			type: 'rejection',
 			feedbackMessage,
-			internalMessage
+			internalMessage,
+			fields
 		};
 	}
 
