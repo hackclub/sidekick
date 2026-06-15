@@ -79,7 +79,11 @@ A **project** is the primary entity - the thing a participant is building. It ha
       "id": "ship_002",
       "hoursSubmitted": 8.0,
       "submittedAt": "2026-05-28T10:00:00Z",
-      "status": "pending"
+      "status": "pending",
+      "approveFields": [
+        { "name": "grant_amount", "label": "Grant Amount (USD)", "type": "integer", "required": true }
+      ],
+      "rejectFields": []
     }
   ],
   "metadata": {}
@@ -104,14 +108,40 @@ A **project** is the primary entity - the thing a participant is building. It ha
 
 A **ship** is a submission event - each time a participant submits their project for review, that creates a ship. A project can have many ships over its lifetime (initial submission, updates after rejection, new work on an approved project).
 
-| Field            | Type     | Required | Description                                       |
-| ---------------- | -------- | -------- | ------------------------------------------------- |
-| `id`             | `string` | Yes      | Your internal ship identifier.                    |
-| `hoursSubmitted` | `number` | Yes      | Hours the participant claims for this submission. |
-| `submittedAt`    | `string` | Yes      | ISO 8601 timestamp.                               |
-| `status`         | `string` | Yes      | `"pending"`, `"pending_hq"`, `"approved"`, or `"rejected"`. |
+| Field            | Type                    | Required | Description                                       |
+| ---------------- | ----------------------- | -------- | ------------------------------------------------- |
+| `id`             | `string`                | Yes      | Your internal ship identifier.                    |
+| `hoursSubmitted` | `number`                | Yes      | Hours the participant claims for this submission. |
+| `submittedAt`    | `string`                | Yes      | ISO 8601 timestamp.                               |
+| `status`         | `string`                | Yes      | `"pending"`, `"pending_hq"`, `"approved"`, or `"rejected"`. |
+| `approveFields`  | `ReviewFieldDefinition[]` | No     | Custom fields to show when approving this ship. If omitted or empty, no extra fields are shown. |
+| `rejectFields`   | `ReviewFieldDefinition[]` | No     | Custom fields to show when rejecting this ship. If omitted or empty, no extra fields are shown. |
 
 Ships are always embedded inside their parent project - they're never returned as standalone objects.
+
+#### Review Field Definitions
+
+Ships can declare custom fields that reviewers must fill in when approving or rejecting. This lets programs collect structured data alongside the standard feedback and justification fields. Each field definition describes one input:
+
+```json
+{
+  "name": "grant_amount",
+  "label": "Grant Amount (USD)",
+  "type": "integer",
+  "required": true,
+  "placeholder": "e.g. 100"
+}
+```
+
+| Field         | Type     | Required | Description                                                                 |
+| ------------- | -------- | -------- | --------------------------------------------------------------------------- |
+| `name`        | `string` | Yes      | Machine-readable key. Used in the submitted `fields` object.                |
+| `label`       | `string` | Yes      | Human-readable label shown to the reviewer.                                 |
+| `type`        | `string` | Yes      | `"string"`, `"integer"`, or `"boolean"`.                                    |
+| `required`    | `boolean`| No       | If `true`, the reviewer must fill this field before submitting. Default `false`. |
+| `placeholder` | `string` | No       | Placeholder text for string/integer inputs, or description text for boolean checkboxes. |
+
+Field values submitted by reviewers are sent as part of the `fields` object in `SUBMIT_REVIEW_ACTION` and `UPDATE_REVIEW_ACTION` (see below). Values are typed according to the field definition: strings for `"string"`, numbers for `"integer"`, and booleans for `"boolean"`.
 
 ### Shop Items
 
@@ -249,6 +279,7 @@ Sidekick renders `"text"` changes as inline old→new values, `"url"` the same w
   "hoursAssigned": 10.0,
   "feedbackMessage": "Great work on the WebSocket implementation!",
   "justification": "Verified commits, Hackatime logs match claimed hours.",
+  "fields": { "grant_amount": 100 },
   "timestamp": "2026-05-17T16:45:00Z"
 }
 ```
@@ -259,6 +290,7 @@ Sidekick renders `"text"` changes as inline old→new values, `"url"` the same w
 | `hoursDeflated`   | `number` | No       | Hours reduced due to deflation, if any.                               |
 | `feedbackMessage` | `string` | Yes      | Feedback shown to the participant.                                    |
 | `justification`   | `string` | Yes      | Internal reasoning (visible to other reviewers, not the participant). |
+| `fields`          | `object` | No       | Custom field values from the review. Keys match `ReviewFieldDefinition.name`. |
 
 **`"rejection"` - a reviewer rejected a ship**
 
@@ -268,6 +300,7 @@ Sidekick renders `"text"` changes as inline old→new values, `"url"` the same w
   "shipId": "ship_002",
   "actorId": "ident!reviewer456",
   "feedbackMessage": "The demo link is broken. Please fix and resubmit.",
+  "fields": {},
   "timestamp": "2026-05-29T11:00:00Z"
 }
 ```
@@ -276,6 +309,7 @@ Sidekick renders `"text"` changes as inline old→new values, `"url"` the same w
 | ----------------- | -------- | -------- | ---------------------------------------- |
 | `feedbackMessage` | `string` | Yes      | Feedback shown to the participant.       |
 | `internalMessage` | `string` | No       | Internal-only notes for other reviewers. |
+| `fields`          | `object` | No       | Custom field values from the review. Keys match `ReviewFieldDefinition.name`. |
 
 **`"comment"` - a comment on the project**
 
@@ -405,9 +439,12 @@ The `action` field determines which other fields are present:
   "action": "approve",
   "hoursAssigned": 7.5,
   "feedbackMessage": "Looks good! Nice use of WebSockets.",
-  "justification": "Hackatime logs verified, 8h claimed, 0.5h AI-generated code deducted."
+  "justification": "Hackatime logs verified, 8h claimed, 0.5h AI-generated code deducted.",
+  "fields": { "grant_amount": 75 }
 }
 ```
+
+The `fields` object is optional. If the ship declared `approveFields`, the values submitted by the reviewer are included here. Keys match the `name` from each `ReviewFieldDefinition`. Omit `fields` entirely if there are no custom fields or none were filled.
 
 **Reject:**
 ```json
@@ -416,9 +453,12 @@ The `action` field determines which other fields are present:
   "reviewerId": "ident!reviewer456",
   "action": "reject",
   "feedbackMessage": "The demo link returns a 404. Please deploy and resubmit.",
-  "internalMessage": "Suspicious commit pattern - might want a closer look next time."
+  "internalMessage": "Suspicious commit pattern - might want a closer look next time.",
+  "fields": { "ban_user": false }
 }
 ```
+
+As with approvals, `fields` is optional and carries values from the ship's `rejectFields` definitions.
 
 **Comment (visible to participant):**
 ```json
@@ -488,7 +528,8 @@ The `type` field determines which fields are present:
   "reviewerId": "ident!reviewer456",
   "type": "approval",
   "feedbackMessage": "Updated: Great work on the WebSocket implementation! Fixed a typo.",
-  "justification": "Updated: Verified commits, Hackatime logs match claimed hours. Added context about AI usage."
+  "justification": "Updated: Verified commits, Hackatime logs match claimed hours. Added context about AI usage.",
+  "fields": { "grant_amount": 80 }
 }
 ```
 
@@ -499,7 +540,8 @@ The `type` field determines which fields are present:
   "reviewerId": "ident!reviewer456",
   "type": "rejection",
   "feedbackMessage": "Updated: The demo link is broken. Please fix and resubmit.",
-  "internalMessage": "Added: Also noticed some copied code from a tutorial."
+  "internalMessage": "Added: Also noticed some copied code from a tutorial.",
+  "fields": { "ban_user": true }
 }
 ```
 
@@ -511,6 +553,7 @@ The `type` field determines which fields are present:
 | `feedbackMessage` | `string` | Yes           | Updated feedback (visible to participant). |
 | `justification`   | `string` | Approval only | Updated internal justification.            |
 | `internalMessage` | `string` | No            | Updated internal note (rejection only).    |
+| `fields`          | `object` | No            | Updated custom field values. Keys match `ReviewFieldDefinition.name`. |
 
 **Response:** `{ "success": true }`
 
