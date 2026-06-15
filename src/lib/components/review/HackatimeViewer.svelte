@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { createLogger } from '$lib/logger.js';
+	import { isQuirkHeartbeat } from '$lib/heartbeat-quirks.js';
 	import { Activity, LoaderCircle, FolderCode, ExternalLink, Check } from 'lucide-svelte';
+	import Checkbox from '$lib/components/ui/Checkbox.svelte';
 	import HeartbeatFrequencyBar from './HeartbeatFrequencyBar.svelte';
 	import HeartbeatScatter from './HeartbeatScatter.svelte';
 	import HeartbeatTable from './HeartbeatTable.svelte';
@@ -83,6 +85,7 @@
 	let overflowTooltip = $state<{ x: number; y: number } | null>(null);
 	let scrollContainer = $state<HTMLElement | null>(null);
 	let joeCopied = $state(false);
+	let showQuirks = $state(false);
 
 	function monthKey(dateStr: string): string {
 		return dateStr.slice(0, 7);
@@ -334,8 +337,18 @@
 			});
 	});
 
-	const codingHeartbeats = $derived(
-		heartbeats?.filter((hb) => hb.editor !== 'lapse' && !hb.user_agent.toLowerCase().includes('lapse')) ?? null
+	const codingHeartbeats = $derived.by(() => {
+		if (!heartbeats) return null;
+		const noLapse = heartbeats.filter((hb) => hb.editor !== 'lapse' && !hb.user_agent.toLowerCase().includes('lapse'));
+		if (showQuirks) return noLapse;
+		return noLapse.filter((hb) => !isQuirkHeartbeat(hb));
+	});
+
+	const quirkCount = $derived(
+		heartbeats?.filter((hb) =>
+			hb.editor !== 'lapse' && !hb.user_agent.toLowerCase().includes('lapse') &&
+			isQuirkHeartbeat(hb)
+		).length ?? 0
 	);
 
 	const dayProjectKeys = $derived.by(() => {
@@ -370,7 +383,7 @@
 </script>
 
 <div class="border border-border-card rounded-card shadow-card overflow-hidden flex flex-col {className}">
-	<div class="flex items-center px-6 py-4 border-b border-border-card">
+	<div class="flex items-center justify-between px-6 py-4 border-b border-border-card">
 		<div class="flex items-center gap-2.5">
 			<Activity size={18} class="text-text-secondary" />
 			<div class="flex flex-col gap-0.5">
@@ -378,6 +391,9 @@
 				<p class="text-[12px] text-text-secondary tracking-[-0.24px] flex items-center gap-1.5">
 					{#if codingHeartbeats}
 						{codingHeartbeats.length} heartbeat{codingHeartbeats.length === 1 ? '' : 's'}
+						{#if !showQuirks && quirkCount > 0}
+							<span class="text-text-tertiary">({quirkCount} quirk{quirkCount === 1 ? '' : 's'} hidden)</span>
+						{/if}
 					{:else}
 						No data
 					{/if}
@@ -388,6 +404,14 @@
 			</div>
 		</div>
 
+		{#if quirkCount > 0}
+			<Checkbox checked={showQuirks} onchange={() => (showQuirks = !showQuirks)}>
+				<div class="flex flex-col gap-0.5">
+					<span class="text-sm text-text-primary tracking-[-0.3px]">Quirk heartbeats</span>
+					<span class="text-[11px] text-text-tertiary tracking-[-0.2px]">Show heartbeats that are probably caused by WakaTime plugin quirks</span>
+				</div>
+			</Checkbox>
+		{/if}
 	</div>
 
 	<div class="flex items-center justify-between px-6 py-2.5 border-b border-border-card bg-surface/30">

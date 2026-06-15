@@ -364,6 +364,7 @@
 					aggregatedSeconds={hackatime?.hackatime?.totalSeconds ?? 0}
 					shippedHours={shippedDeltaHours}
 					aiSeconds={hackatime?.hackatime?.aiSeconds ?? 0}
+					quirkSeconds={hackatime?.hackatime?.quirkSeconds ?? 0}
 					previousShips={(airtable?.airtableRecords ?? [])
 						.filter((r) => r.hours > 0 && normalizeForCompare(r.id.split('–')[0]?.trim() || r.id) !== normalizeForCompare(data.programYswsName))
 						.map((r) => ({ programName: r.id.split('–')[0]?.trim() || r.id, date: '', hours: r.hours, url: r.url }))}

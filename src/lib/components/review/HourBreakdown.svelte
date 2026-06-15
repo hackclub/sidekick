@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Hourglass, Asterisk, BotOff, Ship, Anchor } from 'lucide-svelte';
+	import { Hourglass, Asterisk, BotOff, Ship, Anchor, Bug } from 'lucide-svelte';
 
 	interface PreviousShip {
 		programName: string;
@@ -12,12 +12,13 @@
 		aggregatedSeconds: number;
 		shippedHours?: number;
 		aiSeconds: number;
+		quirkSeconds: number;
 		previousShips: PreviousShip[];
 		loading?: boolean;
 		class?: string;
 	}
 
-	let { aggregatedSeconds, shippedHours, aiSeconds, previousShips, loading = false, class: className = '' }: Props = $props();
+	let { aggregatedSeconds, shippedHours, aiSeconds, quirkSeconds, previousShips, loading = false, class: className = '' }: Props = $props();
 
 	function fmt(seconds: number): string {
 		const h = Math.floor(seconds / 3600);
@@ -31,15 +32,15 @@
 		return `-${m > 0 ? `${h}h ${m}m` : `${h}h`}`;
 	}
 
+	const afterQuirks = $derived(aggregatedSeconds - quirkSeconds);
+
 	const shippedSeconds = $derived(shippedHours != null && shippedHours > 0 ? shippedHours * 3600 : null);
-	const hasShippedCap = $derived(shippedSeconds != null && shippedSeconds < aggregatedSeconds);
+	const hasShippedCap = $derived(shippedSeconds != null && shippedSeconds < afterQuirks);
 
-	// The funnel base: use shipped hours if it caps aggregated, otherwise use aggregated
-	const baseSeconds = $derived(hasShippedCap ? shippedSeconds! : aggregatedSeconds);
+	const baseSeconds = $derived(hasShippedCap ? shippedSeconds! : afterQuirks);
 
-	// Scale AI deduction proportionally if we're capping to shipped hours
 	const scaledAiSeconds = $derived(
-		aggregatedSeconds > 0 ? Math.round(aiSeconds * (baseSeconds / aggregatedSeconds)) : 0
+		afterQuirks > 0 ? Math.round(aiSeconds * (baseSeconds / afterQuirks)) : 0
 	);
 	const afterAi = $derived(baseSeconds - scaledAiSeconds);
 
@@ -80,8 +81,21 @@
 			<span class="font-bold text-sm text-text-primary tracking-[-0.3px]">{fmt(aggregatedSeconds)}</span>
 		</div>
 
+		{#if quirkSeconds > 0}
+			<div class="flex items-center justify-between w-full">
+				<div class="flex gap-2 items-center">
+					<span class="relative z-10 flex items-center justify-center w-[14px] rounded-sm bg-white"><Bug size={14} class="text-text-primary" /></span>
+					<span class="text-sm text-text-primary tracking-[-0.3px]">Without plugin quirks</span>
+				</div>
+				<span class="text-sm text-text-primary tracking-[-0.3px]">
+					<span class="font-bold">{fmt(afterQuirks)}</span>
+					<span class="text-xs"> ({fmtDelta(quirkSeconds)})</span>
+				</span>
+			</div>
+		{/if}
+
 		{#if hasShippedCap}
-			{@const cappedBy = aggregatedSeconds - shippedSeconds!}
+			{@const cappedBy = afterQuirks - shippedSeconds!}
 			<div class="flex items-center justify-between w-full">
 				<div class="flex gap-2 items-center">
 					<span class="relative z-10 flex items-center justify-center w-[14px] rounded-sm bg-white"><Anchor size={14} class="text-text-primary" /></span>

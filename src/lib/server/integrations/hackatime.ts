@@ -1,5 +1,6 @@
 import { env } from '$env/dynamic/private';
 import { createLogger } from '../logger.js';
+import { isQuirkHeartbeat } from '$lib/heartbeat-quirks.js';
 
 const log = createLogger('hackatime');
 const BASE_URL = 'https://hackatime.hackclub.com';
@@ -258,6 +259,48 @@ export async function getAiCodingSeconds(
 	const seconds = durationFromHeartbeats(aiHeartbeats);
 	log.debug('getAiCodingSeconds result', { userId, aiHeartbeatCount: aiHeartbeats.length, seconds });
 	return seconds;
+}
+
+export async function getQuirkSeconds(
+	userId: string,
+	projectKeys: string[]
+): Promise<number> {
+	log.debug('getQuirkSeconds called', { userId, projectKeys: projectKeys.join(',') });
+	const range = await getProjectDateRange(userId, projectKeys);
+	if (!range) {
+		log.debug('getQuirkSeconds no date range found', { userId });
+		return 0;
+	}
+
+	const startS = Math.floor(new Date(range.firstDate + 'T00:00:00Z').getTime() / 1000);
+	const endS = Math.floor(new Date(range.lastDate + 'T23:59:59Z').getTime() / 1000);
+	const all = await getRawHeartbeatRange(userId, startS, endS);
+
+	const keySet = new Set(projectKeys.map((k) => k.toLowerCase()));
+	const projectHeartbeats = all.filter(
+		(hb) => keySet.has((hb.project ?? '').toLowerCase())
+	);
+
+	const nonQuirkHeartbeats = projectHeartbeats.filter(
+		(hb) => !isQuirkHeartbeat({
+			lines: hb.lines ?? 0,
+			cursorpos: hb.cursorpos ?? 0,
+			lineno: hb.lineno ?? 0,
+			user_agent: hb.user_agent ?? ''
+		})
+	);
+
+	const totalDuration = durationFromHeartbeats(projectHeartbeats);
+	const cleanDuration = durationFromHeartbeats(nonQuirkHeartbeats);
+	const quirkSeconds = totalDuration - cleanDuration;
+
+	log.debug('getQuirkSeconds result', {
+		userId,
+		totalHeartbeats: projectHeartbeats.length,
+		quirkHeartbeats: projectHeartbeats.length - nonQuirkHeartbeats.length,
+		quirkSeconds
+	});
+	return quirkSeconds;
 }
 
 export async function getRawHeartbeatRange(
