@@ -3,7 +3,7 @@ import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
 import { resolveActorIds } from '$lib/server/actors.js';
-import { getProjectDetails, getUserTrustFactor, getAiCodingSeconds } from '$lib/server/integrations/hackatime.js';
+import { getProjectDetails, getUserTrustFactor, getHeartbeatMetrics } from '$lib/server/integrations/hackatime.js';
 import { findRecordsByUrl, airtableRecordUrl } from '$lib/server/integrations/airtable.js';
 import { parseRepoUrl, getCommits, getRepoInfo, getReadme } from '$lib/server/integrations/github.js';
 import { getLapseTimelapses } from '$lib/server/integrations/lapse.js';
@@ -109,18 +109,19 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 
 	const hackatimeData = (async () => {
 		if (!(hackatimeUser && project.hackatimeProjectKeys.length > 0)) {
-			return { hackatime: null as { totalSeconds: number; aiSeconds: number } | null, trustLevel: null as string | null, projectBreakdown: [] as { name: string; totalSeconds: number }[] };
+			return { hackatime: null as { totalSeconds: number; aiSeconds: number; quirkSeconds: number } | null, trustLevel: null as string | null, projectBreakdown: [] as { name: string; totalSeconds: number }[] };
 		}
 		try {
-			const [projectDetails, trust, aiSeconds] = await Promise.all([
+			const [projectDetails, trust, metrics] = await Promise.all([
 				getProjectDetails(hackatimeUser, project.hackatimeProjectKeys),
 				getUserTrustFactor(hackatimeUser),
-				getAiCodingSeconds(hackatimeUser, project.hackatimeProjectKeys)
+				getHeartbeatMetrics(hackatimeUser, project.hackatimeProjectKeys)
 			]);
+			const { aiSeconds, quirkSeconds } = metrics;
 			const totalSeconds = projectDetails.projects.reduce((s, p) => s + p.totalSeconds, 0);
-			log.debug('hackatime data loaded', { totalSeconds, aiSeconds, trustLevel: trust.trustLevel });
+			log.debug('hackatime data loaded', { totalSeconds, aiSeconds, quirkSeconds, trustLevel: trust.trustLevel });
 			return {
-				hackatime: { totalSeconds, aiSeconds },
+				hackatime: { totalSeconds, aiSeconds, quirkSeconds },
 				trustLevel: trust.trustLevel,
 				projectBreakdown: projectDetails.projects.map((p) => ({ name: p.name, totalSeconds: p.totalSeconds }))
 			};

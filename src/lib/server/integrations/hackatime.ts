@@ -1,5 +1,6 @@
 import { env } from '$env/dynamic/private';
 import { createLogger } from '../logger.js';
+import { isQuirkHeartbeat } from '$lib/heartbeat-quirks.js';
 
 const log = createLogger('hackatime');
 const BASE_URL = 'https://hackatime.hackclub.com';
@@ -233,15 +234,15 @@ function durationFromHeartbeats(heartbeats: RawHeartbeat[]): number {
 	return Math.round(total);
 }
 
-export async function getAiCodingSeconds(
+export async function getHeartbeatMetrics(
 	userId: string,
 	projectKeys: string[]
-): Promise<number> {
-	log.debug('getAiCodingSeconds called', { userId, projectKeys: projectKeys.join(',') });
+): Promise<{ aiSeconds: number; quirkSeconds: number }> {
+	log.debug('getHeartbeatMetrics called', { userId, projectKeys: projectKeys.join(',') });
 	const range = await getProjectDateRange(userId, projectKeys);
 	if (!range) {
-		log.debug('getAiCodingSeconds no date range found', { userId });
-		return 0;
+		log.debug('getHeartbeatMetrics no date range found', { userId });
+		return { aiSeconds: 0, quirkSeconds: 0 };
 	}
 
 	const startS = Math.floor(new Date(range.firstDate + 'T00:00:00Z').getTime() / 1000);
@@ -249,15 +250,33 @@ export async function getAiCodingSeconds(
 	const all = await getRawHeartbeatRange(userId, startS, endS);
 
 	const keySet = new Set(projectKeys.map((k) => k.toLowerCase()));
-	const aiHeartbeats = all.filter(
-		(hb) =>
-			keySet.has((hb.project ?? '').toLowerCase()) &&
-			(hb.category ?? '').toLowerCase() === 'ai coding'
+	const projectHeartbeats = all.filter(
+		(hb) => keySet.has((hb.project ?? '').toLowerCase())
 	);
 
-	const seconds = durationFromHeartbeats(aiHeartbeats);
-	log.debug('getAiCodingSeconds result', { userId, aiHeartbeatCount: aiHeartbeats.length, seconds });
-	return seconds;
+	const aiHeartbeats = projectHeartbeats.filter(
+		(hb) => (hb.category ?? '').toLowerCase() === 'ai coding'
+	);
+	const aiSeconds = durationFromHeartbeats(aiHeartbeats);
+
+	const nonQuirkHeartbeats = projectHeartbeats.filter(
+		(hb) => !isQuirkHeartbeat({
+			lines: hb.lines ?? 0,
+			cursorpos: hb.cursorpos ?? 0,
+			lineno: hb.lineno ?? 0,
+			user_agent: hb.user_agent ?? ''
+		})
+	);
+	const quirkSeconds = durationFromHeartbeats(projectHeartbeats) - durationFromHeartbeats(nonQuirkHeartbeats);
+
+	log.debug('getHeartbeatMetrics result', {
+		userId,
+		totalHeartbeats: projectHeartbeats.length,
+		aiSeconds,
+		quirkHeartbeats: projectHeartbeats.length - nonQuirkHeartbeats.length,
+		quirkSeconds
+	});
+	return { aiSeconds, quirkSeconds };
 }
 
 export async function getRawHeartbeatRange(
