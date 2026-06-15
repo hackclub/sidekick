@@ -121,7 +121,7 @@
 				{@const hqShip = project.ships.find((s) => s.status === 'pending_hq')}
 				{@const approvedHours = project.ships
 					.filter((s) => s.status === 'approved')
-					.reduce((sum, s) => sum + s.hoursSubmitted, 0)}
+					.reduce((max, s) => Math.max(max, s.hoursSubmitted), 0)}
 				{@const actor = data.actors[project.authorId]}
 				<a
 					href={resolve(`/program/${data.program.id}/review/${project.id}`)}
@@ -179,7 +179,7 @@
 				{@const pendingShip = project.ships.find((s) => s.status === 'pending')}
 				{@const approvedHours = project.ships
 					.filter((s) => s.status === 'approved')
-					.reduce((sum, s) => sum + s.hoursSubmitted, 0)}
+					.reduce((max, s) => Math.max(max, s.hoursSubmitted), 0)}
 				{@const actor = data.actors[project.authorId]}
 				<a
 					href={resolve(`/program/${data.program.id}/review/${project.id}`)}
