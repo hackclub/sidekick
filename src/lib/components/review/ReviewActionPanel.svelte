@@ -2,6 +2,7 @@
 	import { createLogger } from '$lib/logger.js';
 	import { CircleCheck, CircleX, MessageSquare, Eye, AlertTriangle, Loader2, X, Copy, Sparkles } from 'lucide-svelte';
 	import MarkdownTextarea from '$lib/components/ui/MarkdownTextarea.svelte';
+	import Checkbox from '$lib/components/ui/Checkbox.svelte';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
 	import type { ReviewFieldDefinition, ReviewFieldValues } from '$lib/server/protocol/types.js';
 
@@ -412,16 +413,14 @@
 						{/if}
 					</label>
 					{#if fieldDef.type === 'boolean'}
-						<label class="flex items-center gap-2 cursor-pointer">
-							<input
-								id="field-{fieldDef.name}"
-								type="checkbox"
-								checked={!!customFields[fieldDef.name]}
-								onchange={(e) => setCustomField(fieldDef.name, e.currentTarget.checked)}
-								class="size-4 accent-accent"
-							/>
-							<span class="text-sm text-text-secondary">{fieldDef.placeholder ?? ''}</span>
-						</label>
+						<Checkbox
+							checked={!!customFields[fieldDef.name]}
+							onchange={() => setCustomField(fieldDef.name, !customFields[fieldDef.name])}
+						>
+							{#if fieldDef.placeholder}
+								<span class="text-sm text-text-secondary">{fieldDef.placeholder}</span>
+							{/if}
+						</Checkbox>
 					{:else if fieldDef.type === 'integer'}
 						<input
 							id="field-{fieldDef.name}"
@@ -521,16 +520,14 @@
 						{/if}
 					</label>
 					{#if fieldDef.type === 'boolean'}
-						<label class="flex items-center gap-2 cursor-pointer">
-							<input
-								id="field-{fieldDef.name}"
-								type="checkbox"
-								checked={!!customFields[fieldDef.name]}
-								onchange={(e) => setCustomField(fieldDef.name, e.currentTarget.checked)}
-								class="size-4 accent-accent"
-							/>
-							<span class="text-sm text-text-secondary">{fieldDef.placeholder ?? ''}</span>
-						</label>
+						<Checkbox
+							checked={!!customFields[fieldDef.name]}
+							onchange={() => setCustomField(fieldDef.name, !customFields[fieldDef.name])}
+						>
+							{#if fieldDef.placeholder}
+								<span class="text-sm text-text-secondary">{fieldDef.placeholder}</span>
+							{/if}
+						</Checkbox>
 					{:else if fieldDef.type === 'integer'}
 						<input
 							id="field-{fieldDef.name}"
