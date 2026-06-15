@@ -115,11 +115,20 @@
 		drafts[selectedAction] = { ...drafts[selectedAction], customFields: { ...drafts[selectedAction].customFields, [name]: value } };
 	}
 
-	function getCustomFieldDefault(type: ReviewFieldDefinition['type']): string | number | boolean {
-		if (type === 'boolean') return false;
-		if (type === 'integer') return 0;
+	function getCustomFieldDefault(def: ReviewFieldDefinition): string | number | boolean {
+		if (def.defaultValue !== undefined) return def.defaultValue;
+		if (def.type === 'boolean') return false;
+		if (def.type === 'integer') return 0;
 		return '';
 	}
+
+	$effect(() => {
+		for (const def of activeFieldDefs) {
+			if (def.defaultValue !== undefined && customFields[def.name] === undefined) {
+				setCustomField(def.name, def.defaultValue);
+			}
+		}
+	});
 
 	function setDraft(field: keyof DraftFields, value: string) {
 		drafts[selectedAction] = { ...drafts[selectedAction], [field]: value };
@@ -192,10 +201,11 @@
 		const values: ReviewFieldValues = {};
 		for (const def of activeFieldDefs) {
 			const val = customFields[def.name];
-			if (val !== undefined && val !== null && val !== '' && val !== getCustomFieldDefault(def.type)) {
+			const dflt = getCustomFieldDefault(def);
+			if (val !== undefined && val !== null && val !== '' && val !== dflt) {
 				values[def.name] = val;
 			} else if (def.required) {
-				values[def.name] = val ?? getCustomFieldDefault(def.type);
+				values[def.name] = val ?? dflt;
 			}
 		}
 		return Object.keys(values).length > 0 ? values : undefined;

@@ -33,6 +33,7 @@ export interface ReviewFieldDefinition {
   type: "string" | "integer" | "boolean";
   required?: boolean;
   placeholder?: string;
+  defaultValue?: string | number | boolean;
 }
 
 export type ReviewFieldValues = Record<string, string | number | boolean>;

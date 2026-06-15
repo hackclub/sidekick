@@ -129,17 +129,19 @@ Ships can declare custom fields that reviewers must fill in when approving or re
   "label": "Grant Amount (USD)",
   "type": "integer",
   "required": true,
-  "placeholder": "e.g. 100"
+  "placeholder": "e.g. 100",
+  "defaultValue": 50
 }
 ```
 
-| Field         | Type     | Required | Description                                                                 |
-| ------------- | -------- | -------- | --------------------------------------------------------------------------- |
-| `name`        | `string` | Yes      | Machine-readable key. Used in the submitted `fields` object.                |
-| `label`       | `string` | Yes      | Human-readable label shown to the reviewer.                                 |
-| `type`        | `string` | Yes      | `"string"`, `"integer"`, or `"boolean"`.                                    |
-| `required`    | `boolean`| No       | If `true`, the reviewer must fill this field before submitting. Default `false`. |
-| `placeholder` | `string` | No       | Placeholder text for string/integer inputs, or description text for boolean checkboxes. |
+| Field          | Type                        | Required | Description                                                                 |
+| -------------- | --------------------------- | -------- | --------------------------------------------------------------------------- |
+| `name`         | `string`                    | Yes      | Machine-readable key. Used in the submitted `fields` object.                |
+| `label`        | `string`                    | Yes      | Human-readable label shown to the reviewer.                                 |
+| `type`         | `string`                    | Yes      | `"string"`, `"integer"`, or `"boolean"`.                                    |
+| `required`     | `boolean`                   | No       | If `true`, the reviewer must fill this field before submitting. Default `false`. |
+| `placeholder`  | `string`                    | No       | Placeholder text for string/integer inputs, or description text for boolean checkboxes. |
+| `defaultValue` | `string \| number \| boolean` | No     | Initial value pre-filled in the input. Type should match the field's `type`. |
 
 Field values submitted by reviewers are sent as part of the `fields` object in `SUBMIT_REVIEW_ACTION` and `UPDATE_REVIEW_ACTION` (see below). Values are typed according to the field definition: strings for `"string"`, numbers for `"integer"`, and booleans for `"boolean"`.
 
