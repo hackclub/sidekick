@@ -144,10 +144,10 @@
 		if (!data.pendingShip)
 			return undefined;
 		const ships = data.project.ships;
-		const priorHours = ships
+		const lastApprovedCumulative = ships
 			.filter((s) => s.id !== data.pendingShip!.id && s.status === 'approved')
-			.reduce((sum, s) => sum + (approvedHoursMap[s.id] ?? s.hoursSubmitted), 0);
-		return Math.max(0, data.pendingShip.hoursSubmitted - priorHours);
+			.reduce((max, s) => Math.max(max, s.hoursSubmitted), 0);
+		return Math.max(0, data.pendingShip.hoursSubmitted - lastApprovedCumulative);
 	});
 
 	const externalPreviousHours = $derived.by(() => {

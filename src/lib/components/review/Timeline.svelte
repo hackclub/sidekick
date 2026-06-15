@@ -37,7 +37,8 @@
 		const rejectedShipIds = new Set(
 			events.filter((e) => e.type === 'rejection').map((e) => e.shipId)
 		);
-		let runningSum = 0;
+		let creditedSum = 0;
+		let lastApprovedShipHours = 0;
 		const shipEvents = events.filter((e) => e.type === 'ship') as Array<Extract<typeof events[number], { type: 'ship' }>>;
 		const lastShipId = shipEvents.length > 0 ? shipEvents[shipEvents.length - 1].shipId : null;
 
@@ -52,17 +53,21 @@
 				continue;
 			}
 
-			if (isLast && runningSum > 0 && hours > runningSum) {
-				const delta = Math.max(0, hours - runningSum);
+			if (isLast && lastApprovedShipHours > 0 && hours > lastApprovedShipHours) {
+				const delta = Math.max(0, hours - lastApprovedShipHours);
 				info[event.shipId] = { delta, cumulative: hasApproval ? delta : hours };
 				if (hasApproval) {
-					approvalInfo[event.shipId] = { cumulative: runningSum + approved };
+					creditedSum += approved;
+					approvalInfo[event.shipId] = { cumulative: creditedSum };
 				}
 			} else {
-				runningSum += approved;
-				info[event.shipId] = { delta: hours, cumulative: hasApproval ? hours : runningSum };
 				if (hasApproval) {
-					approvalInfo[event.shipId] = { cumulative: runningSum };
+					lastApprovedShipHours = hours;
+					creditedSum += approved;
+				}
+				info[event.shipId] = { delta: hours, cumulative: hasApproval ? hours : hours };
+				if (hasApproval) {
+					approvalInfo[event.shipId] = { cumulative: creditedSum };
 				}
 			}
 		}
