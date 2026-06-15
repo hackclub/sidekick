@@ -2,7 +2,10 @@ import { json, error } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient } from '$lib/server/protocol/client.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
+
+const logger = createLogger('api:orders');
 
 export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	const user = locals.user;
@@ -18,6 +21,15 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 
 	const body = await request.json();
 	const client = new ProtocolClient(program.masterEndpoint, program.secretKey);
+
+	logger.info('PATCH order', {
+		orderId: body.orderId,
+		programId: params.programId,
+		status: body.status ?? null,
+		hasReference: body.reference !== undefined,
+		hasAdminNotes: body.adminNotes !== undefined,
+		hasUserNotes: body.userNotes !== undefined
+	});
 
 	if (body.status) {
 		await client.updateOrderStatus({
@@ -46,6 +58,8 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 			metadata: body
 		}
 	});
+
+	logger.debug('PATCH order complete', { orderId: body.orderId });
 
 	return json({ success: true });
 };

@@ -1,9 +1,13 @@
 import { redirect } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { ProtocolClient } from '$lib/server/protocol/client.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { PageServerLoad } from './$types.js';
 
+const log = createLogger('page:dashboard');
+
 export const load: PageServerLoad = async ({ params, parent }) => {
+	const tLoad = log.time('load');
 	const { user } = await parent();
 	if (!user) throw redirect(302, '/auth/login');
 
@@ -51,6 +55,15 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 
 	const fulfillmentVolume = buildWeeklyVolume(fulfillmentLogs, twelveWeeksAgo, now);
 	const reviewVolume = buildWeeklyVolume(reviewLogs, twelveWeeksAgo, now);
+
+	log.info('dashboard data loaded', {
+		programId: params.programId,
+		pendingReviewCount: stats.pendingReviewCount,
+		pendingFulfillmentCount: stats.pendingFulfillmentCount,
+		fulfillmentLogCount: fulfillmentLogs.length,
+		reviewLogCount: reviewLogs.length
+	});
+	tLoad.end();
 
 	return {
 		pendingReviewCount: stats.pendingReviewCount,

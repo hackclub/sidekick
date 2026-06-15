@@ -2,12 +2,17 @@ import { error } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient } from '$lib/server/protocol/client.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { ShopItem } from '$lib/server/protocol/types.js';
 import type { PageServerLoad, Actions } from './$types.js';
+
+const logger = createLogger('page:manage');
 
 export const load: PageServerLoad = async ({ params, parent }) => {
 	const { user } = await parent();
 	if (!user) throw error(401, 'Not authenticated');
+
+	logger.debug('Loading manage page', { programId: params.programId });
 
 	// Require canUpdateProgram or isRoot
 	let membership;
@@ -105,6 +110,14 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		},
 		orderBy: { createdAt: 'desc' },
 		take: 50
+	});
+
+	logger.debug('Manage page loaded', {
+		programId: params.programId,
+		memberCount: memberships.length,
+		pendingInviteCount: pendingInvites.length,
+		shopItemCount: shopItems.length,
+		auditLogCount: auditLogs.length
 	});
 
 	return {
@@ -214,6 +227,8 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const yswsName = (formData.get('yswsName') as string)?.trim() || null;
 
+		logger.info('updateProgram action', { programId: params.programId, yswsName });
+
 		await db.program.update({
 			where: { id: params.programId },
 			data: { yswsName }
@@ -238,6 +253,8 @@ export const actions: Actions = {
 		if (!masterEndpoint || !secretKey) {
 			throw error(400, 'Master endpoint and secret key are required');
 		}
+
+		logger.info('updateApiConfig action', { programId: params.programId, masterEndpoint });
 
 		await db.program.update({
 			where: { id: params.programId },
@@ -266,6 +283,8 @@ export const actions: Actions = {
 			throw error(400, 'Image too large');
 		}
 
+		logger.info('updateIcon action', { programId: params.programId, iconSize: iconDataUrl.length });
+
 		await db.program.update({
 			where: { id: params.programId },
 			data: { iconUrl: iconDataUrl }
@@ -285,6 +304,8 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const membershipId = formData.get('membershipId') as string;
 		const permission = formData.get('permission') as string;
+
+		logger.info('togglePermission action', { programId: params.programId, membershipId, permission });
 
 		const validPermissions = [
 			'canViewReviews', 'canCreateReviews', 'canAuthorizeReviews',
@@ -319,6 +340,8 @@ export const actions: Actions = {
 
 		const formData = await request.formData();
 		const membershipId = formData.get('membershipId') as string;
+
+		logger.info('removeMember action', { programId: params.programId, membershipId });
 
 		const membership = await db.programMembership.findUnique({
 			where: { id: membershipId }
@@ -362,6 +385,8 @@ export const actions: Actions = {
 		const email = formData.get('email') as string | null;
 		const name = formData.get('name') as string | null;
 		const avatarUrl = formData.get('avatarUrl') as string | null;
+
+		logger.info('addMember action', { programId: params.programId, userId, email });
 
 		if (!userId && !email) throw error(400, 'userId or email is required');
 
@@ -469,6 +494,8 @@ export const actions: Actions = {
 
 		const formData = await request.formData();
 		const inviteId = formData.get('inviteId') as string;
+
+		logger.info('cancelInvite action', { programId: params.programId, inviteId });
 
 		const invite = await db.pendingInvite.findUnique({ where: { id: inviteId } });
 		if (!invite || invite.programId !== params.programId) {

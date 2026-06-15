@@ -1,6 +1,9 @@
 import { redirect, error, fail } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { PageServerLoad, Actions } from './$types.js';
+
+const logger = createLogger('page:admin');
 
 export const load: PageServerLoad = async ({ parent, url }) => {
 	const { user } = await parent();
@@ -10,6 +13,8 @@ export const load: PageServerLoad = async ({ parent, url }) => {
 	const search = url.searchParams.get('q')?.trim() || '';
 	const page = parseInt(url.searchParams.get('page') || '1', 10);
 	const perPage = 20;
+
+	logger.debug('Loading admin page', { search, page });
 
 	const where = search
 		? {
@@ -33,6 +38,8 @@ export const load: PageServerLoad = async ({ parent, url }) => {
 		}),
 		db.user.count({ where })
 	]);
+
+	logger.debug('Admin page loaded', { userCount: users.length, totalCount });
 
 	return {
 		users: users.map((u) => ({
@@ -62,6 +69,8 @@ export const actions: Actions = {
 		const userId = form.get('userId') as string;
 		const field = form.get('field') as string;
 		const value = form.get('value') === 'true';
+
+		logger.info('toggleRole action', { userId, field, value });
 
 		if (!userId || !['isSuperAdmin', 'isProgramAuthor'].includes(field)) {
 			return fail(400, { error: 'Invalid request.' });

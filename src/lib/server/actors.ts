@@ -1,5 +1,8 @@
 import { db } from './db.js';
 import { getSlackUserProfile } from './integrations/slack.js';
+import { createLogger } from './logger.js';
+
+const log = createLogger('actors');
 
 export interface ResolvedActor {
 	name: string;
@@ -12,8 +15,10 @@ const cache = new Map<string, { actor: ResolvedActor; expiresAt: number }>();
 const TTL = 5 * 60 * 1000; // 5 minutes
 
 async function resolveFromSlack(slackId: string): Promise<ResolvedActor> {
+	log.trace('resolving actor from Slack', { slackId });
 	const profile = await getSlackUserProfile(slackId);
 	if (profile) {
+		log.trace('Slack profile found', { slackId, name: profile.name });
 		return {
 			name: profile.name,
 			email: profile.email,
@@ -21,12 +26,18 @@ async function resolveFromSlack(slackId: string): Promise<ResolvedActor> {
 			slackId
 		};
 	}
+	log.trace('no Slack profile found, using raw ID', { slackId });
 	return { name: slackId, email: null, avatarUrl: null, slackId };
 }
 
 export async function resolveActorId(actorId: string): Promise<ResolvedActor> {
 	const cached = cache.get(actorId);
-	if (cached && cached.expiresAt > Date.now()) return cached.actor;
+	if (cached && cached.expiresAt > Date.now()) {
+		log.trace('resolveActorId cache hit', { actorId });
+		return cached.actor;
+	}
+
+	log.trace('resolveActorId cache miss, looking up', { actorId });
 
 	const user = await db.user.findFirst({
 		where: actorId.startsWith('U')
@@ -37,6 +48,7 @@ export async function resolveActorId(actorId: string): Promise<ResolvedActor> {
 
 	let actor: ResolvedActor;
 	if (user) {
+		log.trace('DB user found', { actorId, name: user.name });
 		actor = user;
 		if (user.slackId) {
 			const slackProfile = await getSlackUserProfile(user.slackId);
@@ -45,8 +57,10 @@ export async function resolveActorId(actorId: string): Promise<ResolvedActor> {
 			}
 		}
 	} else if (actorId.startsWith('U')) {
+		log.trace('no DB user, falling back to Slack', { actorId });
 		actor = await resolveFromSlack(actorId);
 	} else {
+		log.trace('no DB user and not a Slack ID, using raw ID', { actorId });
 		actor = { name: actorId, email: null, avatarUrl: null, slackId: null };
 	}
 
@@ -67,9 +81,18 @@ export async function resolveActorIds(actorIds: string[]): Promise<Map<string, R
 		}
 	}
 
+	const cacheHits = actorIds.length - toResolve.length;
+	log.debug('resolveActorIds', {
+		batchSize: actorIds.length,
+		cacheHits,
+		cacheMisses: toResolve.length
+	});
+
 	if (toResolve.length > 0) {
 		const slackIds = toResolve.filter((id) => id.startsWith('U'));
 		const hcaIds = toResolve.filter((id) => !id.startsWith('U'));
+
+		log.trace('querying DB for actors', { slackIdCount: slackIds.length, hcaIdCount: hcaIds.length });
 
 		const users = await db.user.findMany({
 			where: {
@@ -80,6 +103,8 @@ export async function resolveActorIds(actorIds: string[]): Promise<Map<string, R
 			},
 			select: { hcaId: true, slackId: true, name: true, email: true, avatarUrl: true }
 		});
+
+		log.trace('DB query returned', { userCount: users.length });
 
 		const bySlack = new Map(users.filter((u) => u.slackId).map((u) => [u.slackId!, u]));
 		const byHca = new Map(users.map((u) => [u.hcaId, u]));
@@ -107,12 +132,14 @@ export async function resolveActorIds(actorIds: string[]): Promise<Map<string, R
 		const allSlackIds = [...new Set([...slackLookupIds, ...unresolvedSlackIds])];
 		const slackProfiles = new Map<string, Awaited<ReturnType<typeof getSlackUserProfile>>>();
 		if (allSlackIds.length > 0) {
+			log.trace('fetching Slack profiles', { count: allSlackIds.length });
 			const profiles = await Promise.all(
 				allSlackIds.map(async (sid) => ({ sid, profile: await getSlackUserProfile(sid) }))
 			);
 			for (const { sid, profile } of profiles) {
 				slackProfiles.set(sid, profile);
 			}
+			log.trace('Slack profiles fetched', { count: allSlackIds.length });
 		}
 
 		// Build actors for DB users, preferring Slack username
@@ -140,5 +167,6 @@ export async function resolveActorIds(actorIds: string[]): Promise<Map<string, R
 		}
 	}
 
+	log.debug('resolveActorIds complete', { totalResolved: result.size });
 	return result;
 }

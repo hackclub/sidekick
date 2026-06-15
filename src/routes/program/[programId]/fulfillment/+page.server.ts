@@ -2,7 +2,10 @@ import { redirect } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient } from '$lib/server/protocol/client.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { PageServerLoad } from './$types.js';
+
+const logger = createLogger('page:fulfillment');
 
 export const load: PageServerLoad = async ({ params, parent, url }) => {
 	const { user } = await parent();
@@ -24,6 +27,8 @@ export const load: PageServerLoad = async ({ params, parent, url }) => {
 	const cursor = url.searchParams.get('cursor') || undefined;
 	const sortBy = (url.searchParams.get('sort') as 'id' | 'user' | 'item' | 'quantity' | 'date' | 'status') || 'date';
 	const sortOrder = (url.searchParams.get('sortOrder') as 'asc' | 'desc') || 'asc';
+
+	logger.debug('Loading fulfillment page', { programId: params.programId, statusFilter, itemFilter, searchUser, sortBy, sortOrder });
 
 	let allShopItems: import('$lib/server/protocol/types.js').ShopItem[] = [];
 	try {
@@ -78,6 +83,8 @@ export const load: PageServerLoad = async ({ params, parent, url }) => {
 			contents: t.contents as Array<{ sku: string; quantity: number }>
 		};
 	}
+
+	logger.debug('Fulfillment data loaded', { orderCount: result.orders.length, totalCount: result.totalCount, itemCount: allShopItems.length });
 
 	return {
 		orders: result.orders,

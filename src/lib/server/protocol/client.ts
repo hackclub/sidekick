@@ -1,3 +1,4 @@
+import { createLogger } from "../logger.js";
 import type {
   SidekickRequest,
   SidekickResponse,
@@ -15,6 +16,8 @@ import type {
   UpdateItemFieldsInput,
   GetProgramStatsInput,
 } from "./types";
+
+const log = createLogger("protocol");
 
 export class ProtocolError extends Error {
   status: number;
@@ -41,8 +44,13 @@ export class ProtocolClient {
     action: A,
     input: Extract<SidekickRequest, { action: A }>["input"]
   ): Promise<SidekickResponse<A>> {
+    log.debug("RPC call", { action, inputKeys: Object.keys(input as Record<string, unknown>) });
+    const timer = log.time(`RPC ${action}`);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30_000);
+    const timeout = setTimeout(() => {
+      log.warn("RPC call timed out", { action });
+      controller.abort();
+    }, 30_000);
 
     try {
       const response = await fetch(this.masterEndpoint, {
@@ -57,10 +65,24 @@ export class ProtocolClient {
 
       if (!response.ok) {
         const body = await response.text();
+        log.error("RPC protocol error", new ProtocolError(response.status, body), {
+          action,
+          status: response.status,
+          body: body.slice(0, 200),
+        });
         throw new ProtocolError(response.status, body);
       }
 
+      timer.end({ action, status: response.status });
       return (await response.json()) as SidekickResponse<A>;
+    } catch (err) {
+      if (err instanceof ProtocolError) throw err;
+      if (controller.signal.aborted) {
+        log.error("RPC call aborted", err, { action });
+      } else {
+        log.error("RPC call failed", err, { action });
+      }
+      throw err;
     } finally {
       clearTimeout(timeout);
     }

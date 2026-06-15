@@ -1,9 +1,12 @@
 <script lang="ts">
+	import { createLogger } from '$lib/logger.js';
 	import { invalidateAll } from '$app/navigation';
 	import { applyAction, deserialize } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import { AlertTriangle, X } from 'lucide-svelte';
 	import type { PageData } from './$types.js';
+
+	const log = createLogger('ReviewPage');
 	import UserCard from '$lib/components/ui/UserCard.svelte';
 	import HourBreakdown from '$lib/components/review/HourBreakdown.svelte';
 	import ProjectCard from '$lib/components/review/ProjectCard.svelte';
@@ -50,27 +53,42 @@
 			return;
 
 		let active = true;
+		let pollCount = 0;
+		log.info('Starting check polling', { shipId, programId });
 
 		const poll = async () => {
 			if (!active)
 				return;
+			pollCount++;
 			try {
 				const res = await fetch(`/api/programs/${programId}/checks/${shipId}`);
-				if (!res.ok || !active)
+				if (!res.ok || !active) {
+					if (!res.ok) log.warn('Check poll returned non-ok', { status: res.status, pollCount });
 					return;
+				}
 				const result = await res.json();
 				polledChecks = result.checks;
-				if (result.allCompleted) { active = false; }
-			} catch { /* expected */ }
+				log.trace('Check poll result', { pollCount, allCompleted: result.allCompleted, checkCount: result.checks?.length });
+				if (result.allCompleted) {
+					log.info('All checks completed', { pollCount });
+					active = false;
+				}
+			} catch (e) {
+				log.debug('Check poll error (expected during loading)', e);
+			}
 		};
 
 		const interval = setInterval(poll, 1500);
-		const timeout = setTimeout(() => { active = false; }, 120000);
+		const timeout = setTimeout(() => {
+			log.warn('Check polling timed out after 120s', { shipId, pollCount });
+			active = false;
+		}, 120000);
 
 		return () => {
 			active = false;
 			clearInterval(interval);
 			clearTimeout(timeout);
+			log.debug('Check polling stopped', { shipId, pollCount });
 		};
 	});
 
@@ -159,6 +177,8 @@
 		commentText?: string;
 	}) {
 		submitting = true;
+		log.info('Submitting review', { action: reviewData.action, shipId: data.pendingShip?.id });
+		const t = log.time('handleReviewSubmit');
 
 		const formData = new FormData();
 		if (data.pendingShip) {
@@ -172,11 +192,14 @@
 
 		const response = await fetch('?/review', { method: 'POST', body: formData });
 		const result = deserialize(await response.text());
+		t.end('resultType', result.type);
 		if (result.type === 'success') {
 			protocolError = null;
+			log.info('Review submitted successfully');
 			await invalidateAll();
 		} else if (result.type === 'failure' && result.data?.protocolError) {
 			protocolError = result.data.protocolError as string;
+			log.error('Review submission protocol error', { protocolError });
 		}
 		await applyAction(result);
 		submitting = false;
@@ -192,6 +215,8 @@
 		if (event.type !== 'approval' && event.type !== 'rejection')
 			return;
 
+		log.info('Saving review edit', { shipId: event.shipId, type: event.type });
+		const t = log.time('handleSaveReview');
 		const res = await fetch(`/api/programs/${data.program.id}/review/${event.shipId}`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
@@ -204,25 +229,34 @@
 			})
 		});
 
+		t.end('status', res.status);
 		if (res.ok) {
+			log.debug('Review edit saved successfully');
 			await invalidateAll();
+		} else {
+			log.error('Failed to save review edit', { status: res.status });
 		}
 	}
 
 	async function handleAuthorize(pendingApprovalId: string) {
 		authorizing = pendingApprovalId;
+		log.info('Authorizing pending approval', { pendingApprovalId });
+		const t = log.time('handleAuthorize');
 		try {
 			const res = await fetch(`/api/programs/${data.program.id}/review/authorize`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ pendingApprovalId })
 			});
+			t.end('status', res.status);
 			if (res.ok) {
 				protocolError = null;
+				log.info('Authorization successful', { pendingApprovalId });
 				await invalidateAll();
 			} else {
 				const body = await res.json().catch(() => null);
 				protocolError = body?.message ?? `Authorization failed (HTTP ${res.status})`;
+				log.error('Authorization failed', { pendingApprovalId, status: res.status, protocolError });
 			}
 		} finally {
 			authorizing = null;
@@ -231,18 +265,23 @@
 
 	async function handleDeletePending(pendingApprovalId: string) {
 		authorizing = pendingApprovalId;
+		log.info('Deleting pending approval', { pendingApprovalId });
+		const t = log.time('handleDeletePending');
 		try {
 			const res = await fetch(`/api/programs/${data.program.id}/review/authorize`, {
 				method: 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ pendingApprovalId })
 			});
+			t.end('status', res.status);
 			if (res.ok) {
 				protocolError = null;
+				log.info('Pending approval deleted', { pendingApprovalId });
 				await invalidateAll();
 			} else {
 				const body = await res.json().catch(() => null);
 				protocolError = body?.message ?? `Discard failed (HTTP ${res.status})`;
+				log.error('Failed to delete pending approval', { pendingApprovalId, status: res.status, protocolError });
 			}
 		} finally {
 			authorizing = null;
@@ -250,11 +289,19 @@
 	}
 
 	async function handleEditPending(pendingApprovalId: string, feedbackMessage: string, justification: string, hoursAssigned: number) {
-		await fetch(`/api/programs/${data.program.id}/review/authorize`, {
+		log.info('Editing pending approval', { pendingApprovalId, hoursAssigned });
+		const t = log.time('handleEditPending');
+		const res = await fetch(`/api/programs/${data.program.id}/review/authorize`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ pendingApprovalId, feedbackMessage, justification, hoursAssigned })
 		});
+		t.end('status', res.status);
+		if (!res.ok) {
+			log.error('Failed to edit pending approval', { pendingApprovalId, status: res.status });
+		} else {
+			log.debug('Pending approval edited successfully');
+		}
 	}
 </script>
 

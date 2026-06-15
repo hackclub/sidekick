@@ -2,10 +2,15 @@ import { redirect, error } from '@sveltejs/kit';
 import { exchangeHcbCode } from '$lib/server/integrations/hcb.js';
 import { encrypt } from '$lib/server/crypto.js';
 import { db } from '$lib/server/db.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
+
+const log = createLogger('auth:hcb:callback');
 
 export const GET: RequestHandler = async ({ url, cookies, locals }) => {
 	if (!locals.user) throw error(401, 'Not authenticated');
+
+	log.info('hcb callback received', { userId: locals.user.id });
 
 	const code = url.searchParams.get('code');
 	const state = url.searchParams.get('state');
@@ -13,6 +18,7 @@ export const GET: RequestHandler = async ({ url, cookies, locals }) => {
 
 	const savedState = cookies.get('hcb_oauth_state');
 	if (!savedState || savedState !== state) {
+		log.warn('invalid oauth state mismatch', { userId: locals.user.id });
 		throw error(400, 'Invalid OAuth state');
 	}
 
@@ -26,7 +32,9 @@ export const GET: RequestHandler = async ({ url, cookies, locals }) => {
 		// Fall back to /
 	}
 
+	const tExchange = log.time('hcb token exchange');
 	const tokens = await exchangeHcbCode(code);
+	tExchange.end();
 
 	await db.user.update({
 		where: { id: locals.user.id },
@@ -36,6 +44,7 @@ export const GET: RequestHandler = async ({ url, cookies, locals }) => {
 			hcbTokenExpiresAt: new Date(Date.now() + tokens.expires_in * 1000)
 		}
 	});
+	log.info('hcb tokens stored', { userId: locals.user.id, returnUrl });
 
 	throw redirect(302, returnUrl);
 };

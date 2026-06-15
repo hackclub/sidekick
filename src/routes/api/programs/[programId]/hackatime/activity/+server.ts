@@ -1,7 +1,10 @@
 import { json, error } from '@sveltejs/kit';
 import { requirePermission } from '$lib/server/rbac.js';
 import { getRawHeartbeatRange, type RawHeartbeat } from '$lib/server/integrations/hackatime.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
+
+const logger = createLogger('api:hackatime:activity');
 
 const WIDTH = 400;
 const HEIGHT = 100;
@@ -89,6 +92,8 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 		throw error(400, 'Missing userId, projects, year, or month');
 	}
 
+	logger.debug('GET request', { userId, projects, year, month, programId: params.programId });
+
 	const y = parseInt(year);
 	const m = parseInt(month);
 	const startDate = new Date(Date.UTC(y, m - 1, 1));
@@ -107,9 +112,9 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 
 	if (raw.length > 0 && filtered.length === 0) {
 		const sampleProjects = [...new Set(raw.slice(0, 100).map((hb) => hb.project))];
-		console.log(`[activity] ${raw.length} raw HBs but 0 matched projects ${[...projectKeys].join(',')}. Sample projects in data: ${sampleProjects.join(', ')}`);
+		logger.warn('No heartbeats matched project filter', { rawCount: raw.length, projects: [...projectKeys].join(','), sampleProjects: sampleProjects.join(', ') });
 	} else {
-		console.log(`[activity] ${y}-${String(m).padStart(2, '0')}: ${raw.length} raw → ${filtered.length} filtered for projects ${[...projectKeys].join(',')}`);
+		logger.debug('Heartbeat filtering', { month: `${y}-${String(m).padStart(2, '0')}`, rawCount: raw.length, filteredCount: filtered.length, projects: [...projectKeys].join(',') });
 	}
 
 	const dayBuckets = new Map<number, RawHeartbeat[]>();

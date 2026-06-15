@@ -2,7 +2,10 @@ import { json, error } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
+
+const logger = createLogger('api:review:authorize');
 
 function parseProtocolError(e: ProtocolError): { status: number; body: { error: string; message: string } } {
 	try {
@@ -24,6 +27,8 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const { pendingApprovalId } = await request.json();
 	if (!pendingApprovalId) throw error(400, 'pendingApprovalId is required');
 
+	logger.info('POST authorize', { programId: params.programId, pendingApprovalId });
+
 	const program = await db.program.findUniqueOrThrow({
 		where: { id: params.programId }
 	});
@@ -33,6 +38,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		if (pendingApprovalId.startsWith('hq:')) {
 			const shipId = pendingApprovalId.slice(3);
 			const reviewerId = user.slackId || user.hcaId;
+			logger.debug('Direct HQ authorization', { shipId, reviewerId });
 			const result = await client.submitReviewAction({
 				shipId,
 				reviewerId,
@@ -50,6 +56,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 				}
 			});
 
+			logger.info('HQ authorization completed', { shipId, success: result.success });
 			return json({ success: result.success });
 		}
 
@@ -99,10 +106,12 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			}
 		});
 
+		logger.info('Pending approval authorized', { pendingApprovalId, shipId: pending.shipId, success: result.success });
 		return json({ success: result.success });
 	} catch (e) {
 		if (e instanceof ProtocolError) {
 			const { status, body } = parseProtocolError(e);
+			logger.warn('Authorization protocol error', { pendingApprovalId, status, error: body.message });
 			return json(body, { status });
 		}
 		throw e;
@@ -119,6 +128,8 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 
 	const { pendingApprovalId } = await request.json();
 	if (!pendingApprovalId) throw error(400, 'pendingApprovalId is required');
+
+	logger.info('DELETE discard pending', { programId: params.programId, pendingApprovalId });
 
 	try {
 		if (pendingApprovalId.startsWith('hq:')) {
@@ -146,6 +157,7 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 				}
 			});
 
+			logger.info('HQ deauthorization completed', { shipId, success: result.success });
 			return json({ success: result.success });
 		}
 
@@ -177,10 +189,12 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 			}
 		});
 
+		logger.info('Pending approval discarded', { pendingApprovalId, shipId: pending.shipId });
 		return json({ success: true });
 	} catch (e) {
 		if (e instanceof ProtocolError) {
 			const { status, body } = parseProtocolError(e);
+			logger.warn('Discard protocol error', { pendingApprovalId, status, error: body.message });
 			return json(body, { status });
 		}
 		throw e;
@@ -197,6 +211,8 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 
 	const { pendingApprovalId, feedbackMessage, justification, hoursAssigned } = await request.json();
 	if (!pendingApprovalId) throw error(400, 'pendingApprovalId is required');
+
+	logger.debug('PATCH pending approval', { programId: params.programId, pendingApprovalId });
 
 	if (pendingApprovalId.startsWith('hq:')) {
 		return json({ success: true });
@@ -218,5 +234,6 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		}
 	});
 
+	logger.info('Pending approval updated', { pendingApprovalId });
 	return json({ success: true });
 };

@@ -3,8 +3,11 @@ import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient } from '$lib/server/protocol/client.js';
 import { getValidHcbToken, createCardGrant, topUpCardGrant } from '$lib/server/integrations/hcb.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { CardGrantParams } from '$lib/server/integrations/hcb.js';
 import type { RequestHandler } from './$types.js';
+
+const logger = createLogger('api:hcb:send-grant');
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const user = locals.user;
@@ -20,6 +23,8 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	if (!orderId || !email) {
 		throw error(400, 'orderId and email are required');
 	}
+
+	logger.info('POST send grant', { orderId, email, topUpGrantId: topUpGrantId ?? null, programId: params.programId });
 
 	const program = await db.program.findUniqueOrThrow({
 		where: { id: params.programId }
@@ -60,6 +65,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 
 	if (topUpGrantId) {
 		// Top up an existing grant
+		logger.debug('Topping up existing grant', { topUpGrantId, amountCents: totalAmountCents });
 		grant = await topUpCardGrant(token, topUpGrantId, totalAmountCents);
 		action = 'card_grant_topup';
 	} else {
@@ -81,6 +87,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			grantParams.expiration_at = expDate.toISOString().split('T')[0];
 		}
 
+		logger.debug('Creating new card grant', { amountCents: totalAmountCents, email });
 		grant = await createCardGrant(token, program.hcbOrganizationId, grantParams);
 		action = 'card_grant_sent';
 	}
@@ -106,6 +113,8 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			}
 		}
 	});
+
+	logger.info('Grant sent successfully', { orderId, grantId: grant.id, amountCents: totalAmountCents, action });
 
 	return json({ success: true, grant, reference });
 };

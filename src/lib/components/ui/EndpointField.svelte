@@ -1,6 +1,9 @@
 <script lang="ts">
+	import { createLogger } from '$lib/logger.js';
 	import { Globe, FlaskConical } from 'lucide-svelte';
 	import StatusLight from './StatusLight.svelte';
+
+	const log = createLogger('EndpointField');
 
 	interface Props {
 		value?: string;
@@ -28,6 +31,8 @@
 			return;
 		status = 'pending';
 		errorMessage = '';
+		log.info('Testing endpoint', { url: value });
+		const t = log.time('testEndpoint');
 		try {
 			const res = await fetch('/api/test-endpoint', {
 				method: 'POST',
@@ -35,15 +40,19 @@
 				body: JSON.stringify({ url: value, secretKey })
 			});
 			const data = await res.json();
+			t.end('status', res.status);
 			if (data.ok) {
 				status = 'ok';
+				log.info('Endpoint test passed', { url: value });
 			} else {
 				status = 'fail';
 				errorMessage = data.error ?? 'Unknown error';
+				log.warn('Endpoint test failed', { url: value, error: errorMessage });
 			}
-		} catch {
+		} catch (e) {
 			status = 'fail';
 			errorMessage = 'Failed to reach Sidekick server';
+			log.error('Endpoint test exception', e);
 		}
 	}
 </script>

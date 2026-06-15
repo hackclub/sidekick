@@ -1,7 +1,10 @@
 import { json, error } from '@sveltejs/kit';
 import { requirePermission } from '$lib/server/rbac.js';
 import { getRawHeartbeatRange } from '$lib/server/integrations/hackatime.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
+
+const logger = createLogger('api:hackatime:heartbeats');
 
 interface CachedHeartbeats {
 	heartbeats: ReturnType<typeof transformHeartbeats>;
@@ -56,6 +59,8 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 		throw error(400, 'Missing userId, projects, or date');
 	}
 
+	logger.debug('GET request', { userId, projects, date, programId: params.programId });
+
 	const dateMatch = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
 	if (!dateMatch) throw error(400, 'Invalid date format, expected YYYY-MM-DD');
 
@@ -64,8 +69,10 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 
 	const cached = cache.get(cacheKey);
 	if (cached) {
+		logger.trace('Cache hit', { cacheKey });
 		return json(cached);
 	}
+	logger.trace('Cache miss', { cacheKey });
 
 	const dayStart = new Date(`${date}T00:00:00Z`);
 	const dayEnd = new Date(`${date}T23:59:59Z`);
@@ -76,6 +83,7 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 	const heartbeats = transformHeartbeats(raw, projectKeys);
 
 	const result = { heartbeats };
+	logger.debug('Fetched heartbeats', { date, heartbeatCount: heartbeats.length, cached: isCacheable(date) });
 
 	if (isCacheable(date)) {
 		cache.set(cacheKey, result);

@@ -1,7 +1,10 @@
 <script lang="ts">
+	import { createLogger } from '$lib/logger.js';
 	import { CircleCheck, CircleX, MessageSquare, Eye, AlertTriangle, Loader2, X, Copy, Sparkles } from 'lucide-svelte';
 	import MarkdownTextarea from '$lib/components/ui/MarkdownTextarea.svelte';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
+
+	const log = createLogger('ReviewActionPanel');
 
 	type ActionType = 'approve' | 'reject' | 'comment' | 'internal_comment';
 
@@ -156,6 +159,7 @@
 	function handleSubmit() {
 		if (!canSubmit)
 			return;
+		log.info('Submitting review action', { action: selectedAction });
 		const payload: Parameters<typeof onsubmit>[0] = { action: selectedAction };
 		if (selectedAction === 'approve') {
 			payload.hoursAssigned = hoursAssigned;
@@ -169,6 +173,7 @@
 		}
 		onsubmit(payload);
 		clearAllDrafts();
+		log.debug('Drafts cleared after submit');
 	}
 
 	async function streamAiGeneration(url: string, body: Record<string, unknown>) {
@@ -177,6 +182,8 @@
 		changelogThinking = '';
 		changelogError = '';
 		changelogResult = '';
+		log.info('Starting AI generation stream', { url });
+		const t = log.time('streamAiGeneration');
 
 		try {
 			const res = await fetch(url, {
@@ -184,6 +191,8 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(body)
 			});
+
+			log.debug('AI generation response', { status: res.status });
 
 			if (!res.ok) {
 				const err = await res.json().catch(() => ({ message: 'Request failed' }));
@@ -197,11 +206,14 @@
 
 			const decoder = new TextDecoder();
 			let buffer = '';
+			let eventCount = 0;
 
 			while (true) {
 				const { done, value } = await reader.read();
-				if (done)
+				if (done) {
+					log.debug('SSE stream ended', { totalEvents: eventCount });
 					break;
+				}
 
 				buffer += decoder.decode(value, { stream: true });
 				const lines = buffer.split('\n\n');
@@ -212,6 +224,8 @@
 					if (!dataLine.startsWith('data: '))
 						continue;
 					const event = JSON.parse(dataLine.slice(6));
+					eventCount++;
+					log.trace('SSE event received', { type: event.type, eventCount });
 
 					if (event.type === 'status') {
 						changelogStatus = event.message;
@@ -223,13 +237,17 @@
 						changelogThinking = '';
 					} else if (event.type === 'done') {
 						changelogResult = event.changelog;
+						log.info('AI generation complete', { resultLength: changelogResult.length });
 					} else if (event.type === 'error') {
+						log.error('SSE error event received', { message: event.message });
 						throw new Error(event.message);
 					}
 				}
 			}
+			t.end('events', eventCount);
 		} catch (e) {
 			changelogError = e instanceof Error ? e.message : 'Failed to generate';
+			log.error('AI generation failed', e);
 		} finally {
 			changelogLoading = false;
 			changelogStatus = '';
@@ -240,6 +258,7 @@
 	function generateChangelog() {
 		if (!changelog)
 			return;
+		log.info('Generating changelog', { repoUrl: changelog.repoUrl, sinceDate: changelog.previousShipDate, untilDate: changelog.currentShipDate });
 		streamAiGeneration(`/api/programs/${changelog.programId}/changelog`, {
 			repoUrl: changelog.repoUrl,
 			sinceDate: changelog.previousShipDate,
@@ -250,6 +269,7 @@
 	function generateOverview() {
 		if (!overview)
 			return;
+		log.info('Generating overview', { repoUrl: overview.repoUrl, projectTitle: overview.projectTitle });
 		streamAiGeneration(`/api/programs/${overview.programId}/overview`, {
 			repoUrl: overview.repoUrl,
 			projectTitle: overview.projectTitle,

@@ -2,8 +2,11 @@ import { json, error, redirect } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
 import type { Order, RevealOrderAddressOutput } from '$lib/server/protocol/types.js';
+
+const logger = createLogger('api:export-csv');
 
 async function loadExportData(params: { programId: string }, locals: App.Locals, url: URL) {
 	const user = locals.user;
@@ -109,7 +112,9 @@ async function loadExportData(params: { programId: string }, locals: App.Locals,
 }
 
 export const POST: RequestHandler = async ({ params, locals, url }) => {
+	logger.info('POST CSV export', { programId: params.programId, status: url.searchParams.get('status'), item: url.searchParams.get('item') });
 	const result = await loadExportData(params, locals, url);
+	logger.info('CSV export completed', { programId: params.programId, totalOrders: result.totalOrders, exported: result.orders.length, skipped: result.skippedOrders.length });
 	return json(result);
 };
 

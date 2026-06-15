@@ -1,8 +1,11 @@
 <script lang="ts">
+	import { createLogger } from '$lib/logger.js';
 	import { Activity, LoaderCircle, FolderCode, ExternalLink, Check } from 'lucide-svelte';
 	import HeartbeatFrequencyBar from './HeartbeatFrequencyBar.svelte';
 	import HeartbeatScatter from './HeartbeatScatter.svelte';
 	import HeartbeatTable from './HeartbeatTable.svelte';
+
+	const log = createLogger('HackatimeViewer');
 
 	interface HeartbeatRow {
 		time: number;
@@ -122,8 +125,10 @@
 	}
 
 	async function fetchActivity(ym: string): Promise<DayActivity[]> {
-		if (activityCache[ym])
+		if (activityCache[ym]) {
+			log.trace('Activity cache hit', { ym });
 			return activityCache[ym];
+		}
 
 		const [y, m] = ym.split('-');
 
@@ -134,21 +139,31 @@
 			month: m
 		});
 
+		log.debug('Fetching activity data', { ym });
+		const t = log.time(`fetchActivity:${ym}`);
+
 		try {
 			const res = await fetch(`/api/programs/${programId}/hackatime/activity?${params}`);
-			if (!res.ok)
+			t.end('status', res.status);
+			if (!res.ok) {
+				log.warn('Activity fetch returned non-ok', { ym, status: res.status });
 				return [];
+			}
 			const data = await res.json();
 			activityCache[ym] = data.days;
+			log.debug('Activity data fetched', { ym, dayCount: data.days?.length ?? 0 });
 			return data.days;
 		}
-		catch {
+		catch (e) {
+			log.error('Failed to fetch activity data', { ym }, e);
 			return [];
 		}
 	}
 
 	async function loadOverview() {
 		overviewLoading = true;
+		log.info('Loading hackatime overview', { hackatimeUser, projectCount: hackatimeProjectKeys.length });
+		const t = log.time('loadOverview');
 		try {
 			const params = new URLSearchParams({
 				userId: hackatimeUser,
@@ -157,19 +172,24 @@
 
 			let months: string[];
 			try {
+				log.debug('Fetching date range');
 				const res = await fetch(`/api/programs/${programId}/hackatime/date-range?${params}`);
+				log.debug('Date range response', { status: res.status });
 				const data = res.ok ? await res.json() : null;
 
 				if (data?.range) {
 					const startYm = monthKey(data.range.firstDate);
 					const endYm = monthKey(data.range.lastDate);
 					months = monthsBetween(startYm, endYm);
+					log.debug('Date range resolved', { startYm, endYm, monthCount: months.length });
 				}
 				else {
+					log.debug('No date range returned, using fallback months');
 					months = fallbackMonths();
 				}
 			}
-			catch {
+			catch (e) {
+				log.warn('Date range fetch failed, using fallback months', e);
 				months = fallbackMonths();
 			}
 
@@ -190,9 +210,11 @@
 				if (days.length > 0) {
 					days.sort((a, b) => b.date.localeCompare(a.date));
 					currentDate = days[0].date;
+					log.debug('Auto-selected initial day', { date: currentDate });
 				}
 			}
 
+			t.end('months loaded', months.length);
 			requestAnimationFrame(() => scrollToSelected());
 		}
 		finally {
@@ -250,6 +272,7 @@
 	});
 
 	function selectDay(date: string) {
+		log.debug('Day selected', { date });
 		currentDate = date;
 	}
 
@@ -275,6 +298,8 @@
 		loading = true;
 		error = null;
 
+		log.debug('Fetching heartbeats', { date, user });
+		const t = log.time(`fetchHeartbeats:${date}`);
 		const params = new URLSearchParams({ userId: user, projects: keys.join(','), date });
 
 		fetch(`/api/programs/${programId}/hackatime/heartbeats?${params}`)
@@ -283,17 +308,23 @@
 					throw new Error(`HTTP ${res.status}`);
 
 				const data = await res.json();
-				if (date !== currentDate)
+				if (date !== currentDate) {
+					log.debug('Heartbeat response discarded (date changed)', { requestedDate: date, currentDate });
 					return;
+				}
 
 				heartbeats = data.heartbeats;
+				t.end('heartbeats', data.heartbeats?.length ?? 0);
 			})
 			.catch((e) => {
-				if (date !== currentDate)
+				if (date !== currentDate) {
+					log.debug('Heartbeat error discarded (date changed)', { requestedDate: date, currentDate });
 					return;
+				}
 
 				heartbeats = null;
 				error = e.message;
+				log.error('Failed to fetch heartbeats', { date }, e);
 			})
 			.finally(() => {
 				if (date !== currentDate)

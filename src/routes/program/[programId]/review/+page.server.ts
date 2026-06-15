@@ -3,9 +3,13 @@ import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient } from '$lib/server/protocol/client.js';
 import { resolveActorIds } from '$lib/server/actors.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { PageServerLoad } from './$types.js';
 
+const log = createLogger('page:review-list');
+
 export const load: PageServerLoad = async ({ params, parent }) => {
+	const tLoad = log.time('load');
 	const { user } = await parent();
 	if (!user) throw redirect(302, '/auth/login');
 
@@ -72,6 +76,16 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	// Review volume: count per week for last 12 weeks
 	const reviewVolume = buildWeeklyVolume(reviewLogs, twelveWeeksAgo, now);
 	const totalReviewsThisWeek = weeklyLogs.length;
+
+	log.info('review list loaded', {
+		programId: params.programId,
+		projectCount: projectsResult.projects.length,
+		hqProjectCount: hqProjects.length,
+		pendingCount: statsResult.pendingReviewCount,
+		pendingApprovalCount: pendingApprovals.length,
+		totalReviewsThisWeek
+	});
+	tLoad.end();
 
 	return {
 		projects: projectsResult.projects,

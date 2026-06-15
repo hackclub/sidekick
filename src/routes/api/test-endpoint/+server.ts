@@ -1,5 +1,8 @@
 import { json, error } from '@sveltejs/kit';
+import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
+
+const logger = createLogger('api:test-endpoint');
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!locals.user) throw error(401, 'Not authenticated');
@@ -9,6 +12,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (!url || typeof url !== 'string') {
 		throw error(400, 'Missing url');
 	}
+
+	logger.debug('POST test endpoint', { url });
 
 	try {
 		new URL(url);
@@ -33,8 +38,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		const body = await res.text().catch(() => '');
 
 		if (res.ok) {
+			logger.debug('Endpoint health check OK', { url });
 			return json({ ok: true, body });
 		} else {
+			logger.warn('Endpoint health check failed', { url, status: res.status });
 			return json({ ok: false, error: `HTTP ${res.status}${body ? `: ${body.slice(0, 500)}` : ''}` });
 		}
 	} catch (e) {
@@ -43,6 +50,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			: e instanceof TypeError
 				? 'Could not reach endpoint — check the URL'
 				: String(e);
+		logger.warn('Endpoint health check error', { url, message });
 		return json({ ok: false, error: message });
 	} finally {
 		clearTimeout(timeout);

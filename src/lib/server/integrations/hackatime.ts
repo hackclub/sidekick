@@ -1,5 +1,7 @@
 import { env } from '$env/dynamic/private';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('hackatime');
 const BASE_URL = 'https://hackatime.hackclub.com';
 
 interface ProjectDetail {
@@ -50,6 +52,9 @@ async function authFetch(path: string, params?: Record<string, string>): Promise
 		}
 	}
 
+	log.trace('authFetch request', { path, params: params ? Object.keys(params).join(',') : undefined });
+	const timer = log.time(`authFetch ${path}`);
+
 	const response = await fetch(url.toString(), {
 		headers: {
 			Authorization: `Bearer ${token}`,
@@ -57,7 +62,10 @@ async function authFetch(path: string, params?: Record<string, string>): Promise
 		}
 	});
 
+	timer.end({ status: response.status });
+
 	if (!response.ok) {
+		log.error('authFetch failed', undefined, { path, status: response.status, statusText: response.statusText });
 		throw new Error(`Hackatime API error: ${response.status} ${response.statusText}`);
 	}
 
@@ -68,6 +76,7 @@ export async function getProjectDateRange(
 	userId: string,
 	projectKeys: string[]
 ): Promise<{ firstDate: string; lastDate: string } | null> {
+	log.debug('getProjectDateRange called', { userId, projectKeys: projectKeys.join(',') });
 	const response = await authFetch('/api/admin/v1/user/projects', { id: userId });
 	const data = await response.json();
 	const keySet = new Set(projectKeys.map((k) => k.toLowerCase()));
@@ -81,7 +90,10 @@ export async function getProjectDateRange(
 	const matched = (data.projects ?? []).filter(
 		(p: AdminProject) => keySet.has(p.name.toLowerCase())
 	);
-	if (matched.length === 0) return null;
+	if (matched.length === 0) {
+		log.debug('getProjectDateRange no matching projects', { userId });
+		return null;
+	}
 
 	let earliest = Infinity;
 	let latest = 0;
@@ -89,14 +101,19 @@ export async function getProjectDateRange(
 		if (p.first_heartbeat && p.first_heartbeat < earliest) earliest = p.first_heartbeat;
 		if (p.last_heartbeat && p.last_heartbeat > latest) latest = p.last_heartbeat;
 	}
-	if (earliest === Infinity || latest === 0) return null;
+	if (earliest === Infinity || latest === 0) {
+		log.debug('getProjectDateRange no valid timestamps', { userId, matchedCount: matched.length });
+		return null;
+	}
 
 	const fd = new Date(earliest * 1000);
 	const ld = new Date(latest * 1000);
-	return {
+	const result = {
 		firstDate: `${fd.getUTCFullYear()}-${String(fd.getUTCMonth() + 1).padStart(2, '0')}-${String(fd.getUTCDate()).padStart(2, '0')}`,
 		lastDate: `${ld.getUTCFullYear()}-${String(ld.getUTCMonth() + 1).padStart(2, '0')}-${String(ld.getUTCDate()).padStart(2, '0')}`
 	};
+	log.debug('getProjectDateRange result', { userId, matchedCount: matched.length, firstDate: result.firstDate, lastDate: result.lastDate });
+	return result;
 }
 
 export async function getProjectDetails(
@@ -105,6 +122,7 @@ export async function getProjectDetails(
 	start?: string,
 	end?: string
 ): Promise<{ projects: ProjectDetail[] }> {
+	log.debug('getProjectDetails called', { username, projectKeys: projectKeys.join(','), start, end });
 	const params: Record<string, string> = {
 		project: projectKeys.join(',')
 	};
@@ -129,19 +147,23 @@ export async function getProjectDetails(
 	const keySet = new Set(projectKeys.map((k) => k.toLowerCase()));
 	const projects = allProjects.filter((p) => keySet.has(p.name.toLowerCase()));
 
+	log.debug('getProjectDetails result', { username, projectCount: projects.length });
 	return { projects };
 }
 
 export async function getUserTrustFactor(
 	userId: string
 ): Promise<TrustFactor> {
+	log.debug('getUserTrustFactor called', { userId });
 	const response = await authFetch('/api/admin/v1/user/info', { id: userId });
 	const data = await response.json();
 
-	return {
+	const result = {
 		trustLevel: data.user.trust_level,
 		trustValue: 0
 	};
+	log.debug('getUserTrustFactor result', { userId, trustLevel: result.trustLevel });
+	return result;
 }
 
 export async function getHeartbeatsByUserAgent(
@@ -150,6 +172,7 @@ export async function getHeartbeatsByUserAgent(
 	startDate: string,
 	endDate: string
 ): Promise<Heartbeat[]> {
+	log.debug('getHeartbeatsByUserAgent called', { userId, segment, startDate, endDate });
 	const response = await authFetch('/api/admin/v1/heartbeats/by_user_agent_segment', {
 		user_id: userId,
 		segment,
@@ -158,20 +181,25 @@ export async function getHeartbeatsByUserAgent(
 	});
 	const data = await response.json();
 
-	return data.heartbeats ?? [];
+	const heartbeats = data.heartbeats ?? [];
+	log.debug('getHeartbeatsByUserAgent result', { userId, heartbeatCount: heartbeats.length });
+	return heartbeats;
 }
 
 export async function getUserHeartbeats(
 	userId: string,
 	date: string
 ): Promise<Heartbeat[]> {
+	log.debug('getUserHeartbeats called', { userId, date });
 	const response = await authFetch('/api/admin/v1/user/heartbeats', {
 		user_id: userId,
 		date
 	});
 	const data = await response.json();
 
-	return data.heartbeats ?? [];
+	const heartbeats = data.heartbeats ?? [];
+	log.debug('getUserHeartbeats result', { userId, count: heartbeats.length });
+	return heartbeats;
 }
 
 export interface RawHeartbeat {
@@ -209,8 +237,12 @@ export async function getAiCodingSeconds(
 	userId: string,
 	projectKeys: string[]
 ): Promise<number> {
+	log.debug('getAiCodingSeconds called', { userId, projectKeys: projectKeys.join(',') });
 	const range = await getProjectDateRange(userId, projectKeys);
-	if (!range) return 0;
+	if (!range) {
+		log.debug('getAiCodingSeconds no date range found', { userId });
+		return 0;
+	}
 
 	const startS = Math.floor(new Date(range.firstDate + 'T00:00:00Z').getTime() / 1000);
 	const endS = Math.floor(new Date(range.lastDate + 'T23:59:59Z').getTime() / 1000);
@@ -223,7 +255,9 @@ export async function getAiCodingSeconds(
 			(hb.category ?? '').toLowerCase() === 'ai coding'
 	);
 
-	return durationFromHeartbeats(aiHeartbeats);
+	const seconds = durationFromHeartbeats(aiHeartbeats);
+	log.debug('getAiCodingSeconds result', { userId, aiHeartbeatCount: aiHeartbeats.length, seconds });
+	return seconds;
 }
 
 export async function getRawHeartbeatRange(
@@ -231,6 +265,8 @@ export async function getRawHeartbeatRange(
 	startTimestampS: number,
 	endTimestampS: number
 ): Promise<RawHeartbeat[]> {
+	log.debug('getRawHeartbeatRange called', { userId, startTimestampS, endTimestampS });
+	const timer = log.time('getRawHeartbeatRange');
 	const BATCH_SIZE = 5000;
 	const MAX_FETCH = 100000;
 	let all: RawHeartbeat[] = [];
@@ -250,8 +286,10 @@ export async function getRawHeartbeatRange(
 		all = all.concat(batch);
 		hasMore = data.has_more ?? false;
 		offset += BATCH_SIZE;
+		log.trace('getRawHeartbeatRange batch', { userId, batchSize: batch.length, totalAccumulated: all.length, hasMore });
 	}
 
+	timer.end({ userId, totalHeartbeats: all.length });
 	return all;
 }
 
@@ -268,10 +306,12 @@ export async function getLapseTimelapsesFromHeartbeats(
 	userId: string,
 	projectKeys: string[]
 ): Promise<HeartbeatLapseTimelapse[]> {
+	log.debug('getLapseTimelapsesFromHeartbeats called', { userId, projectKeys: projectKeys.join(',') });
 	let range;
 	try {
 		range = await getProjectDateRange(userId, projectKeys);
-	} catch {
+	} catch (err) {
+		log.error('getLapseTimelapsesFromHeartbeats failed to get date range', err, { userId });
 		return [];
 	}
 	if (!range) return [];
@@ -282,7 +322,8 @@ export async function getLapseTimelapsesFromHeartbeats(
 	let all: RawHeartbeat[];
 	try {
 		all = await getRawHeartbeatRange(userId, startS, endS);
-	} catch {
+	} catch (err) {
+		log.error('getLapseTimelapsesFromHeartbeats failed to get heartbeats', err, { userId });
 		return [];
 	}
 	const keySet = new Set(projectKeys.map((k) => k.toLowerCase()));
@@ -316,6 +357,7 @@ export async function getLapseTimelapsesFromHeartbeats(
 		});
 	}
 
+	log.debug('getLapseTimelapsesFromHeartbeats result', { userId, timelapseCount: result.length });
 	return result.sort((a, b) => b.lastSeen - a.lastSeen);
 }
 
@@ -330,10 +372,12 @@ export interface HackatimeSearchUser {
 }
 
 export async function searchUsers(query: string): Promise<HackatimeSearchUser[]> {
+	log.debug('searchUsers called', { query });
 	const token = env.HACKATIME_ADMIN_TOKEN;
 	if (!token) throw new Error('HACKATIME_ADMIN_TOKEN is not set');
 
 	const url = new URL('/api/admin/v1/user/search_fuzzy', BASE_URL);
+	const timer = log.time('searchUsers');
 	const response = await fetch(url.toString(), {
 		method: 'POST',
 		headers: {
@@ -345,10 +389,14 @@ export async function searchUsers(query: string): Promise<HackatimeSearchUser[]>
 		signal: AbortSignal.timeout(5000)
 	});
 
-	if (!response.ok) return [];
+	if (!response.ok) {
+		timer.end({ status: response.status });
+		log.warn('searchUsers API returned non-ok', { query, status: response.status });
+		return [];
+	}
 	const data = await response.json();
 
-	return (data.users ?? []).map((u: Record<string, unknown>) => ({
+	const users = (data.users ?? []).map((u: Record<string, unknown>) => ({
 		id: u.id,
 		username: u.username ?? null,
 		slackUsername: u.slack_username ?? null,
@@ -357,6 +405,9 @@ export async function searchUsers(query: string): Promise<HackatimeSearchUser[]>
 		githubAvatarUrl: u.github_avatar_url ?? null,
 		email: u.email ?? ''
 	}));
+	timer.end({ resultCount: users.length });
+	log.debug('searchUsers result', { query, resultCount: users.length });
+	return users;
 }
 
 export async function getSummary(
@@ -365,6 +416,7 @@ export async function getSummary(
 	end: string,
 	project?: string
 ): Promise<SummaryResult> {
+	log.debug('getSummary called', { userId, start, end, project });
 	const params: Record<string, string> = {
 		user_id: userId,
 		start,
@@ -375,10 +427,12 @@ export async function getSummary(
 	const response = await authFetch('/api/summary', params);
 	const data = await response.json();
 
-	return {
+	const result = {
 		projects: data.projects ?? [],
 		languages: data.languages ?? [],
 		editors: data.editors ?? [],
 		grand_total: data.grand_total ?? { total_seconds: 0, text: '0 secs' }
 	};
+	log.debug('getSummary result', { userId, projectCount: result.projects.length, grandTotalSeconds: result.grand_total.total_seconds });
+	return result;
 }

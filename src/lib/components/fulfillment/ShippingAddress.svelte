@@ -1,6 +1,9 @@
 <script lang="ts">
+	import { createLogger } from '$lib/logger.js';
 	import { MapPin, Eye } from 'lucide-svelte';
 	import { countryName } from '$lib/utils/countries';
+
+	const log = createLogger('ShippingAddress');
 
 	interface AddressData {
 		firstName: string;
@@ -32,24 +35,33 @@
 		loading = true;
 		fetchError = null;
 		noAddress = false;
+		log.info('Revealing shipping address', { orderId, programId });
+		const t = log.time('revealAddress');
 
 		try {
 			const res = await fetch(`/api/programs/${programId}/orders/${orderId}/address`, {
 				method: 'POST'
 			});
+
+			t.end('status', res.status);
+
 			if (res.status === 404) {
+				log.debug('No shipping address on file (404)', { orderId });
 				noAddress = true;
 				revealed = true;
 				return;
 			}
 			if (!res.ok) {
+				log.error('Address reveal failed', { status: res.status });
 				throw new Error('Failed to load address');
 			}
 			address = await res.json();
 			revealed = true;
+			log.info('Address revealed successfully', { orderId, country: address?.country });
 		}
 		catch (e) {
 			fetchError = e instanceof Error ? e.message : 'Unknown error';
+			log.error('Address reveal exception', e);
 		}
 		finally {
 			loading = false;

@@ -9,21 +9,23 @@ import { parseRepoUrl, getCommits, getRepoInfo, getReadme } from '$lib/server/in
 import { getLapseTimelapses } from '$lib/server/integrations/lapse.js';
 import { CHECKS } from '$lib/server/checks/registry.js';
 import { enqueueChecks } from '$lib/server/queue/checks.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { CheckContext } from '$lib/server/checks/types.js';
 import type { SubmitReviewActionInput } from '$lib/server/protocol/types.js';
 import type { PageServerLoad, Actions } from './$types.js';
 
-export const load: PageServerLoad = async ({ params, parent }) => {
-	const t0 = performance.now();
-	const lap = (label: string) => {
-		const ms = (performance.now() - t0).toFixed(0);
-		console.log(`[review ${params.projectId}] ${ms}ms — ${label}`);
-	};
+const log = createLogger('page:review');
 
+export const load: PageServerLoad = async ({ params, parent }) => {
+	const tTotal = log.time('load');
+	log.info('loading review detail', { projectId: params.projectId, programId: params.programId });
+
+	const tParent = log.time('parent()');
 	const { user } = await parent();
 	if (!user) throw redirect(302, '/auth/login');
-	lap('parent()');
+	tParent.end();
 
+	const tAuth = log.time('auth + program');
 	const membership = await requirePermission(user.id, params.programId, 'canViewReviews', {
 		isSuperAdmin: user.isSuperAdmin
 	});
@@ -31,16 +33,17 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	const program = await db.program.findUniqueOrThrow({
 		where: { id: params.programId }
 	});
-	lap('auth + program');
+	tAuth.end();
 
 	const client = new ProtocolClient(program.masterEndpoint, program.secretKey);
 
+	const tProtocol = log.time('protocol (project+timeline+stats)');
 	const [project, timeline, stats] = await Promise.all([
 		client.fetchProjectDetail({ projectId: params.projectId }),
 		client.fetchProjectTimeline({ projectId: params.projectId }),
 		client.getProgramStats({})
 	]);
-	lap('protocol (project+timeline+stats)');
+	tProtocol.end();
 
 	const pendingShip = project.ships.find((s) => s.status === 'pending' || s.status === 'pending_hq');
 
@@ -49,20 +52,22 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	for (const event of timeline.events) {
 		actorIds.add(event.actorId);
 	}
+	const tActors = log.time('resolveActorIds');
 	const actors = await resolveActorIds([...actorIds]);
 	const author = actors.get(project.authorId)!;
-	lap('resolveActorIds');
+	tActors.end({ actorCount: actorIds.size });
 
 	const hackatimeUser = project.hackatimeId ?? project.authorId;
 
 	// Look up author's user record for join date and hackatime ID
+	const tAuthorUser = log.time('authorUser query');
 	const authorUser = await db.user.findFirst({
 		where: project.authorId.startsWith('U')
 			? { slackId: project.authorId }
 			: { hcaId: project.authorId },
 		select: { createdAt: true, hackatimeId: true }
 	});
-	lap('authorUser query');
+	tAuthorUser.end();
 
 	// Stream integration data — each resolves independently for incremental rendering
 	type GhCommit = {
@@ -108,15 +113,14 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 				getAiCodingSeconds(hackatimeUser, project.hackatimeProjectKeys)
 			]);
 			const totalSeconds = projectDetails.projects.reduce((s, p) => s + p.totalSeconds, 0);
-			lap('  hackatime');
+			log.debug('hackatime data loaded', { totalSeconds, aiSeconds, trustLevel: trust.trustLevel });
 			return {
 				hackatime: { totalSeconds, aiSeconds },
 				trustLevel: trust.trustLevel,
 				projectBreakdown: projectDetails.projects.map((p) => ({ name: p.name, totalSeconds: p.totalSeconds }))
 			};
 		} catch (e) {
-			console.error('[review] hackatime failed:', e);
-			lap('  hackatime (failed)');
+			log.error('hackatime integration failed', e);
 			return { hackatime: null, trustLevel: null, projectBreakdown: [] };
 		}
 	})();
@@ -131,11 +135,10 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 				approvedAt: r.fields['Approved At'] ?? r.fields['Created'] ?? null
 			}));
 			const airtablePreviousHours = airtableRecords.reduce((s, r) => s + r.hours, 0);
-			lap('  airtable');
+			log.debug('airtable data loaded', { recordCount: airtableRecords.length, previousHours: airtablePreviousHours });
 			return { airtableRecords, airtablePreviousHours };
 		} catch (e) {
-			console.error('[review] airtable failed:', e);
-			lap('  airtable (failed)');
+			log.error('airtable integration failed', e);
 			return { airtableRecords: [] as AirtableMatch[], airtablePreviousHours: 0 };
 		}
 	})();
@@ -148,11 +151,10 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 				getRepoInfo(repo.owner, repo.repo),
 				getReadme(repo.owner, repo.repo)
 			]);
-			lap('  github');
+			log.debug('github data loaded', { commitCount: commits.length, isPublic: repoInfo.isPublic });
 			return { githubCommits: commits, githubIsPublic: repoInfo.isPublic, githubReadme: readme };
 		} catch (e) {
-			console.error('[review] github failed:', e);
-			lap('  github (failed)');
+			log.error('github integration failed', e);
 			return { githubCommits: [] as GhCommit[], githubReadme: null as string | null, githubIsPublic: false };
 		}
 	})();
@@ -161,18 +163,17 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		if (!(hackatimeUser && project.hackatimeProjectKeys.length > 0)) return { lapseTimelapses: [] as LapseEntry[] };
 		try {
 			const timelapses = await getLapseTimelapses(hackatimeUser, project.hackatimeProjectKeys);
-			lap('  lapse');
+			log.debug('lapse data loaded', { timelapseCount: timelapses.length });
 			return { lapseTimelapses: timelapses.map((t) => ({ ...t })) };
 		} catch (e) {
-			console.error('[review] lapse failed:', e);
-			lap('  lapse (failed)');
+			log.error('lapse integration failed', e);
 			return { lapseTimelapses: [] as LapseEntry[] };
 		}
 	})();
 
 	// Enqueue checks once hackatime + github + airtable resolve (don't wait for lapse)
 	Promise.all([hackatimeData, airtableData, githubData]).then(([ht, at, gh]) => {
-		lap('  checks context ready');
+		log.debug('checks context ready', { projectId: params.projectId });
 		const checkCtx: CheckContext = {
 			project,
 			ship: pendingShip ?? {
@@ -212,12 +213,12 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			}
 		};
 		enqueueChecks(params.programId, checkShipId, checkCtx).catch((e) => {
-			console.error('[checks] Failed to enqueue:', e);
+			log.error('failed to enqueue checks', e);
 		});
 	}).catch((e) => {
-		console.error('[checks] Failed to build context:', e);
+		log.error('failed to build checks context', e);
 	});
-	lap('returned (integrations streaming)');
+	tTotal.end({ projectId: params.projectId });
 
 	// Serialize actors map for the client
 	const actorsObj: Record<string, { name: string; avatarUrl: string | null }> = {};
@@ -435,10 +436,13 @@ export const actions: Actions = {
 		const action = formData.get('action') as string;
 		const shipId = formData.get('shipId') as string;
 
+		log.info('review action', { action, shipId, projectId: params.projectId, userId: user.id });
+
 		const reviewerId = user.slackId || user.hcaId;
 
 		// Non-HQ approvals go to pending queue instead of master endpoint
 		if (action === 'approve' && !membership.canAuthorizeReviews) {
+			log.info('queuing pending approval (non-HQ user)', { shipId, projectId: params.projectId });
 			await db.pendingApproval.upsert({
 				where: {
 					programId_shipId_reviewerId: {
@@ -477,6 +481,7 @@ export const actions: Actions = {
 				}
 			});
 
+			log.info('review queued for hq approval', { shipId, projectId: params.projectId });
 			return { success: true };
 		}
 
@@ -529,6 +534,7 @@ export const actions: Actions = {
 		} catch (e) {
 			if (e instanceof ProtocolError) {
 				const parsed = JSON.parse(e.body).message ?? e.body;
+				log.error('protocol error during review action', e, { action, shipId });
 				return fail(502, { protocolError: `Upstream error: ${parsed}` });
 			}
 			throw e;
@@ -547,6 +553,8 @@ export const actions: Actions = {
 				}
 			}
 		});
+
+		log.info('review action complete', { action, shipId, success: result.success });
 
 		return { success: result.success };
 	}
