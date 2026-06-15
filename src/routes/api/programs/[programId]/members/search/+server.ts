@@ -2,7 +2,10 @@ import { json, error } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { searchUsers } from '$lib/server/integrations/hackatime.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
+
+const logger = createLogger('api:members:search');
 
 export const GET: RequestHandler = async ({ params, url, locals }) => {
 	const user = locals.user;
@@ -16,6 +19,8 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 	if (!query || query.length < 2) {
 		return json({ results: [] });
 	}
+
+	logger.debug('GET member search', { programId: params.programId, query });
 
 	// Search local DB first
 	const localUsers = await db.user.findMany({
@@ -111,5 +116,6 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 		}
 	}
 
+	logger.debug('Member search results', { programId: params.programId, query, count: results.length });
 	return json({ results: results.slice(0, 15) });
 };

@@ -2,8 +2,11 @@ import { json, error } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
 import type { Order, RevealOrderAddressOutput } from '$lib/server/protocol/types.js';
+
+const logger = createLogger('api:mass-fulfill');
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const user = locals.user;
@@ -25,8 +28,10 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const body = await request.json();
 
 	if (body.action === 'match') {
+		logger.info('POST mass-fulfill match', { programId: params.programId, recordCount: body.records?.length ?? 0 });
 		return handleMatch(client, body.records);
 	} else if (body.action === 'execute') {
+		logger.info('POST mass-fulfill execute', { programId: params.programId, matchCount: body.matches?.length ?? 0 });
 		return handleExecute(client, params.programId, user.id, body.matches);
 	}
 
@@ -206,6 +211,7 @@ async function handleMatch(client: ProtocolClient, records: MatchRecord[]) {
 		addressName: e.addressName
 	}));
 
+	logger.info('Match completed', { totalRecords: records.length, matchedCount: rows.filter(r => r.orderId).length, availableOrders: availableOrders.length });
 	return json({ rows, availableOrders });
 }
 
@@ -260,5 +266,6 @@ async function handleExecute(
 		}
 	}
 
+	logger.info('Execute completed', { fulfilled, errorCount: errors.length });
 	return json({ fulfilled, errors });
 }

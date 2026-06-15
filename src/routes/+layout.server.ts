@@ -1,7 +1,10 @@
 import { redirect } from '@sveltejs/kit';
 import { getSessionUser } from '$lib/server/auth.js';
 import { getUserPrograms } from '$lib/server/rbac.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { LayoutServerLoad } from './$types.js';
+
+const log = createLogger('layout');
 
 export const load: LayoutServerLoad = async ({ cookies, url }) => {
 	if (url.pathname.startsWith('/auth/')) {
@@ -11,10 +14,12 @@ export const load: LayoutServerLoad = async ({ cookies, url }) => {
 	const user = await getSessionUser(cookies);
 
 	if (!user) {
+		log.debug('no session, redirecting to login', { path: url.pathname });
 		throw redirect(302, '/auth/login');
 	}
 
 	const programs = await getUserPrograms(user.id, user.isSuperAdmin);
+	log.debug('layout loaded', { userId: user.id, programCount: programs.length });
 
 	return {
 		user: {

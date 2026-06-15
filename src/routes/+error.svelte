@@ -1,6 +1,9 @@
 <script lang="ts">
+	import { createLogger } from '$lib/logger.js';
 	import { page } from '$app/stores';
 	import { TriangleAlert } from 'lucide-svelte';
+
+	const log = createLogger('ErrorPage');
 
 	const titles: Record<number, string> = {
 		400: 'Bad request',
@@ -21,6 +24,10 @@
 	const description = $derived(
 		$page.error?.message || descriptions[status] || 'An unexpected error occurred.'
 	);
+
+	$effect(() => {
+		log.error('Error page displayed', { status, title, description, url: $page.url.pathname });
+	});
 </script>
 
 <div class="flex items-center justify-center h-full px-6">

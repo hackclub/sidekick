@@ -1,9 +1,12 @@
 <script lang="ts">
+	import { createLogger } from '$lib/logger.js';
 	import { X, NotebookPen, MessageSquareText, ChevronDown, ExternalLink, Pencil, Check, CreditCard, Loader2, TriangleAlert, Package } from 'lucide-svelte';
 	import StatusLight from '$lib/components/ui/StatusLight.svelte';
 	import UserCard from '$lib/components/ui/UserCard.svelte';
 	import ShippingAddress from './ShippingAddress.svelte';
 	import { marked, Renderer } from 'marked';
+
+	const log = createLogger('OrderDetailPane');
 
 	const contextRenderer = new Renderer();
 	contextRenderer.link = ({ href, text }) =>
@@ -75,17 +78,30 @@
 
 	async function saveRef() {
 		savingRef = true;
+		log.info('Saving reference for order', { orderId: order.id, refValue });
+		const t = log.time('saveRef');
 
 		try {
-			await fetch(`/api/programs/${programId}/orders`, {
+			const res = await fetch(`/api/programs/${programId}/orders`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ orderId: order.id, reference: refValue || undefined })
 			});
 
+			t.end('status', res.status);
+			if (!res.ok) {
+				log.warn('Save reference returned non-ok status', { status: res.status });
+			} else {
+				log.debug('Reference saved successfully');
+			}
+
 			refOverride = refValue;
 			onreferencechange?.(refValue);
 			editingRef = false;
+		}
+		catch (e) {
+			log.error('Failed to save reference', e);
+			throw e;
 		}
 		finally {
 			savingRef = false;
@@ -142,16 +158,29 @@
 
 		savingStatus = true;
 		statusDropdownOpen = false;
+		log.info('Changing order status', { orderId: order.id, from: currentStatus, to: value });
+		const t = log.time('selectStatus');
 
 		try {
-			await fetch(`/api/programs/${programId}/orders`, {
+			const res = await fetch(`/api/programs/${programId}/orders`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ orderId: order.id, status: value })
 			});
-			
+
+			t.end('status', res.status);
+			if (!res.ok) {
+				log.warn('Status change returned non-ok', { status: res.status });
+			} else {
+				log.debug('Status changed successfully', { newStatus: value });
+			}
+
 			statusOverride = value;
 			onstatuschange?.(value);
+		}
+		catch (e) {
+			log.error('Failed to change status', e);
+			throw e;
 		}
 		finally {
 			savingStatus = false;
@@ -174,16 +203,29 @@
 
 	async function saveNotes() {
 		savingNotes = true;
+		log.info('Saving admin notes for order', { orderId: order.id });
+		const t = log.time('saveNotes');
 
 		try {
-			await fetch(`/api/programs/${programId}/orders`, {
+			const res = await fetch(`/api/programs/${programId}/orders`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ orderId: order.id, adminNotes: notesValue })
 			});
 
+			t.end('status', res.status);
+			if (!res.ok) {
+				log.warn('Save admin notes returned non-ok', { status: res.status });
+			} else {
+				log.debug('Admin notes saved successfully');
+			}
+
 			onnoteschange?.(notesValue);
 			editingNotes = false;
+		}
+		catch (e) {
+			log.error('Failed to save admin notes', e);
+			throw e;
 		}
 		finally {
 			savingNotes = false;
@@ -206,16 +248,29 @@
 
 	async function saveUserNotes() {
 		savingUserNotes = true;
+		log.info('Saving user notes for order', { orderId: order.id });
+		const t = log.time('saveUserNotes');
 
 		try {
-			await fetch(`/api/programs/${programId}/orders`, {
+			const res = await fetch(`/api/programs/${programId}/orders`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ orderId: order.id, userNotes: userNotesValue })
 			});
 
+			t.end('status', res.status);
+			if (!res.ok) {
+				log.warn('Save user notes returned non-ok', { status: res.status });
+			} else {
+				log.debug('User notes saved successfully');
+			}
+
 			onusernoteschange?.(userNotesValue);
 			editingUserNotes = false;
+		}
+		catch (e) {
+			log.error('Failed to save user notes', e);
+			throw e;
 		}
 		finally {
 			savingUserNotes = false;
@@ -238,16 +293,29 @@
 
 	async function saveContext() {
 		savingContext = true;
+		log.info('Saving fulfiller context for item', { itemId: item.id });
+		const t = log.time('saveContext');
 
 		try {
-			await fetch(`/api/programs/${programId}/items/${item.id}`, {
+			const res = await fetch(`/api/programs/${programId}/items/${item.id}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ fulfillerContext: contextValue })
 			});
 
+			t.end('status', res.status);
+			if (!res.ok) {
+				log.warn('Save fulfiller context returned non-ok', { status: res.status });
+			} else {
+				log.debug('Fulfiller context saved successfully');
+			}
+
 			oncontextchange?.(contextValue);
 			editingContext = false;
+		}
+		catch (e) {
+			log.error('Failed to save fulfiller context', e);
+			throw e;
 		}
 		finally {
 			savingContext = false;
@@ -287,12 +355,20 @@
 
 		if (cardGrantTemplate && hcbOrganization && order.userEmail) {
 			loadingGrants = true;
+			log.info('Fetching existing HCB grants', { email: order.userEmail, orderId: order.id });
+			const t = log.time('fetchGrants');
 			fetch(`/api/programs/${programId}/hcb/grants?email=${encodeURIComponent(order.userEmail)}`)
-				.then((r) => r.json())
+				.then((r) => {
+					log.debug('HCB grants response', { status: r.status });
+					return r.json();
+				})
 				.then((data) => {
 					existingGrants = data.grants ?? [];
+					t.end('grants found', existingGrants.length);
 				})
-				.catch(() => {})
+				.catch((e) => {
+					log.error('Failed to fetch HCB grants', e);
+				})
 				.finally(() => { loadingGrants = false; });
 		}
 	});
@@ -302,6 +378,8 @@
 			return;
 		sendingGrant = true;
 		grantError = '';
+		log.info('Sending card grant', { orderId: order.id, mode: grantMode, selectedGrantId });
+		const t = log.time('sendCardGrant');
 
 		try {
 			const body: Record<string, unknown> = { orderId: order.id, email: order.userEmail };
@@ -315,9 +393,12 @@
 				body: JSON.stringify(body)
 			});
 
+			t.end('status', res.status);
+
 			if (res.status === 401) {
 				const data = await res.json();
 				if (data.needsAuth) {
+					log.warn('HCB auth required, redirecting');
 					window.location.href = `/auth/hcb?returnUrl=${encodeURIComponent(window.location.pathname)}`;
 					return;
 				}
@@ -326,6 +407,7 @@
 			if (!res.ok) {
 				const text = await res.text();
 				grantError = `Failed: ${text}`;
+				log.error('Card grant failed', { status: res.status, body: text });
 				return;
 			}
 
@@ -334,8 +416,10 @@
 			refOverride = data.reference;
 			onreferencechange?.(data.reference);
 			onsendgrant?.(data.reference);
+			log.info('Card grant sent successfully', { reference: data.reference });
 		} catch (e) {
 			grantError = e instanceof Error ? e.message : 'Unknown error';
+			log.error('Card grant exception', e);
 		} finally {
 			sendingGrant = false;
 		}
@@ -359,6 +443,8 @@
 		if (!warehouseTemplate || !hasTheseusApiKey || !hcbOrganization) return;
 		sendingWarehouseOrder = true;
 		warehouseOrderError = '';
+		log.info('Sending warehouse order', { orderId: order.id });
+		const t = log.time('sendWarehouseOrder');
 
 		try {
 			const res = await fetch(`/api/programs/${programId}/warehouse/send-order`, {
@@ -367,9 +453,12 @@
 				body: JSON.stringify({ orderId: order.id })
 			});
 
+			t.end('status', res.status);
+
 			if (res.status === 401) {
 				const data = await res.json();
 				if (data.needsAuth) {
+					log.warn('HCB auth required for warehouse order, redirecting');
 					window.location.href = `/auth/hcb?returnUrl=${encodeURIComponent(window.location.pathname)}`;
 					return;
 				}
@@ -378,6 +467,7 @@
 			if (!res.ok) {
 				const text = await res.text();
 				warehouseOrderError = `Failed: ${text}`;
+				log.error('Warehouse order failed', { status: res.status, body: text });
 				return;
 			}
 
@@ -386,8 +476,10 @@
 			refOverride = data.reference;
 			onreferencechange?.(data.reference);
 			onsendgrant?.(data.reference);
+			log.info('Warehouse order sent successfully', { reference: data.reference });
 		} catch (e) {
 			warehouseOrderError = e instanceof Error ? e.message : 'Unknown error';
+			log.error('Warehouse order exception', e);
 		} finally {
 			sendingWarehouseOrder = false;
 		}
@@ -400,13 +492,21 @@
 		userSlackId = null;
 		slackDeactivated = null;
 
+		log.debug('Fetching Slack user info', { userId: order.userId });
+		const t = log.time('fetchSlackUser');
 		fetch(`/api/slack/${encodeURIComponent(order.userId)}`)
-			.then((r) => r.json())
+			.then((r) => {
+				log.debug('Slack user info response', { status: r.status });
+				return r.json();
+			})
 			.then((data) => {
 				userSlackId = data.slackId ?? null;
 				slackDeactivated = data.slackId ? !!data.deleted : null;
+				t.end('slackId', userSlackId, 'deactivated', slackDeactivated);
 			})
-			.catch(() => {});
+			.catch((e) => {
+				log.error('Failed to fetch Slack user info', e);
+			});
 	});
 </script>
 

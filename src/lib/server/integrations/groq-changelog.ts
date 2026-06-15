@@ -5,7 +5,9 @@ import { mkdtemp, rm, readdir, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { promisify } from 'node:util';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('groq-changelog');
 const exec = promisify(execFile);
 
 // ---------------------------------------------------------------------------
@@ -139,15 +141,18 @@ const FILE_TOOLS: Groq.Chat.ChatCompletionTool[] = [
 // ---------------------------------------------------------------------------
 
 async function runGit(repoDir: string, args: string[]): Promise<string> {
+	const cmd = `git ${args.join(' ')}`;
+	log.trace('runGit executing', { command: cmd });
 	try {
 		const { stdout } = await exec('git', args, {
 			cwd: repoDir,
 			maxBuffer: 1024 * 1024,
 			timeout: 15000
 		});
+		log.trace('runGit success', { command: cmd, outputLength: stdout.length });
 		return stdout;
 	} catch (e: unknown) {
-		console.error(`[groq] git ${args.join(' ')} failed:`, e);
+		log.error('runGit failed', e, { command: cmd });
 		const msg = e instanceof Error ? e.message : String(e);
 		return `Error: ${msg}`;
 	}
@@ -288,6 +293,8 @@ async function cloneWithProgress(
 	emit: (event: ChangelogEvent) => void,
 	shallow?: boolean
 ): Promise<boolean> {
+	log.info('cloneWithProgress starting', { repoUrl, repoDir, shallow });
+	const timer = log.time('cloneWithProgress');
 	emit({ type: 'status', message: 'Cloning repository...' });
 	try {
 		await new Promise<void>((resolve, reject) => {
@@ -314,9 +321,12 @@ async function cloneWithProgress(
 			});
 			proc.on('error', reject);
 		});
+		timer.end({ repoUrl });
+		log.info('cloneWithProgress succeeded', { repoUrl });
 		return true;
 	} catch (e: unknown) {
-		console.error('[groq] git clone failed:', e);
+		timer.end({ repoUrl, error: true });
+		log.error('cloneWithProgress failed', e, { repoUrl, shallow });
 		emit({ type: 'error', message: `Clone failed: ${e instanceof Error ? e.message : String(e)}` });
 		return false;
 	}
@@ -329,7 +339,10 @@ async function runGroqLoop(
 	executeFn: (name: string, args: Record<string, unknown>) => Promise<string>,
 	emit: (event: ChangelogEvent) => void
 ): Promise<string | null> {
+	log.debug('runGroqLoop starting', { maxRounds: 10, toolCount: tools.length });
 	for (let round = 0; round < 10; round++) {
+		log.trace('runGroqLoop round', { round });
+		const roundTimer = log.time(`runGroqLoop.round.${round}`);
 		const stream = await groq.chat.completions.create({
 			model: 'openai/gpt-oss-120b',
 			messages,
@@ -385,19 +398,26 @@ async function runGroqLoop(
 		}
 
 		if (toolCalls.length > 0) {
+			log.debug('runGroqLoop executing tool calls', { round, toolCallCount: toolCalls.length, tools: toolCalls.map(tc => tc.name) });
 			for (const call of toolCalls) {
 				let toolArgs: Record<string, unknown> = {};
 				try { toolArgs = JSON.parse(call.arguments); } catch { /* empty */ }
 				emit({ type: 'tool', message: describeToolCall(call.name, toolArgs) });
+				const toolTimer = log.time(`runGroqLoop.tool.${call.name}`);
 				const result = await executeFn(call.name, toolArgs);
+				toolTimer.end({ resultLength: result.length });
 				messages.push({ role: 'tool', tool_call_id: call.id, content: result || '(empty output)' });
 			}
+			roundTimer.end({ round, toolCalls: toolCalls.length });
 			continue;
 		}
 
 		const text = fullContent.replace(/<\/?think>/g, '').trim();
+		roundTimer.end({ round, hasResult: !!text });
+		log.debug('runGroqLoop completed', { round, resultLength: text?.length ?? 0 });
 		return text || null;
 	}
+	log.warn('runGroqLoop exhausted all rounds without result');
 	return null;
 }
 
@@ -410,6 +430,7 @@ export async function generateChangelogStream(
 	sinceDate: string,
 	untilDate?: string
 ): Promise<ReadableStream<string>> {
+	log.info('generateChangelogStream called', { repoUrl, sinceDate, untilDate });
 	const groqKey = env.GROQ_API_KEY;
 	if (!groqKey) throw new Error('GROQ_API_KEY not configured');
 	const groq = new Groq({ apiKey: groqKey });
@@ -418,6 +439,7 @@ export async function generateChangelogStream(
 		async start(controller) {
 			const emit = (event: ChangelogEvent) => { controller.enqueue(`data: ${JSON.stringify(event)}\n\n`); };
 			const repoDir = await mkdtemp(join(tmpdir(), 'sidekick-changelog-'));
+			const streamTimer = log.time('generateChangelogStream');
 
 			try {
 				if (!await cloneWithProgress(repoUrl, repoDir, emit, true)) return;
@@ -435,12 +457,18 @@ export async function generateChangelogStream(
 				const result = await runGroqLoop(groq, messages, GIT_TOOLS,
 					(name, args) => executeGitTool(repoDir, name, args), emit);
 
-				if (result) emit({ type: 'done', changelog: result });
-				else emit({ type: 'error', message: 'Model returned empty response' });
+				if (result) {
+					log.info('generateChangelogStream succeeded', { repoUrl, resultLength: result.length });
+					emit({ type: 'done', changelog: result });
+				} else {
+					log.warn('generateChangelogStream empty response', { repoUrl });
+					emit({ type: 'error', message: 'Model returned empty response' });
+				}
 			} catch (e) {
-				console.error('[groq] changelog generation failed:', e);
+				log.error('generateChangelogStream failed', e, { repoUrl });
 				emit({ type: 'error', message: e instanceof Error ? e.message : String(e) });
 			} finally {
+				streamTimer.end({ repoUrl });
 				await rm(repoDir, { recursive: true, force: true }).catch(() => {});
 				controller.close();
 			}
@@ -453,6 +481,7 @@ export async function generateOverviewStream(
 	projectTitle: string,
 	projectDescription: string
 ): Promise<ReadableStream<string>> {
+	log.info('generateOverviewStream called', { repoUrl, projectTitle });
 	const groqKey = env.GROQ_API_KEY;
 	if (!groqKey) throw new Error('GROQ_API_KEY not configured');
 	const groq = new Groq({ apiKey: groqKey });
@@ -463,6 +492,7 @@ export async function generateOverviewStream(
 		async start(controller) {
 			const emit = (event: ChangelogEvent) => { controller.enqueue(`data: ${JSON.stringify(event)}\n\n`); };
 			const repoDir = await mkdtemp(join(tmpdir(), 'sidekick-overview-'));
+			const streamTimer = log.time('generateOverviewStream');
 
 			try {
 				if (!await cloneWithProgress(repoUrl, repoDir, emit)) return;
@@ -482,12 +512,18 @@ export async function generateOverviewStream(
 
 				const result = await runGroqLoop(groq, messages, allTools, executeFn, emit);
 
-				if (result) emit({ type: 'done', changelog: result });
-				else emit({ type: 'error', message: 'Model returned empty response' });
+				if (result) {
+					log.info('generateOverviewStream succeeded', { repoUrl, resultLength: result.length });
+					emit({ type: 'done', changelog: result });
+				} else {
+					log.warn('generateOverviewStream empty response', { repoUrl });
+					emit({ type: 'error', message: 'Model returned empty response' });
+				}
 			} catch (e) {
-				console.error('[groq] overview generation failed:', e);
+				log.error('generateOverviewStream failed', e, { repoUrl });
 				emit({ type: 'error', message: e instanceof Error ? e.message : String(e) });
 			} finally {
+				streamTimer.end({ repoUrl });
 				await rm(repoDir, { recursive: true, force: true }).catch(() => {});
 				controller.close();
 			}

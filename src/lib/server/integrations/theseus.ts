@@ -1,3 +1,7 @@
+import { createLogger } from '../logger.js';
+
+const log = createLogger('theseus');
+
 const THESEUS_BASE = 'https://mail.hackclub.com';
 
 export interface WarehouseAddress {
@@ -50,22 +54,34 @@ export interface TheseusUser {
 }
 
 export async function getTheseusUser(apiKey: string): Promise<TheseusUser> {
+	log.debug('getTheseusUser: fetching user info');
+	const timer = log.time('getTheseusUser');
 	const res = await fetch(`${THESEUS_BASE}/api/v1/user`, {
 		headers: { Authorization: `Bearer ${apiKey}` }
 	});
 
 	if (!res.ok) {
 		const text = await res.text();
+		log.error('getTheseusUser failed', new Error(`${res.status} ${text}`));
 		throw new Error(`Theseus auth failed: ${res.status} ${text}`);
 	}
 
-	return res.json();
+	const user: TheseusUser = await res.json();
+	timer.end({ userId: user.id, admin: user.admin });
+	return user;
 }
 
 export async function createWarehouseOrder(
 	apiKey: string,
 	params: CreateWarehouseOrderParams
 ): Promise<WarehouseOrderResult> {
+	log.info('createWarehouseOrder: creating order', {
+		email: params.warehouse_order.recipient_email,
+		tags: params.warehouse_order.tags,
+		contentItems: params.contents.length,
+		country: params.address.country
+	});
+	const timer = log.time('createWarehouseOrder');
 	const res = await fetch(`${THESEUS_BASE}/api/v1/warehouse_orders`, {
 		method: 'POST',
 		headers: {
@@ -77,8 +93,11 @@ export async function createWarehouseOrder(
 
 	if (!res.ok) {
 		const text = await res.text();
+		log.error('createWarehouseOrder failed', new Error(`${res.status} ${text}`));
 		throw new Error(`Warehouse order creation failed: ${res.status} ${text}`);
 	}
 
-	return res.json();
+	const result: WarehouseOrderResult = await res.json();
+	timer.end({ orderId: result.id, status: result.status });
+	return result;
 }

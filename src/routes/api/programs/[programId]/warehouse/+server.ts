@@ -3,7 +3,10 @@ import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { encrypt } from '$lib/server/crypto.js';
 import { getTheseusUser } from '$lib/server/integrations/theseus.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
+
+const logger = createLogger('api:warehouse');
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const user = locals.user;
@@ -19,6 +22,8 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
 		throw error(400, 'API key is required');
 	}
+
+	logger.info('Setting Theseus API key', { programId: params.programId });
 
 	const theseusUser = await getTheseusUser(apiKey.trim());
 
@@ -42,6 +47,8 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		}
 	});
 
+	logger.info('Theseus API key set', { programId: params.programId, theseusUserName: theseusUser.name });
+
 	return json({ success: true, theseusUser: { name: theseusUser.name, email: theseusUser.email } });
 };
 
@@ -52,6 +59,8 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
 	await requirePermission(user.id, params.programId, 'isRoot', {
 		isSuperAdmin: user.isSuperAdmin
 	});
+
+	logger.info('Removing Theseus API key', { programId: params.programId });
 
 	await db.program.update({
 		where: { id: params.programId },
@@ -72,6 +81,8 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
 			metadata: {}
 		}
 	});
+
+	logger.info('Theseus API key removed', { programId: params.programId });
 
 	return json({ success: true });
 };

@@ -2,7 +2,10 @@ import { Queue, Worker } from 'bullmq';
 import { getRedis, getBullConnection } from './connection.js';
 import { db } from '../db.js';
 import { CHECKS, getCheckById } from '../checks/registry.js';
+import { createLogger } from '../logger.js';
 import type { CheckContext } from '../checks/types.js';
+
+const log = createLogger('checks');
 
 const QUEUE_NAME = 'sidekick-checks';
 const CTX_PREFIX = 'sidekick-ctx:';
@@ -12,6 +15,7 @@ let _queue: Queue | null = null;
 
 function getQueue(): Queue {
 	if (!_queue) {
+		log.debug('creating checks queue', { queueName: QUEUE_NAME });
 		_queue = new Queue(QUEUE_NAME, {
 			connection: getBullConnection(),
 			defaultJobOptions: {
@@ -21,6 +25,7 @@ function getQueue(): Queue {
 				backoff: { type: 'fixed', delay: 1000 }
 			}
 		});
+		log.debug('checks queue created');
 	}
 	return _queue;
 }
@@ -38,10 +43,14 @@ export async function enqueueChecks(
 	ctx: CheckContext
 ): Promise<void> {
 	const contextKey = `${CTX_PREFIX}${programId}:${shipId}`;
+	log.debug('enqueueChecks', { programId, shipId, contextKey, checkCount: CHECKS.length });
+
 	const redis = getRedis();
 
+	log.trace('storing check context in Redis', { contextKey, ttl: CTX_TTL });
 	await redis.set(contextKey, JSON.stringify(ctx), 'EX', CTX_TTL);
 
+	log.trace('resetting check results in transaction', { programId, shipId });
 	await db.$transaction([
 		db.checkResult.deleteMany({ where: { programId, shipId } }),
 		db.checkResult.createMany({
@@ -65,21 +74,39 @@ export async function enqueueChecks(
 	}));
 
 	await getQueue().addBulk(jobs);
+	log.debug('checks enqueued', { programId, shipId, jobCount: jobs.length });
 }
 
 async function processCheckJob(job: { data: CheckJobData }) {
 	const { programId, shipId, checkId, contextKey } = job.data;
+	log.debug('processCheckJob start', { programId, shipId, checkId });
 
 	const check = getCheckById(checkId);
-	if (!check) throw new Error(`Unknown check: ${checkId}`);
+	if (!check) {
+		log.error('unknown check ID', new Error(`Unknown check: ${checkId}`), { checkId });
+		throw new Error(`Unknown check: ${checkId}`);
+	}
 
+	log.trace('retrieving context from Redis', { contextKey });
 	const ctxJson = await getRedis().get(contextKey);
-	if (!ctxJson) throw new Error('Check context expired');
+	if (!ctxJson) {
+		log.error('check context expired', new Error('Check context expired'), { contextKey });
+		throw new Error('Check context expired');
+	}
 	const ctx: CheckContext = JSON.parse(ctxJson);
 
-	const start = Date.now();
+	const timer = log.time(`check ${checkId}`);
 	const result = await check.evaluate(ctx);
-	const latencyMs = Date.now() - start;
+	const latencyMs = timer.end({ checkId, passed: result.pass });
+
+	log.debug('check completed', {
+		checkId,
+		programId,
+		shipId,
+		passed: result.pass,
+		latencyMs,
+		summary: result.summary.slice(0, 100)
+	});
 
 	await db.checkResult.updateMany({
 		where: { programId, shipId, checkId },
@@ -98,7 +125,12 @@ async function processCheckJob(job: { data: CheckJobData }) {
 let worker: Worker | null = null;
 
 export function ensureWorkerStarted() {
-	if (worker) return;
+	if (worker) {
+		log.trace('worker already started');
+		return;
+	}
+
+	log.info('starting checks worker', { queueName: QUEUE_NAME, concurrency: 5 });
 
 	worker = new Worker(QUEUE_NAME, processCheckJob, {
 		connection: getBullConnection(),
@@ -108,7 +140,7 @@ export function ensureWorkerStarted() {
 	worker.on('failed', (job, err) => {
 		if (!job) return;
 		const { programId, shipId, checkId } = job.data as CheckJobData;
-		console.error(`[checks] ${checkId} failed for ${shipId}:`, err);
+		log.error(`check job failed: ${checkId}`, err, { programId, shipId, checkId });
 
 		db.checkResult
 			.updateMany({
@@ -118,5 +150,11 @@ export function ensureWorkerStarted() {
 			.catch(() => {});
 	});
 
-	console.log('[checks] Worker started (concurrency=5)');
+	worker.on('completed', (job) => {
+		if (!job) return;
+		const { checkId, shipId } = job.data as CheckJobData;
+		log.trace('check job completed', { checkId, shipId });
+	});
+
+	log.info('checks worker started', { concurrency: 5 });
 }

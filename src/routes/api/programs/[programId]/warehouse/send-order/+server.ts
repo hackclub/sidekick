@@ -5,8 +5,11 @@ import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
 import { decrypt } from '$lib/server/crypto.js';
 import { createWarehouseOrder } from '$lib/server/integrations/theseus.js';
 import { getValidHcbToken, createHcbTransfer } from '$lib/server/integrations/hcb.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { CreateWarehouseOrderParams } from '$lib/server/integrations/theseus.js';
 import type { RequestHandler } from './$types.js';
+
+const logger = createLogger('api:warehouse:send-order');
 
 function parseDecimalCents(value: string | null): number {
 	if (!value) return 0;
@@ -32,6 +35,8 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	if (!orderId) {
 		throw error(400, 'orderId is required');
 	}
+
+	logger.info('POST send warehouse order', { orderId, programId: params.programId });
 
 	const program = await db.program.findUniqueOrThrow({
 		where: { id: params.programId }
@@ -68,11 +73,15 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		throw error(404, 'No warehouse template configured for this item');
 	}
 
+	logger.debug('Template found', { shopItemId: orderDetail.item.id, templateTags: template.tags });
+
 	let address;
 	try {
+		logger.debug('Revealing order address', { orderId });
 		address = await client.revealOrderAddress({ orderId });
 	} catch (e) {
 		if (e instanceof ProtocolError) {
+			logger.warn('No shipping address for order', { orderId });
 			throw error(400, 'No shipping address on file for this order');
 		}
 		throw e;
@@ -113,7 +122,9 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		contents
 	};
 
+	logger.debug('Sending warehouse order to Theseus', { orderId, contents: contents.length });
 	const result = await createWarehouseOrder(apiKey, orderParams);
+	logger.debug('Warehouse order created', { warehouseOrderId: result.id, contentsCost: result.contents_cost, laborCost: result.labor_cost, postageCost: result.postage_cost });
 
 	const totalCostCents = parseDecimalCents(result.contents_cost)
 		+ parseDecimalCents(result.labor_cost)
@@ -127,6 +138,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 
 	let transfer = null;
 	if (totalCostCents > 0) {
+		logger.debug('Creating HCB transfer', { totalCostCents, fromOrg: program.hcbOrganizationSlug });
 		transfer = await createHcbTransfer(
 			hcbToken,
 			program.hcbOrganizationSlug,
@@ -134,6 +146,9 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			totalCostCents,
 			transferName
 		);
+		logger.debug('HCB transfer created', { transferId: transfer?.id ?? null });
+	} else {
+		logger.debug('Skipping HCB transfer (zero cost)');
 	}
 
 	const reference = `https://mail.hackclub.com/packages/${result.id}`;
@@ -156,6 +171,8 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			}
 		}
 	});
+
+	logger.info('Warehouse order sent successfully', { orderId, warehouseOrderId: result.id, totalCostCents, transferId: transfer?.id ?? null });
 
 	return json({ success: true, warehouseOrder: result, reference, totalCostCents, transfer });
 };

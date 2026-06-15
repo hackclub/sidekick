@@ -2,8 +2,11 @@ import { json, error } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient } from '$lib/server/protocol/client.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { UpdateReviewActionInput } from '$lib/server/protocol/types.js';
 import type { RequestHandler } from './$types.js';
+
+const logger = createLogger('api:review');
 
 export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	const user = locals.user;
@@ -27,6 +30,8 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	};
 
 	if (!reviewerId) throw error(400, 'reviewerId is required');
+
+	logger.info('PATCH review edit', { programId: params.programId, shipId: params.shipId, type, reviewerId });
 
 	const client = new ProtocolClient(program.masterEndpoint, program.secretKey);
 
@@ -61,5 +66,6 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		}
 	});
 
+	logger.info('Review edit completed', { programId: params.programId, shipId: params.shipId, type, success: result.success });
 	return json({ success: result.success });
 };

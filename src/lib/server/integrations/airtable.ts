@@ -1,5 +1,7 @@
 import { env } from '$env/dynamic/private';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('airtable');
 const BASE_URL = 'https://api.airtable.com/v0';
 const AIRTABLE_BASE_ID = 'app3A5kJwYqxMLOgh';
 const AIRTABLE_TABLE_ID = 'tblzWWGUYHVH7Zyqf';
@@ -76,9 +78,14 @@ export async function findRecordsByUrl(
 	playableUrl: string,
 	codeUrl: string
 ): Promise<AirtableRecord[]> {
+	log.debug('findRecordsByUrl called', { playableUrl, codeUrl });
 	const cacheKey = `${normalizeUrl(playableUrl)}||${normalizeUrl(codeUrl)}`;
 	const cached = recordCache.get(cacheKey);
-	if (cached && cached.expiresAt > Date.now()) return cached.records;
+	if (cached && cached.expiresAt > Date.now()) {
+		log.trace('findRecordsByUrl cache hit', { cacheKey, recordCount: cached.records.length });
+		return cached.records;
+	}
+	log.trace('findRecordsByUrl cache miss', { cacheKey });
 
 	const baseId = env.AIRTABLE_BASE_ID;
 	const tableId = env.AIRTABLE_TABLE_ID;
@@ -95,6 +102,8 @@ export async function findRecordsByUrl(
 	if (unique.length === 0) return [];
 
 	const formula = buildFilterFormula(unique);
+	log.trace('findRecordsByUrl querying Airtable', { formulaLength: formula.length, variantCount: unique.length });
+	const timer = log.time('findRecordsByUrl');
 	const records: AirtableRecord[] = [];
 	let offset: string | undefined;
 
@@ -113,6 +122,7 @@ export async function findRecordsByUrl(
 
 		if (!response.ok) {
 			const body = await response.text();
+			log.error('findRecordsByUrl API error', undefined, { status: response.status });
 			throw new Error(`Airtable API error ${response.status}: ${body}`);
 		}
 
@@ -130,6 +140,10 @@ export async function findRecordsByUrl(
 		);
 	});
 
+	timer.end({ recordsFound: records.length, filteredCount: filtered.length });
+	log.debug('findRecordsByUrl result', { recordsFound: records.length, filteredCount: filtered.length });
+
+	log.trace('findRecordsByUrl cache set', { cacheKey, recordCount: filtered.length });
 	recordCache.set(cacheKey, { records: filtered, expiresAt: Date.now() + CACHE_TTL });
 	return filtered;
 }
@@ -138,6 +152,7 @@ export async function getTotalPreviousHours(
 	playableUrl: string,
 	codeUrl: string
 ): Promise<number> {
+	log.debug('getTotalPreviousHours called', { playableUrl, codeUrl });
 	const records = await findRecordsByUrl(playableUrl, codeUrl);
 
 	let total = 0;
@@ -152,5 +167,6 @@ export async function getTotalPreviousHours(
 		}
 	}
 
+	log.debug('getTotalPreviousHours result', { totalHours: total, recordCount: records.length });
 	return total;
 }

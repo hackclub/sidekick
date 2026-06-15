@@ -1,7 +1,10 @@
 import { json, error } from '@sveltejs/kit';
 import { requirePermission } from '$lib/server/rbac.js';
 import { getProjectDateRange } from '$lib/server/integrations/hackatime.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
+
+const logger = createLogger('api:hackatime:date-range');
 
 export const GET: RequestHandler = async ({ params, url, locals }) => {
 	const user = locals.user;
@@ -19,14 +22,16 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 	}
 
 	const projectKeys = projects.split(',').map((p) => p.trim());
+	logger.debug('GET request', { userId, projects: projectKeys.join(','), programId: params.programId });
+
 	let range;
 	try {
 		range = await getProjectDateRange(userId, projectKeys);
 	} catch (e) {
-		console.error(`[date-range] Failed for userId=${userId} projects=${projectKeys.join(',')}:`, e);
+		logger.error('Failed to get date range', e, { userId, projects: projectKeys.join(',') });
 		range = null;
 	}
-	console.log(`[date-range] userId=${userId} projects=${projectKeys.join(',')} → ${range ? `${range.firstDate} to ${range.lastDate}` : 'null'}`);
+	logger.debug('Result', { userId, range: range ? `${range.firstDate} to ${range.lastDate}` : 'null' });
 
 	return json({ range });
 };

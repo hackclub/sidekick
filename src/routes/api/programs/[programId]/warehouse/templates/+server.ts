@@ -1,7 +1,10 @@
 import { json, error } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
+
+const logger = createLogger('api:warehouse:templates');
 
 export const GET: RequestHandler = async ({ params, locals }) => {
 	const user = locals.user;
@@ -11,10 +14,13 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		isSuperAdmin: user.isSuperAdmin
 	});
 
+	logger.debug('GET warehouse templates', { programId: params.programId });
+
 	const templates = await db.warehouseTemplate.findMany({
 		where: { programId: params.programId }
 	});
 
+	logger.debug('Templates fetched', { programId: params.programId, count: templates.length });
 	return json({ templates });
 };
 
@@ -28,6 +34,8 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 
 	const body = await request.json();
 	const { shopItemId, tags, userFacingTitle, metadata, contents } = body;
+
+	logger.info('PUT warehouse template', { programId: params.programId, shopItemId });
 
 	if (!shopItemId) {
 		throw error(400, 'shopItemId is required');
@@ -85,6 +93,7 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		}
 	});
 
+	logger.info('Warehouse template upserted', { programId: params.programId, templateId: template.id, shopItemId });
 	return json({ template });
 };
 
@@ -98,6 +107,8 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 
 	const body = await request.json();
 	const { shopItemId } = body;
+
+	logger.info('DELETE warehouse template', { programId: params.programId, shopItemId });
 
 	if (!shopItemId) throw error(400, 'shopItemId is required');
 
@@ -122,5 +133,6 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 		}
 	});
 
+	logger.info('Warehouse template deleted', { programId: params.programId, templateId: template.id, shopItemId });
 	return json({ success: true });
 };

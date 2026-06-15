@@ -1,7 +1,10 @@
 import { error } from '@sveltejs/kit';
 import { requirePermission } from '$lib/server/rbac.js';
 import { generateOverviewStream } from '$lib/server/integrations/groq-changelog.js';
+import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
+
+const logger = createLogger('api:overview');
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const user = locals.user;
@@ -22,7 +25,11 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		throw error(400, 'repoUrl and projectTitle are required');
 	}
 
+	logger.info('POST overview stream', { programId: params.programId, repoUrl, projectTitle });
+
 	const stream = await generateOverviewStream(repoUrl, projectTitle, projectDescription);
+
+	logger.debug('Overview stream started', { programId: params.programId, projectTitle });
 
 	return new Response(stream, {
 		headers: {
