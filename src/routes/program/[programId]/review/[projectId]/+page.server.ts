@@ -102,6 +102,11 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	const repo = parseRepoUrl(project.codeUrl);
 	const checkShipId = pendingShip?.id ?? params.projectId;
 
+	// Clear stale check results eagerly so the client's first poll doesn't
+	// pick up completed results from a previous run and stop polling before
+	// enqueueChecks (which is fire-and-forget) creates fresh pending results.
+	await db.checkResult.deleteMany({ where: { programId: params.programId, shipId: checkShipId } });
+
 	const hackatimeData = (async () => {
 		if (!(hackatimeUser && project.hackatimeProjectKeys.length > 0)) {
 			return { hackatime: null as { totalSeconds: number; aiSeconds: number } | null, trustLevel: null as string | null, projectBreakdown: [] as { name: string; totalSeconds: number }[] };
