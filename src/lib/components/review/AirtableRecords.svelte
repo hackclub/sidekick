@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Clock, ExternalLink } from 'lucide-svelte';
 	import AirtableIcon from '../icons/AirtableIcon.svelte';
+	import Checkbox from '../ui/Checkbox.svelte';
 
 	interface AirtableMatch {
 		id: string;
@@ -15,12 +16,11 @@
 	interface Props {
 		records: AirtableMatch[];
 		loading?: boolean;
+		showFuzzy?: boolean;
 		class?: string;
 	}
 
-	let { records, loading = false, class: className = '' }: Props = $props();
-
-	let showFuzzy = $state(false);
+	let { records, loading = false, showFuzzy = $bindable(false), class: className = '' }: Props = $props();
 
 	const exactRecords = $derived(records.filter((r) => r.isExact));
 	const fuzzyRecords = $derived(records.filter((r) => !r.isExact));
@@ -136,15 +136,12 @@
 	</div>
 
 	{#if !loading && fuzzyRecords.length > 0}
-		<div class="flex items-center gap-2 px-8 py-3 border-t border-border-card">
-			<label class="flex items-center gap-2 cursor-pointer text-xs text-text-tertiary select-none">
-				<input
-					type="checkbox"
-					bind:checked={showFuzzy}
-					class="rounded border-border-card"
-				/>
-				Show {fuzzyRecords.length} fuzzy {fuzzyRecords.length === 1 ? 'match' : 'matches'}
-			</label>
+		<div class="px-8 py-3 border-t border-border-card">
+			<Checkbox checked={showFuzzy} onchange={() => (showFuzzy = !showFuzzy)}>
+				<span class="text-xs text-text-tertiary">
+					Show {fuzzyRecords.length} fuzzy {fuzzyRecords.length === 1 ? 'match' : 'matches'}
+				</span>
+			</Checkbox>
 		</div>
 	{/if}
 </div>

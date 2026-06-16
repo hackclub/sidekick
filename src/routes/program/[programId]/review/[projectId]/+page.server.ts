@@ -158,7 +158,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 					isExact: !!isExact
 				};
 			});
-			const airtablePreviousHours = airtableRecords.reduce((s, r) => s + r.hours, 0);
+			const airtablePreviousHours = airtableRecords.filter((r) => r.isExact).reduce((s, r) => s + r.hours, 0);
 			log.debug('airtable data loaded', { recordCount: airtableRecords.length, previousHours: airtablePreviousHours });
 			return { airtableRecords, airtablePreviousHours };
 		} catch (e) {
