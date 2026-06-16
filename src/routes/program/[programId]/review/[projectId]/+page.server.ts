@@ -141,13 +141,21 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			const records = await findRecordsByUrl(project.demoUrl ?? '', project.codeUrl);
 			const normDemoUrl = normalizeAirtableUrl(project.demoUrl ?? '');
 			const normCodeUrl = normalizeAirtableUrl(project.codeUrl);
+			const authorNameParts = author.name.toLowerCase().split(/\s+/).filter(Boolean);
 			const airtableRecords: AirtableMatch[] = records.map((r) => {
 				const recPlayable = normalizeAirtableUrl(r.fields['Playable URL'] ?? '');
 				const recCode = normalizeAirtableUrl(r.fields['Code URL'] ?? '');
-				const isExact =
+				const urlExact =
 					(normDemoUrl && (recPlayable === normDemoUrl || recCode === normDemoUrl)) ||
 					(normCodeUrl && (recPlayable === normCodeUrl || recCode === normCodeUrl)) ||
 					false;
+				const recFirst = (r.fields['First Name'] ?? '').toLowerCase().trim();
+				const recLast = (r.fields['Last Name'] ?? '').toLowerCase().trim();
+				const nameMatches = authorNameParts.length > 0 && (
+					(recFirst && authorNameParts.includes(recFirst)) ||
+					(recLast && authorNameParts.includes(recLast))
+				);
+				const isExact = !!(urlExact || nameMatches);
 				return {
 					id: r.fields['ID'] ?? r.id,
 					url: airtableRecordUrl(r.id),
@@ -155,7 +163,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 					approvedAt: r.fields['Approved At'] ?? r.fields['Created'] ?? null,
 					playableUrl: r.fields['Playable URL'] ?? null,
 					codeUrl: r.fields['Code URL'] ?? null,
-					isExact: !!isExact
+					isExact
 				};
 			});
 			const airtablePreviousHours = airtableRecords.filter((r) => r.isExact).reduce((s, r) => s + r.hours, 0);

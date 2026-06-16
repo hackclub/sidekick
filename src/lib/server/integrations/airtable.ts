@@ -17,6 +17,8 @@ export interface AirtableRecord {
 		'Record ID'?: string;
 		ID?: string;
 		Email?: string;
+		'First Name'?: string;
+		'Last Name'?: string;
 		'Playable URL'?: string;
 		'Code URL'?: string;
 		'Hours Spent'?: number;
