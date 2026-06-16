@@ -33,16 +33,18 @@ export interface CreateWarehouseOrderParams {
 }
 
 export interface WarehouseOrderResult {
-	id: number;
+	id: string;
 	status: string;
+	tags: string[];
 	recipient_email: string;
-	user_facing_title: string | null;
 	tracking_number: string | null;
-	tracking_url: string | null;
+	carrier: string | null;
+	service: string | null;
+	weight: string | null;
 	contents_cost: string | null;
 	labor_cost: string | null;
 	postage_cost: string | null;
-	created_at: string;
+	idempotency_key: string | null;
 }
 
 export interface TheseusUser {
@@ -97,7 +99,8 @@ export async function createWarehouseOrder(
 		throw new Error(`Warehouse order creation failed: ${res.status} ${text}`);
 	}
 
-	const result: WarehouseOrderResult = await res.json();
+	const data: { warehouse_order: WarehouseOrderResult } = await res.json();
+	const result = data.warehouse_order;
 	timer.end({ orderId: result.id, status: result.status });
 	return result;
 }
