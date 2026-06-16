@@ -12,15 +12,18 @@
 		deletions: number;
 	}
 
+	interface CommitDetail {
+		additions: number;
+		deletions: number;
+		files: CommitFile[];
+	}
+
 	interface GitCommit {
 		sha: string;
 		message: string;
 		author: string;
 		authorAvatarUrl?: string | null;
 		date: string;
-		additions: number;
-		deletions: number;
-		files?: CommitFile[];
 	}
 
 	interface TimelineMarker {
@@ -47,11 +50,12 @@
 		markers?: TimelineMarker[];
 		timelapses?: LapseTimelapse[];
 		repoUrl?: string;
+		programId?: string;
 		loading?: boolean;
 		class?: string;
 	}
 
-	let { commits, markers = [], timelapses = [], repoUrl = '', loading = false, class: className = '' }: Props = $props();
+	let { commits, markers = [], timelapses = [], repoUrl = '', programId = '', loading = false, class: className = '' }: Props = $props();
 
 	let activeTab = $state('github');
 	let hoveredCommit: GitCommit | null = $state(null);
@@ -59,31 +63,52 @@
 	let popupVisible = $state(false);
 	let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
 	let fadeTimeout: ReturnType<typeof setTimeout> | null = null;
+	let details: Record<string, CommitDetail | 'loading'> = $state({});
+
+	function parseGhUrl(url: string): { owner: string; repo: string } | null {
+		try {
+			const parsed = new URL(url);
+			if (parsed.hostname !== 'github.com') return null;
+			const segments = parsed.pathname.replace(/\.git$/, '').split('/').filter(Boolean);
+			if (segments.length < 2) return null;
+			return { owner: segments[0], repo: segments[1] };
+		} catch { return null; }
+	}
+
+	async function fetchDetail(sha: string) {
+		if (details[sha] || !repoUrl || !programId) return;
+		const repo = parseGhUrl(repoUrl);
+		if (!repo) return;
+
+		details[sha] = 'loading';
+		try {
+			const params = new URLSearchParams({ owner: repo.owner, repo: repo.repo, sha });
+			const res = await fetch(`/api/programs/${programId}/github/commit-detail?${params}`);
+			if (res.ok) {
+				details[sha] = await res.json();
+			} else {
+				delete details[sha];
+			}
+		} catch {
+			delete details[sha];
+		}
+	}
 
 	function showPopup(commit: GitCommit, el: HTMLElement) {
-		if (hoverTimeout) {
-			clearTimeout(hoverTimeout);
-		}
-		if (fadeTimeout) {
-			clearTimeout(fadeTimeout);
-		}
+		if (hoverTimeout) clearTimeout(hoverTimeout);
+		if (fadeTimeout) clearTimeout(fadeTimeout);
 		hoverTimeout = setTimeout(() => {
-			if (!commit.files?.length)
-				return;
 			const rect = el.getBoundingClientRect();
 			popupPos = { x: rect.left - 8, y: rect.top };
 			hoveredCommit = commit;
+			fetchDetail(commit.sha);
 			requestAnimationFrame(() => { popupVisible = true; });
 		}, 120);
 	}
 
 	function hidePopup() {
-		if (hoverTimeout) {
-			clearTimeout(hoverTimeout);
-		}
-		if (fadeTimeout) {
-			clearTimeout(fadeTimeout);
-		}
+		if (hoverTimeout) clearTimeout(hoverTimeout);
+		if (fadeTimeout) clearTimeout(fadeTimeout);
 		fadeTimeout = setTimeout(() => {
 			popupVisible = false;
 			setTimeout(() => {
@@ -96,12 +121,8 @@
 	}
 
 	function keepPopup() {
-		if (hoverTimeout) {
-			clearTimeout(hoverTimeout);
-		}
-		if (fadeTimeout) {
-			clearTimeout(fadeTimeout);
-		}
+		if (hoverTimeout) clearTimeout(hoverTimeout);
+		if (fadeTimeout) clearTimeout(fadeTimeout);
 		popupVisible = true;
 	}
 
@@ -242,8 +263,11 @@
 									{item.commit.message.split('\n')[0]}
 								</p>
 								<div class="flex gap-1.5 items-center text-xs shrink-0 ml-2">
-									<span class="text-git-added">+{item.commit.additions}</span>
-									<span class="text-git-removed">-{item.commit.deletions}</span>
+									{#if details[item.commit.sha] && details[item.commit.sha] !== 'loading'}
+										{@const d = details[item.commit.sha] as CommitDetail}
+										<span class="text-git-added">+{d.additions}</span>
+										<span class="text-git-removed">-{d.deletions}</span>
+									{/if}
 									<span class="text-text-faint">{timeAgo(item.commit.date)}</span>
 								</div>
 							</div>
@@ -333,8 +357,8 @@
 	</div>
 </div>
 
-{#if hoveredCommit && popupPos && hoveredCommit.files?.length}
-	{@const files = hoveredCommit.files}
+{#if hoveredCommit && popupPos}
+	{@const detail = details[hoveredCommit.sha]}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="fixed z-50 transition-opacity duration-150 {popupVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}"
@@ -343,18 +367,31 @@
 		onmouseleave={hidePopup}
 	>
 		<div class="bg-white border border-border-card rounded-section shadow-card px-3 py-2 w-[260px] max-h-[200px] overflow-auto">
-			<p class="text-[10px] font-bold text-text-secondary mb-1.5">{files.length} file{files.length !== 1 ? 's' : ''} changed</p>
-			<div class="flex flex-col gap-0.5">
-				{#each files as file (file.filename)}
-					<div class="flex items-center justify-between gap-2 text-[11px]">
-						<span class="text-text-primary truncate font-mono">{file.filename.split('/').pop()}<span class="text-text-tertiary font-sans">{file.filename.includes('/') ? ` ${file.filename.slice(0, file.filename.lastIndexOf('/'))}` : ''}</span></span>
-						<div class="flex gap-1 shrink-0 text-[10px]">
-							{#if file.additions > 0}<span class="text-git-added">+{file.additions}</span>{/if}
-							{#if file.deletions > 0}<span class="text-git-removed">-{file.deletions}</span>{/if}
+			{#if !detail || detail === 'loading'}
+				<div class="flex items-center gap-2 text-xs text-text-secondary py-1">
+					<div class="animate-spin size-3 border-2 border-text-tertiary border-t-transparent rounded-full"></div>
+					Loading diff…
+				</div>
+			{:else if detail.files.length > 0}
+				<p class="text-[10px] font-bold text-text-secondary mb-1.5">
+					{detail.files.length} file{detail.files.length !== 1 ? 's' : ''} changed
+					<span class="text-git-added ml-1">+{detail.additions}</span>
+					<span class="text-git-removed ml-0.5">-{detail.deletions}</span>
+				</p>
+				<div class="flex flex-col gap-0.5">
+					{#each detail.files as file (file.filename)}
+						<div class="flex items-center justify-between gap-2 text-[11px]">
+							<span class="text-text-primary truncate font-mono">{file.filename.split('/').pop()}<span class="text-text-tertiary font-sans">{file.filename.includes('/') ? ` ${file.filename.slice(0, file.filename.lastIndexOf('/'))}` : ''}</span></span>
+							<div class="flex gap-1 shrink-0 text-[10px]">
+								{#if file.additions > 0}<span class="text-git-added">+{file.additions}</span>{/if}
+								{#if file.deletions > 0}<span class="text-git-removed">-{file.deletions}</span>{/if}
+							</div>
 						</div>
-					</div>
-				{/each}
-			</div>
+					{/each}
+				</div>
+			{:else}
+				<p class="text-[10px] text-text-faint py-1">No files changed</p>
+			{/if}
 		</div>
 	</div>
 {/if}
