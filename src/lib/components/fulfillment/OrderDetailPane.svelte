@@ -830,7 +830,6 @@
 			{:else}
 				<div class="flex flex-col gap-2 border border-border-card rounded-section p-3">
 					<div class="flex flex-col gap-1">
-						<span class="text-xs font-semibold text-text-secondary">Contents</span>
 						{#each warehouseTemplate.contents as c}
 							<div class="flex items-center justify-between text-xs text-text-primary">
 								<span class="font-mono">{c.sku}</span>
@@ -838,13 +837,6 @@
 							</div>
 						{/each}
 					</div>
-					{#if warehouseTemplate.tags}
-						<div class="flex gap-1 flex-wrap">
-							{#each warehouseTemplate.tags.split(',').map(t => t.trim()).filter(Boolean) as tag}
-								<span class="px-2 py-0.5 rounded-tag bg-surface text-[11px] text-text-secondary">{tag}</span>
-							{/each}
-						</div>
-					{/if}
 					<button
 						class="flex items-center justify-center gap-2 h-10 px-4 rounded-input bg-accent text-white text-sm font-medium hover:opacity-90 cursor-pointer transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
 						onclick={sendWarehouseOrder}
