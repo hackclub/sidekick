@@ -28,6 +28,7 @@
 	let reviewPanelRef = $state<HTMLElement | null>(null);
 	let authorizing = $state<string | null>(null);
 	let protocolError = $state<string | null>(null);
+	let showFuzzyAirtable = $state(false);
 
 	function normalizeForCompare(s: string): string {
 		return s.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -155,7 +156,7 @@
 			return 0;
 		const normYsws = normalizeForCompare(data.programYswsName);
 		return airtable.airtableRecords
-			.filter((r) => r.hours > 0 && normalizeForCompare(r.id.split('–')[0]?.trim() || r.id) !== normYsws)
+			.filter((r) => (showFuzzyAirtable || r.isExact) && r.hours > 0 && normalizeForCompare(r.id.split('–')[0]?.trim() || r.id) !== normYsws)
 			.reduce((sum, r) => sum + r.hours, 0);
 	});
 
@@ -366,7 +367,7 @@
 					shippedHours={shippedDeltaHours}
 					aiSeconds={hackatime?.hackatime?.aiSeconds ?? 0}
 					previousShips={(airtable?.airtableRecords ?? [])
-						.filter((r) => r.hours > 0 && normalizeForCompare(r.id.split('–')[0]?.trim() || r.id) !== normalizeForCompare(data.programYswsName))
+						.filter((r) => (showFuzzyAirtable || r.isExact) && r.hours > 0 && normalizeForCompare(r.id.split('–')[0]?.trim() || r.id) !== normalizeForCompare(data.programYswsName))
 						.map((r) => ({ programName: r.id.split('–')[0]?.trim() || r.id, date: '', hours: r.hours, url: r.url }))}
 					loading={!hackatime}
 					class="flex-1"
@@ -438,6 +439,7 @@
 					<AirtableRecords
 						records={airtable?.airtableRecords ?? []}
 						loading={!airtable}
+						bind:showFuzzy={showFuzzyAirtable}
 					/>
 					<MultiSourceDetails
 						commits={github?.githubCommits ?? []}

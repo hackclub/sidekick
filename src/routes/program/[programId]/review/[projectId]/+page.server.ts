@@ -5,7 +5,7 @@ import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
 import { resolveActorIds } from '$lib/server/actors.js';
 import { getProjectDetails, getUserTrustFactor, getAiCodingSeconds, getTrustLogs } from '$lib/server/integrations/hackatime.js';
 import type { TrustLog } from '$lib/server/integrations/hackatime.js';
-import { findRecordsByUrl, airtableRecordUrl } from '$lib/server/integrations/airtable.js';
+import { findRecordsByUrl, airtableRecordUrl, normalizeUrl as normalizeAirtableUrl } from '$lib/server/integrations/airtable.js';
 import { parseRepoUrl, getCommits, getRepoInfo, getReadme } from '$lib/server/integrations/github.js';
 import { getLapseTimelapses } from '$lib/server/integrations/lapse.js';
 import { CHECKS } from '$lib/server/checks/registry.js';
@@ -98,6 +98,9 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		url: string;
 		hours: number;
 		approvedAt: string | null;
+		playableUrl: string | null;
+		codeUrl: string | null;
+		isExact: boolean;
 	};
 
 	const repo = parseRepoUrl(project.codeUrl);
@@ -136,13 +139,32 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	const airtableData = (async () => {
 		try {
 			const records = await findRecordsByUrl(project.demoUrl ?? '', project.codeUrl);
-			const airtableRecords: AirtableMatch[] = records.map((r) => ({
-				id: r.fields['ID'] ?? r.id,
-				url: airtableRecordUrl(r.id),
-				hours: r.fields['Override Hours Spent'] ?? r.fields['Hours Spent'] ?? 0,
-				approvedAt: r.fields['Approved At'] ?? r.fields['Created'] ?? null
-			}));
-			const airtablePreviousHours = airtableRecords.reduce((s, r) => s + r.hours, 0);
+			const normDemoUrl = normalizeAirtableUrl(project.demoUrl ?? '');
+			const normCodeUrl = normalizeAirtableUrl(project.codeUrl);
+			const authorNameParts = author.name.toLowerCase().split(/\s+/).filter(Boolean);
+			const airtableRecords: AirtableMatch[] = records.map((r) => {
+				const recPlayable = normalizeAirtableUrl(r.fields['Playable URL'] ?? '');
+				const recCode = normalizeAirtableUrl(r.fields['Code URL'] ?? '');
+				const repoMatches = !!(normCodeUrl && recCode === normCodeUrl);
+				const demoMatches = !!(normDemoUrl && recPlayable === normDemoUrl);
+				const recFirst = (r.fields['First Name'] ?? '').toLowerCase().trim();
+				const recLast = (r.fields['Last Name'] ?? '').toLowerCase().trim();
+				const nameMatches = authorNameParts.length > 0 && !!(
+					(recFirst && authorNameParts.includes(recFirst)) ||
+					(recLast && authorNameParts.includes(recLast))
+				);
+				const isExact = repoMatches && demoMatches && nameMatches;
+				return {
+					id: r.fields['ID'] ?? r.id,
+					url: airtableRecordUrl(r.id),
+					hours: r.fields['Override Hours Spent'] ?? r.fields['Hours Spent'] ?? 0,
+					approvedAt: r.fields['Approved At'] ?? r.fields['Created'] ?? null,
+					playableUrl: r.fields['Playable URL'] ?? null,
+					codeUrl: r.fields['Code URL'] ?? null,
+					isExact
+				};
+			});
+			const airtablePreviousHours = airtableRecords.filter((r) => r.isExact).reduce((s, r) => s + r.hours, 0);
 			log.debug('airtable data loaded', { recordCount: airtableRecords.length, previousHours: airtablePreviousHours });
 			return { airtableRecords, airtablePreviousHours };
 		} catch (e) {
