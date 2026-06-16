@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { requirePermission } from '$lib/server/rbac.js';
-import { getRawHeartbeatRange, type RawHeartbeat } from '$lib/server/integrations/hackatime.js';
+import { getRawHeartbeatRange, tzDayBounds, dateInTimezone, type RawHeartbeat } from '$lib/server/integrations/hackatime.js';
 import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
 
@@ -87,19 +87,23 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 	const projects = url.searchParams.get('projects');
 	const year = url.searchParams.get('year');
 	const month = url.searchParams.get('month');
+	const tz = url.searchParams.get('tz') || 'UTC';
 
 	if (!userId || !projects || !year || !month) {
 		throw error(400, 'Missing userId, projects, year, or month');
 	}
 
-	logger.debug('GET request', { userId, projects, year, month, programId: params.programId });
+	logger.debug('GET request', { userId, projects, year, month, tz, programId: params.programId });
 
 	const y = parseInt(year);
 	const m = parseInt(month);
-	const startDate = new Date(Date.UTC(y, m - 1, 1));
-	const endDate = new Date(Date.UTC(y, m, 0, 23, 59, 59));
-	const startS = Math.floor(startDate.getTime() / 1000);
-	const endS = Math.floor(endDate.getTime() / 1000);
+
+	const firstDayStr = `${year}-${String(m).padStart(2, '0')}-01`;
+	const nextMonth = m === 12 ? 1 : m + 1;
+	const nextYear = m === 12 ? y + 1 : y;
+	const firstDayNextMonth = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`;
+	const { startS } = tzDayBounds(firstDayStr, tz);
+	const endS = tzDayBounds(firstDayNextMonth, tz).startS - 1;
 
 	const projectKeys = new Set(projects.split(',').map((p) => p.trim().toLowerCase()));
 	const raw = await getRawHeartbeatRange(userId, startS, endS);
@@ -117,17 +121,16 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 		logger.debug('Heartbeat filtering', { month: `${y}-${String(m).padStart(2, '0')}`, rawCount: raw.length, filteredCount: filtered.length, projects: [...projectKeys].join(',') });
 	}
 
-	const dayBuckets = new Map<number, RawHeartbeat[]>();
 	const daysInMonth = new Date(y, m, 0).getDate();
+	const dayBuckets = new Map<string, RawHeartbeat[]>();
 	for (let d = 1; d <= daysInMonth; d++) {
-		const ts = Math.floor(Date.UTC(y, m - 1, d) / 1000);
-		dayBuckets.set(ts, []);
+		const dateStr = `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+		dayBuckets.set(dateStr, []);
 	}
 
 	for (const hb of filtered) {
-		const dt = new Date(hb.time * 1000);
-		const dayTs = Math.floor(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate()) / 1000);
-		const bucket = dayBuckets.get(dayTs);
+		const dateStr = dateInTimezone(hb.time, tz);
+		const bucket = dayBuckets.get(dateStr);
 		if (bucket) bucket.push(hb);
 	}
 
@@ -139,10 +142,8 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 		cursorPath: string;
 	}[] = [];
 
-	for (const [dayTs, heartbeats] of dayBuckets) {
+	for (const [date, heartbeats] of dayBuckets) {
 		const sorted = heartbeats.sort((a, b) => a.time - b.time);
-		const dt = new Date(dayTs * 1000);
-		const date = `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
 
 		let totalSeconds = 0;
 		for (let i = 1; i < sorted.length; i++) {

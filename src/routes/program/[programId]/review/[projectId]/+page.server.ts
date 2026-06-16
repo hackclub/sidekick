@@ -3,9 +3,9 @@ import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
 import { resolveActorIds } from '$lib/server/actors.js';
-import { getProjectDetails, getUserTrustFactor, getAiCodingSeconds, getTrustLogs } from '$lib/server/integrations/hackatime.js';
-import type { TrustLog } from '$lib/server/integrations/hackatime.js';
-import { findRecordsByUrl, airtableRecordUrl } from '$lib/server/integrations/airtable.js';
+import { getProjectDetails, getAiCodingSeconds, getTrustLogs, getUserInfo } from '$lib/server/integrations/hackatime.js';
+import type { TrustLog, UserInfo } from '$lib/server/integrations/hackatime.js';
+import { findRecordsByUrl, airtableRecordUrl, normalizeUrl as normalizeAirtableUrl } from '$lib/server/integrations/airtable.js';
 import { parseRepoUrl, getCommits, getRepoInfo, getReadme } from '$lib/server/integrations/github.js';
 import { getLapseTimelapses } from '$lib/server/integrations/lapse.js';
 import { CHECKS } from '$lib/server/checks/registry.js';
@@ -53,22 +53,25 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	for (const event of timeline.events) {
 		actorIds.add(event.actorId);
 	}
-	const tActors = log.time('resolveActorIds');
-	const actors = await resolveActorIds([...actorIds]);
-	const author = actors.get(project.authorId)!;
-	tActors.end({ actorCount: actorIds.size });
 
 	const hackatimeUser = project.hackatimeId ?? project.authorId;
 
-	// Look up author's user record for join date and hackatime ID
-	const tAuthorUser = log.time('authorUser query');
-	const authorUser = await db.user.findFirst({
-		where: project.authorId.startsWith('U')
-			? { slackId: project.authorId }
-			: { hcaId: project.authorId },
-		select: { createdAt: true, hackatimeId: true }
-	});
-	tAuthorUser.end();
+	const tActors = log.time('resolveActorIds + authorUser + userInfo');
+	const [actors, authorUser, userInfo] = await Promise.all([
+		resolveActorIds([...actorIds]),
+		db.user.findFirst({
+			where: project.authorId.startsWith('U')
+				? { slackId: project.authorId }
+				: { hcaId: project.authorId },
+			select: { createdAt: true, hackatimeId: true }
+		}),
+		(hackatimeUser
+			? getUserInfo(hackatimeUser).catch((e) => { log.warn('getUserInfo failed', { error: e }); return null as UserInfo | null; })
+			: Promise.resolve(null as UserInfo | null))
+	]);
+	const author = actors.get(project.authorId)!;
+	const authorTimezone = userInfo?.timezone ?? 'UTC';
+	tActors.end({ actorCount: actorIds.size, authorTimezone });
 
 	// Stream integration data — each resolves independently for incremental rendering
 	type GhCommit = {
@@ -98,6 +101,9 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		url: string;
 		hours: number;
 		approvedAt: string | null;
+		playableUrl: string | null;
+		codeUrl: string | null;
+		isExact: boolean;
 	};
 
 	const repo = parseRepoUrl(project.codeUrl);
@@ -113,17 +119,17 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			return { hackatime: null as { totalSeconds: number; aiSeconds: number } | null, trustLevel: null as string | null, trustLogs: [] as TrustLog[], projectBreakdown: [] as { name: string; totalSeconds: number }[] };
 		}
 		try {
-			const [projectDetails, trust, aiSeconds, trustLogs] = await Promise.all([
+			const [projectDetails, aiSeconds, trustLogs] = await Promise.all([
 				getProjectDetails(hackatimeUser, project.hackatimeProjectKeys),
-				getUserTrustFactor(hackatimeUser),
 				getAiCodingSeconds(hackatimeUser, project.hackatimeProjectKeys),
 				getTrustLogs(hackatimeUser).catch((e) => { log.warn('trust logs fetch failed', { error: e }); return [] as TrustLog[]; })
 			]);
 			const totalSeconds = projectDetails.projects.reduce((s, p) => s + p.totalSeconds, 0);
-			log.debug('hackatime data loaded', { totalSeconds, aiSeconds, trustLevel: trust.trustLevel });
+			const trustLevel = userInfo?.trustLevel ?? null;
+			log.debug('hackatime data loaded', { totalSeconds, aiSeconds, trustLevel });
 			return {
 				hackatime: { totalSeconds, aiSeconds },
-				trustLevel: trust.trustLevel,
+				trustLevel,
 				trustLogs,
 				projectBreakdown: projectDetails.projects.map((p) => ({ name: p.name, totalSeconds: p.totalSeconds }))
 			};
@@ -136,13 +142,32 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	const airtableData = (async () => {
 		try {
 			const records = await findRecordsByUrl(project.demoUrl ?? '', project.codeUrl);
-			const airtableRecords: AirtableMatch[] = records.map((r) => ({
-				id: r.fields['ID'] ?? r.id,
-				url: airtableRecordUrl(r.id),
-				hours: r.fields['Override Hours Spent'] ?? r.fields['Hours Spent'] ?? 0,
-				approvedAt: r.fields['Approved At'] ?? r.fields['Created'] ?? null
-			}));
-			const airtablePreviousHours = airtableRecords.reduce((s, r) => s + r.hours, 0);
+			const normDemoUrl = normalizeAirtableUrl(project.demoUrl ?? '');
+			const normCodeUrl = normalizeAirtableUrl(project.codeUrl);
+			const authorNameParts = author.name.toLowerCase().split(/\s+/).filter(Boolean);
+			const airtableRecords: AirtableMatch[] = records.map((r) => {
+				const recPlayable = normalizeAirtableUrl(r.fields['Playable URL'] ?? '');
+				const recCode = normalizeAirtableUrl(r.fields['Code URL'] ?? '');
+				const repoMatches = !!(normCodeUrl && recCode === normCodeUrl);
+				const demoMatches = !!(normDemoUrl && recPlayable === normDemoUrl);
+				const recFirst = (r.fields['First Name'] ?? '').toLowerCase().trim();
+				const recLast = (r.fields['Last Name'] ?? '').toLowerCase().trim();
+				const nameMatches = authorNameParts.length > 0 && !!(
+					(recFirst && authorNameParts.includes(recFirst)) ||
+					(recLast && authorNameParts.includes(recLast))
+				);
+				const isExact = repoMatches && demoMatches && nameMatches;
+				return {
+					id: r.fields['ID'] ?? r.id,
+					url: airtableRecordUrl(r.id),
+					hours: r.fields['Override Hours Spent'] ?? r.fields['Hours Spent'] ?? 0,
+					approvedAt: r.fields['Approved At'] ?? r.fields['Created'] ?? null,
+					playableUrl: r.fields['Playable URL'] ?? null,
+					codeUrl: r.fields['Code URL'] ?? null,
+					isExact
+				};
+			});
+			const airtablePreviousHours = airtableRecords.filter((r) => r.isExact).reduce((s, r) => s + r.hours, 0);
 			log.debug('airtable data loaded', { recordCount: airtableRecords.length, previousHours: airtablePreviousHours });
 			return { airtableRecords, airtablePreviousHours };
 		} catch (e) {
@@ -428,7 +453,8 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		canReview: membership.canCreateReviews,
 		canAuthorize: membership.canAuthorizeReviews,
 		programYswsName: program.yswsName || program.name,
-		hackatimeUser: hackatimeUser && project.hackatimeProjectKeys.length > 0 ? hackatimeUser : null
+		hackatimeUser: hackatimeUser && project.hackatimeProjectKeys.length > 0 ? hackatimeUser : null,
+		authorTimezone
 	};
 };
 

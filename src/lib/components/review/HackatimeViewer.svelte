@@ -44,10 +44,11 @@
 		programId: string;
 		defaultDate?: string;
 		projectBreakdown?: ProjectBreakdown[];
+		authorTimezone?: string;
 		class?: string;
 	}
 
-	let { hackatimeUser, hackatimeProjectKeys, programId, defaultDate, projectBreakdown = [], class: className = '' }: Props = $props();
+	let { hackatimeUser, hackatimeProjectKeys, programId, defaultDate, projectBreakdown = [], authorTimezone = 'UTC', class: className = '' }: Props = $props();
 
 	const MAX_VISIBLE_PROJECTS = 4;
 
@@ -83,6 +84,12 @@
 	let overflowTooltip = $state<{ x: number; y: number } | null>(null);
 	let scrollContainer = $state<HTMLElement | null>(null);
 	let joeCopied = $state(false);
+	let selectedProject = $state<string | null>(null);
+	let overflowHideTimer: ReturnType<typeof setTimeout> | null = null;
+
+	const effectiveProjectKeys = $derived(
+		selectedProject ? [selectedProject] : hackatimeProjectKeys
+	);
 
 	function monthKey(dateStr: string): string {
 		return dateStr.slice(0, 7);
@@ -90,7 +97,7 @@
 
 	function formatDateLabel(dateStr: string): string {
 		const d = new Date(dateStr + 'T12:00:00Z');
-		return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+		return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: authorTimezone });
 	}
 
 	function formatDuration(seconds: number): string {
@@ -134,9 +141,10 @@
 
 		const params = new URLSearchParams({
 			userId: hackatimeUser,
-			projects: hackatimeProjectKeys.join(','),
+			projects: effectiveProjectKeys.join(','),
 			year: y,
-			month: m
+			month: m,
+			tz: authorTimezone
 		});
 
 		log.debug('Fetching activity data', { ym });
@@ -167,12 +175,13 @@
 		try {
 			const params = new URLSearchParams({
 				userId: hackatimeUser,
-				projects: hackatimeProjectKeys.join(',')
+				projects: effectiveProjectKeys.join(',')
 			});
 
 			let months: string[];
 			try {
 				log.debug('Fetching date range');
+				params.set('tz', authorTimezone);
 				const res = await fetch(`/api/programs/${programId}/hackatime/date-range?${params}`);
 				log.debug('Date range response', { status: res.status });
 				const data = res.ok ? await res.json() : null;
@@ -230,10 +239,12 @@
 
 	$effect(() => {
 		void hackatimeUser;
-		void hackatimeProjectKeys;
-		if (!hackatimeUser || hackatimeProjectKeys.length === 0) 
+		void effectiveProjectKeys;
+		if (!hackatimeUser || effectiveProjectKeys.length === 0)
 			return;
 
+		activityCache = {};
+		hasSelectedInitialDay = false;
 		loadOverview();
 	});
 
@@ -259,7 +270,7 @@
 			const ym = monthKey(day.date);
 			if (ym !== curYm) {
 				const [y, m] = ym.split('-').map(Number);
-				const label = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+				const label = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: authorTimezone });
 				groups.push({ ym, label, startIdx: idx, days: [] });
 				curYm = ym;
 			}
@@ -291,7 +302,7 @@
 	$effect(() => {
 		const date = currentDate;
 		const user = hackatimeUser;
-		const keys = hackatimeProjectKeys;
+		const keys = effectiveProjectKeys;
 		if (!user || keys.length === 0)
 			return;
 
@@ -300,7 +311,7 @@
 
 		log.debug('Fetching heartbeats', { date, user });
 		const t = log.time(`fetchHeartbeats:${date}`);
-		const params = new URLSearchParams({ userId: user, projects: keys.join(','), date });
+		const params = new URLSearchParams({ userId: user, projects: keys.join(','), date, tz: authorTimezone });
 
 		fetch(`/api/programs/${programId}/hackatime/heartbeats?${params}`)
 			.then(async (res) => {
@@ -339,13 +350,13 @@
 	);
 
 	const dayProjectKeys = $derived.by(() => {
-		if (!codingHeartbeats) return hackatimeProjectKeys;
-		const keySet = new Set(hackatimeProjectKeys.map((k) => k.toLowerCase()));
+		if (!codingHeartbeats) return effectiveProjectKeys;
+		const keySet = new Set(effectiveProjectKeys.map((k) => k.toLowerCase()));
 		const present = new Set<string>();
 		for (const hb of codingHeartbeats) {
 			if (keySet.has(hb.project.toLowerCase())) present.add(hb.project);
 		}
-		return present.size > 0 ? [...present] : hackatimeProjectKeys;
+		return present.size > 0 ? [...present] : effectiveProjectKeys;
 	});
 
 	function buildJoeUrl(): string {
@@ -366,6 +377,25 @@
 	function handleFocusChange(timestamp: number) {
 		focusedTimestamp = timestamp;
 		animationKey++;
+	}
+
+	function selectProject(name: string) {
+		selectedProject = selectedProject === name ? null : name;
+		overflowTooltip = null;
+	}
+
+	function showOverflowTooltip(e: MouseEvent) {
+		if (overflowHideTimer) { clearTimeout(overflowHideTimer); overflowHideTimer = null; }
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		overflowTooltip = { x: rect.left + rect.width / 2, y: rect.top };
+	}
+
+	function scheduleHideOverflow() {
+		overflowHideTimer = setTimeout(() => { overflowTooltip = null; }, 150);
+	}
+
+	function cancelHideOverflow() {
+		if (overflowHideTimer) { clearTimeout(overflowHideTimer); overflowHideTimer = null; }
 	}
 </script>
 
@@ -396,19 +426,25 @@
 			<span class="text-[12px] text-text-tertiary shrink-0">Projects:</span>
 			<div class="flex flex-wrap gap-1.5 min-w-0">
 				{#each visibleProjects as proj (proj.name)}
-					<span class="text-[12px] font-medium text-text-primary bg-page border border-border-card rounded-tag px-2 py-0.5 truncate">
-						{proj.name} <span class="text-text-tertiary font-normal">{formatHours(proj.totalSeconds)}</span>
-					</span>
+					<button
+						class="text-[12px] font-medium rounded-tag px-2 py-0.5 truncate cursor-pointer transition-colors
+							{selectedProject === proj.name
+								? 'text-accent bg-accent-bg border border-accent'
+								: 'text-text-primary bg-page border border-border-card hover:border-accent/50'}"
+						onclick={() => selectProject(proj.name)}
+					>
+						{proj.name} <span class="{selectedProject === proj.name ? 'text-accent/70' : 'text-text-tertiary'} font-normal">{formatHours(proj.totalSeconds)}</span>
+					</button>
 				{/each}
 				{#if overflowProjects.length > 0}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<span
-						class="overflow-pill text-[12px] font-medium text-text-secondary bg-page border border-border-card rounded-tag px-2 py-0.5 cursor-default"
-						onmouseenter={(e) => {
-							const rect = e.currentTarget.getBoundingClientRect();
-							overflowTooltip = { x: rect.left + rect.width / 2, y: rect.top };
-						}}
-						onmouseleave={() => (overflowTooltip = null)}
+						class="overflow-pill text-[12px] font-medium rounded-tag px-2 py-0.5 cursor-default
+							{overflowProjects.some((p) => p.name === selectedProject)
+								? 'text-accent bg-accent-bg border border-accent'
+								: 'text-text-secondary bg-page border border-border-card'}"
+						onmouseenter={showOverflowTooltip}
+						onmouseleave={scheduleHideOverflow}
 					>
 						+{overflowProjects.length}
 					</span>
@@ -454,7 +490,7 @@
 										</svg>
 										<div class="flex items-center justify-between px-0.5">
 											<span class="text-[10px] text-text-secondary">
-												{new Date(day.date + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}
+												{new Date(day.date + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: authorTimezone })}
 											</span>
 											<span class="text-[10px] font-mono text-text-tertiary">
 												{formatDuration(day.totalSeconds)}
@@ -498,13 +534,15 @@
 		<HeartbeatFrequencyBar
 			heartbeats={codingHeartbeats}
 			{visibleRange}
+			timezone={authorTimezone}
 			onhover={(range) => (hoveredTimeRange = range)}
 			onclick={(timestamp) => handleFocusChange(timestamp)}
 		/>
-		
+
 		<HeartbeatScatter
 			heartbeats={codingHeartbeats}
 			{hoveredTimeRange}
+			timezone={authorTimezone}
 			onfocuschange={(timestamp) => handleFocusChange(timestamp)}
 		/>
 
@@ -513,6 +551,7 @@
 				heartbeats={codingHeartbeats}
 				{focusedTimestamp}
 				{animationKey}
+				timezone={authorTimezone}
 				onrangechange={(range) => (visibleRange = range)}
 			/>
 		</div>
@@ -529,12 +568,23 @@
 </div>
 
 {#if overflowTooltip}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="overflow-tooltip"
 		style="left: {overflowTooltip.x}px; top: {overflowTooltip.y}px;"
+		onmouseenter={cancelHideOverflow}
+		onmouseleave={scheduleHideOverflow}
 	>
 		{#each overflowProjects as proj (proj.name)}
-			<span class="whitespace-nowrap text-[12px] text-text-primary">{proj.name} <span class="text-text-tertiary">{formatHours(proj.totalSeconds)}</span></span>
+			<button
+				class="whitespace-nowrap text-[12px] text-left cursor-pointer rounded px-1 py-0.5 transition-colors
+					{selectedProject === proj.name
+						? 'text-accent font-medium'
+						: 'text-text-primary hover:text-accent'}"
+				onclick={() => selectProject(proj.name)}
+			>
+				{proj.name} <span class="{selectedProject === proj.name ? 'text-accent/70' : 'text-text-tertiary'}">{formatHours(proj.totalSeconds)}</span>
+			</button>
 		{/each}
 	</div>
 {/if}
@@ -552,6 +602,5 @@
 		gap: 2px;
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 		z-index: 50;
-		pointer-events: none;
 	}
 </style>

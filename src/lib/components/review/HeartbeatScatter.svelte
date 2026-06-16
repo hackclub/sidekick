@@ -12,10 +12,11 @@
 	interface Props {
 		heartbeats: HeartbeatPoint[];
 		hoveredTimeRange?: [number, number] | null;
+		timezone?: string;
 		onfocuschange?: (timestamp: number) => void;
 	}
 
-	let { heartbeats, hoveredTimeRange = null, onfocuschange }: Props = $props();
+	let { heartbeats, hoveredTimeRange = null, timezone = 'UTC', onfocuschange }: Props = $props();
 
 	let plotRoot: HTMLDivElement;
 	let chart: EChartsType;
@@ -59,10 +60,26 @@
 			chart = echarts.init(plotRoot);
 
 			const option = {
-				tooltip: { trigger: 'axis' },
+				tooltip: {
+					trigger: 'axis',
+					formatter: (params: Array<{ seriesName: string; value: [number, number]; color: string }>) => {
+						if (!params.length) return '';
+						const time = new Date(params[0].value[0]).toLocaleTimeString('en-US', {
+							hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: timezone
+						});
+						const lines = params.map((p) => `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${p.value[1]}`);
+						return `${time}<br/>${lines.join('<br/>')}`;
+					}
+				},
 				xAxis: {
 					type: 'time',
-					axisLabel: { color: '#737373' },
+					axisLabel: {
+						color: '#737373',
+						formatter: (value: number) =>
+							new Date(value).toLocaleTimeString('en-US', {
+								hour: '2-digit', minute: '2-digit', hour12: false, timeZone: timezone
+							})
+					},
 					axisLine: { lineStyle: { color: '#e2e2e2' } },
 					splitLine: { show: false }
 				},
@@ -130,6 +147,10 @@
 						height: 24,
 						bottom: 28,
 						handleSize: '200%',
+						labelFormatter: (_: number, value: string) =>
+							new Date(value).toLocaleTimeString('en-US', {
+								hour: '2-digit', minute: '2-digit', hour12: false, timeZone: timezone
+							}),
 						handleStyle: { borderWidth: 1, borderRadius: 4 },
 						moveHandleSize: 14,
 						emphasis: { handleStyle: { borderWidth: 1 } }
