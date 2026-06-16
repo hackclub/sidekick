@@ -155,7 +155,7 @@
 			return 0;
 		const normYsws = normalizeForCompare(data.programYswsName);
 		return airtable.airtableRecords
-			.filter((r) => r.hours > 0 && normalizeForCompare(r.id.split('–')[0]?.trim() || r.id) !== normYsws)
+			.filter((r) => r.isExact && r.hours > 0 && normalizeForCompare(r.id.split('–')[0]?.trim() || r.id) !== normYsws)
 			.reduce((sum, r) => sum + r.hours, 0);
 	});
 
@@ -366,7 +366,7 @@
 					shippedHours={shippedDeltaHours}
 					aiSeconds={hackatime?.hackatime?.aiSeconds ?? 0}
 					previousShips={(airtable?.airtableRecords ?? [])
-						.filter((r) => r.hours > 0 && normalizeForCompare(r.id.split('–')[0]?.trim() || r.id) !== normalizeForCompare(data.programYswsName))
+						.filter((r) => r.isExact && r.hours > 0 && normalizeForCompare(r.id.split('–')[0]?.trim() || r.id) !== normalizeForCompare(data.programYswsName))
 						.map((r) => ({ programName: r.id.split('–')[0]?.trim() || r.id, date: '', hours: r.hours, url: r.url }))}
 					loading={!hackatime}
 					class="flex-1"

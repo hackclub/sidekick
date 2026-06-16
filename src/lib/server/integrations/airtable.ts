@@ -26,7 +26,7 @@ export interface AirtableRecord {
 	};
 }
 
-function normalizeUrl(raw: string): string {
+export function normalizeUrl(raw: string): string {
 	return raw
 		.trim()
 		.toLowerCase()
