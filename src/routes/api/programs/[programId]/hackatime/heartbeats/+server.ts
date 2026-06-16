@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { requirePermission } from '$lib/server/rbac.js';
-import { getRawHeartbeatRange } from '$lib/server/integrations/hackatime.js';
+import { getRawHeartbeatRange, tzDayBounds } from '$lib/server/integrations/hackatime.js';
 import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
 
@@ -35,12 +35,11 @@ function transformHeartbeats(raw: Awaited<ReturnType<typeof getRawHeartbeatRange
 		}));
 }
 
-function isCacheable(date: string): boolean {
+function isCacheable(date: string, tz: string): boolean {
 	const now = new Date();
-	const today = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
-	const yesterday = new Date(now.getTime() - 86400000);
-	const yesterdayStr = `${yesterday.getUTCFullYear()}-${String(yesterday.getUTCMonth() + 1).padStart(2, '0')}-${String(yesterday.getUTCDate()).padStart(2, '0')}`;
-	return date !== today && date !== yesterdayStr;
+	const today = now.toLocaleDateString('sv-SE', { timeZone: tz });
+	const yesterday = new Date(now.getTime() - 86400000).toLocaleDateString('sv-SE', { timeZone: tz });
+	return date !== today && date !== yesterday;
 }
 
 export const GET: RequestHandler = async ({ params, url, locals }) => {
@@ -54,18 +53,19 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 	const userId = url.searchParams.get('userId');
 	const projects = url.searchParams.get('projects');
 	const date = url.searchParams.get('date');
+	const tz = url.searchParams.get('tz') || 'UTC';
 
 	if (!userId || !projects || !date) {
 		throw error(400, 'Missing userId, projects, or date');
 	}
 
-	logger.debug('GET request', { userId, projects, date, programId: params.programId });
+	logger.debug('GET request', { userId, projects, date, tz, programId: params.programId });
 
 	const dateMatch = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
 	if (!dateMatch) throw error(400, 'Invalid date format, expected YYYY-MM-DD');
 
 	const projectKeys = new Set(projects.split(',').map((p) => p.trim().toLowerCase()));
-	const cacheKey = `${userId}:${[...projectKeys].sort().join(',')}:${date}`;
+	const cacheKey = `${userId}:${[...projectKeys].sort().join(',')}:${date}:${tz}`;
 
 	const cached = cache.get(cacheKey);
 	if (cached) {
@@ -74,18 +74,15 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 	}
 	logger.trace('Cache miss', { cacheKey });
 
-	const dayStart = new Date(`${date}T00:00:00Z`);
-	const dayEnd = new Date(`${date}T23:59:59Z`);
-	const startS = Math.floor(dayStart.getTime() / 1000);
-	const endS = Math.floor(dayEnd.getTime() / 1000);
+	const { startS, endS } = tzDayBounds(date, tz);
 
 	const raw = await getRawHeartbeatRange(userId, startS, endS);
 	const heartbeats = transformHeartbeats(raw, projectKeys);
 
 	const result = { heartbeats };
-	logger.debug('Fetched heartbeats', { date, heartbeatCount: heartbeats.length, cached: isCacheable(date) });
+	logger.debug('Fetched heartbeats', { date, tz, heartbeatCount: heartbeats.length, cached: isCacheable(date, tz) });
 
-	if (isCacheable(date)) {
+	if (isCacheable(date, tz)) {
 		cache.set(cacheKey, result);
 	}
 

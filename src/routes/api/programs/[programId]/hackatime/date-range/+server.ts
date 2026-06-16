@@ -16,17 +16,18 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 
 	const userId = url.searchParams.get('userId');
 	const projects = url.searchParams.get('projects');
+	const tz = url.searchParams.get('tz') || undefined;
 
 	if (!userId || !projects) {
 		throw error(400, 'Missing userId or projects');
 	}
 
 	const projectKeys = projects.split(',').map((p) => p.trim());
-	logger.debug('GET request', { userId, projects: projectKeys.join(','), programId: params.programId });
+	logger.debug('GET request', { userId, projects: projectKeys.join(','), tz, programId: params.programId });
 
 	let range;
 	try {
-		range = await getProjectDateRange(userId, projectKeys);
+		range = await getProjectDateRange(userId, projectKeys, tz);
 	} catch (e) {
 		logger.error('Failed to get date range', e, { userId, projects: projectKeys.join(',') });
 		range = null;

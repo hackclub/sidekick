@@ -8,11 +8,12 @@
 	interface Props {
 		heartbeats: HeartbeatPoint[];
 		visibleRange?: [number, number] | null;
+		timezone?: string;
 		onhover?: (timeRange: [number, number] | null) => void;
 		onclick?: (timestamp: number) => void;
 	}
 
-	let { heartbeats, visibleRange = null, onhover, onclick }: Props = $props();
+	let { heartbeats, visibleRange = null, timezone = 'UTC', onhover, onclick }: Props = $props();
 
 	const BUCKET_SIZE_MS = 2 * 60 * 1000;
 	const HEIGHT = 48;
@@ -77,7 +78,7 @@
 		const bucket = frequencyData[hoveredBucket];
 		const time = new Date(bucket.time);
 		const timeStr = time.toLocaleTimeString('en-US', {
-			hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+			hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: timezone
 		});
 
 		return { time: timeStr, count: bucket.count };

@@ -24,10 +24,11 @@
 		heartbeats: HeartbeatRow[];
 		focusedTimestamp?: number;
 		animationKey?: number;
+		timezone?: string;
 		onrangechange?: (range: [number, number] | null) => void;
 	}
 
-	let { heartbeats, focusedTimestamp, animationKey, onrangechange }: Props = $props();
+	let { heartbeats, focusedTimestamp, animationKey, timezone = 'UTC', onrangechange }: Props = $props();
 	void animationKey;
 
 	let scrollRef = $state<HTMLElement | undefined>();
@@ -47,7 +48,7 @@
 	}
 
 	const columns: ColDef[] = [
-		{ key: 'time', label: 'Time', minWidth: 65, mono: true, getValue: (hb) => new Date(hb.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) },
+		{ key: 'time', label: 'Time', minWidth: 65, mono: true, getValue: (hb) => new Date(hb.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: timezone }) },
 		{ key: 'project', label: 'Project', minWidth: 55, highlightKey: 'project', getValue: (hb) => hb.project },
 		{ key: 'language', label: 'Lang', minWidth: 40, highlightKey: 'language', getValue: (hb) => hb.language },
 		{ key: 'editor', label: 'Editor', minWidth: 45, getValue: (hb) => hb.editor },
