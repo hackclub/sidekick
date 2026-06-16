@@ -829,7 +829,7 @@
 				</button>
 			{:else}
 				<div class="flex flex-col gap-2 border border-border-card rounded-section p-3">
-					<div class="flex flex-col gap-1">
+					<div class="flex flex-col gap-1 py-1">
 						{#each warehouseTemplate.contents as c}
 							<div class="flex items-center justify-between text-xs text-text-primary">
 								<span class="font-mono">{c.sku}</span>
