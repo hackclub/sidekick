@@ -433,11 +433,49 @@
 	let warehouseOrderSent = $state(false);
 	let warehouseOrderError = $state('');
 
+	interface BatchableOrder {
+		id: string;
+		quantity: number;
+		createdAt: string;
+		reference?: string;
+	}
+
+	let batchOrders = $state<BatchableOrder[]>([]);
+	let batchTotalQuantity = $state(0);
+	let loadingBatch = $state(false);
+	let sendingBatchOrder = $state(false);
+	let batchOrderSent = $state(false);
+	let batchOrderError = $state('');
+	let batchOrderRef = $state('');
+	let batchOrderIds = $state<string[]>([]);
+
 	$effect(() => {
 		void order.id;
 		warehouseOrderSent = false;
 		warehouseOrderError = '';
+		batchOrders = [];
+		batchTotalQuantity = 0;
+		batchOrderSent = false;
+		batchOrderError = '';
+		batchOrderRef = '';
+		batchOrderIds = [];
+
+		if (warehouseTemplate && hasTheseusApiKey && hcbOrganization) {
+			loadingBatch = true;
+			fetch(`/api/programs/${programId}/warehouse/batch-order?itemId=${encodeURIComponent(order.itemId)}&userId=${encodeURIComponent(order.userId)}`)
+				.then(r => r.json())
+				.then(data => {
+					batchOrders = data.orders ?? [];
+					batchTotalQuantity = data.totalQuantity ?? 0;
+				})
+				.catch(e => {
+					log.error('Failed to fetch batchable orders', e);
+				})
+				.finally(() => { loadingBatch = false; });
+		}
 	});
+
+	const hasBatchableOrders = $derived(batchOrders.length > 1);
 
 	async function sendWarehouseOrder() {
 		if (!warehouseTemplate || !hasTheseusApiKey || !hcbOrganization) return;
@@ -482,6 +520,58 @@
 			log.error('Warehouse order exception', e);
 		} finally {
 			sendingWarehouseOrder = false;
+		}
+	}
+
+	async function sendBatchWarehouseOrder() {
+		if (!warehouseTemplate || !hasTheseusApiKey || !hcbOrganization) return;
+		sendingBatchOrder = true;
+		batchOrderError = '';
+		log.info('Sending batch warehouse order', { itemId: order.itemId, userId: order.userId, orderCount: batchOrders.length });
+		const t = log.time('sendBatchWarehouseOrder');
+
+		try {
+			const res = await fetch(`/api/programs/${programId}/warehouse/batch-order`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ itemId: order.itemId, userId: order.userId })
+			});
+
+			t.end('status', res.status);
+
+			if (res.status === 401) {
+				const data = await res.json();
+				if (data.needsAuth) {
+					log.warn('HCB auth required for batch warehouse order, redirecting');
+					window.location.href = `/auth/hcb?returnUrl=${encodeURIComponent(window.location.pathname)}`;
+					return;
+				}
+			}
+
+			if (!res.ok) {
+				const text = await res.text();
+				batchOrderError = `Failed: ${text}`;
+				log.error('Batch warehouse order failed', { status: res.status, body: text });
+				return;
+			}
+
+			const data = await res.json();
+			batchOrderSent = true;
+			batchOrderRef = data.reference;
+			batchOrderIds = data.orderIds;
+			refOverride = data.reference;
+			onreferencechange?.(data.reference);
+			onsendgrant?.(data.reference);
+			log.info('Batch warehouse order sent successfully', {
+				reference: data.reference,
+				orderCount: data.orderIds.length,
+				totalQuantity: data.totalQuantity
+			});
+		} catch (e) {
+			batchOrderError = e instanceof Error ? e.message : 'Unknown error';
+			log.error('Batch warehouse order exception', e);
+		} finally {
+			sendingBatchOrder = false;
 		}
 	}
 
@@ -811,7 +901,14 @@
 
 	{#if warehouseTemplate}
 		<div class="flex flex-col gap-2">
-			{#if warehouseOrderSent}
+			{#if batchOrderSent}
+				<div class="flex items-center gap-2 px-4 py-3 rounded-section bg-check-pass/10 border border-check-pass/30">
+					<Package size={14} class="text-check-pass shrink-0" />
+					<span class="text-sm font-medium text-check-pass">
+						Batch warehouse order sent for {batchOrderIds.length} orders
+					</span>
+				</div>
+			{:else if warehouseOrderSent}
 				<div class="flex items-center gap-2 px-4 py-3 rounded-section bg-check-pass/10 border border-check-pass/30">
 					<Package size={14} class="text-check-pass shrink-0" />
 					<span class="text-sm font-medium text-check-pass">
@@ -840,7 +937,7 @@
 					<button
 						class="flex items-center justify-center gap-2 h-10 px-4 rounded-input bg-accent text-white text-sm font-medium hover:opacity-90 cursor-pointer transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
 						onclick={sendWarehouseOrder}
-						disabled={sendingWarehouseOrder}
+						disabled={sendingWarehouseOrder || sendingBatchOrder}
 					>
 						{#if sendingWarehouseOrder}
 							<Loader2 size={14} class="animate-spin" />
@@ -850,10 +947,57 @@
 							Send Warehouse Order
 						{/if}
 					</button>
+
+					{#if loadingBatch}
+						<div class="flex items-center gap-2 h-8 px-1">
+							<Loader2 size={12} class="animate-spin text-text-tertiary" />
+							<span class="text-xs text-text-tertiary">Checking for batchable orders…</span>
+						</div>
+					{:else if hasBatchableOrders}
+						<div class="border-t border-border-card pt-2 mt-1 flex flex-col gap-2">
+							<div class="flex flex-col gap-1">
+								<span class="text-xs font-medium text-text-secondary">
+									{batchOrders.length} pending orders from this user for this item (total qty: {batchTotalQuantity})
+								</span>
+								<div class="flex flex-col gap-0.5">
+									{#each batchOrders as bo}
+										<div class="flex items-center justify-between text-[11px] text-text-dim font-mono">
+											<span class={bo.id === order.id ? 'font-bold' : ''}>#{bo.id}</span>
+											<span>&times; {bo.quantity}</span>
+										</div>
+									{/each}
+								</div>
+								<div class="flex flex-col gap-0.5 mt-1">
+									{#each warehouseTemplate.contents as c}
+										<div class="flex items-center justify-between text-xs text-text-secondary">
+											<span class="font-mono">{c.sku}</span>
+											<span>&times; {c.quantity * batchTotalQuantity}</span>
+										</div>
+									{/each}
+								</div>
+							</div>
+							<button
+								class="flex items-center justify-center gap-2 h-10 px-4 rounded-input bg-text-primary text-white text-sm font-medium hover:opacity-90 cursor-pointer transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+								onclick={sendBatchWarehouseOrder}
+								disabled={sendingBatchOrder || sendingWarehouseOrder}
+							>
+								{#if sendingBatchOrder}
+									<Loader2 size={14} class="animate-spin" />
+									Sending batch…
+								{:else}
+									<Package size={14} />
+									Send Batch Warehouse Order ({batchOrders.length} orders)
+								{/if}
+							</button>
+						</div>
+					{/if}
 				</div>
 			{/if}
 			{#if warehouseOrderError}
 				<p class="text-xs text-check-fail">{warehouseOrderError}</p>
+			{/if}
+			{#if batchOrderError}
+				<p class="text-xs text-check-fail">{batchOrderError}</p>
 			{/if}
 		</div>
 	{/if}
