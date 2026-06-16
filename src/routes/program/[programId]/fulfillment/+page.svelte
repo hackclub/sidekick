@@ -1084,6 +1084,7 @@
 				onusernoteschange={(newNotes) => handleUserNotesChange(selectedOrder!.id, newNotes)}
 				oncontextchange={(newCtx) => handleContextChange(effectiveItem!.id, newCtx)}
 				onsendgrant={(ref) => handleReferenceChange(selectedOrder!.id, ref)}
+				onbatchreferencechange={(updates) => updates.forEach(u => handleReferenceChange(u.orderId, u.reference))}
 			/>
 		</div>
 	{/if}

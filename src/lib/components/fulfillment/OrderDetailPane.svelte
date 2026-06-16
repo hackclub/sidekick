@@ -42,9 +42,10 @@
 		onusernoteschange?: (newNotes: string) => void;
 		oncontextchange?: (newContext: string) => void;
 		onsendgrant?: (reference: string) => void;
+		onbatchreferencechange?: (updates: Array<{ orderId: string; reference: string }>) => void;
 	}
 
-	let { order, item, programId, cardGrantTemplate = null, warehouseTemplate = null, hcbOrganization = null, hasTheseusApiKey = false, onclose, onstatuschange, onreferencechange, onnoteschange, onusernoteschange, oncontextchange, onsendgrant }: Props = $props();
+	let { order, item, programId, cardGrantTemplate = null, warehouseTemplate = null, hcbOrganization = null, hasTheseusApiKey = false, onclose, onstatuschange, onreferencechange, onnoteschange, onusernoteschange, oncontextchange, onsendgrant, onbatchreferencechange }: Props = $props();
 
 	let editingNotes = $state(false);
 	let notesValue = $state('');
@@ -562,6 +563,9 @@
 			refOverride = data.reference;
 			onreferencechange?.(data.reference);
 			onsendgrant?.(data.reference);
+			onbatchreferencechange?.(
+				(data.orderIds as string[]).map((id: string) => ({ orderId: id, reference: data.reference }))
+			);
 			log.info('Batch warehouse order sent successfully', {
 				reference: data.reference,
 				orderCount: data.orderIds.length,
