@@ -145,17 +145,15 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			const airtableRecords: AirtableMatch[] = records.map((r) => {
 				const recPlayable = normalizeAirtableUrl(r.fields['Playable URL'] ?? '');
 				const recCode = normalizeAirtableUrl(r.fields['Code URL'] ?? '');
-				const urlExact =
-					(normDemoUrl && (recPlayable === normDemoUrl || recCode === normDemoUrl)) ||
-					(normCodeUrl && (recPlayable === normCodeUrl || recCode === normCodeUrl)) ||
-					false;
+				const repoMatches = !!(normCodeUrl && recCode === normCodeUrl);
+				const demoMatches = !!(normDemoUrl && recPlayable === normDemoUrl);
 				const recFirst = (r.fields['First Name'] ?? '').toLowerCase().trim();
 				const recLast = (r.fields['Last Name'] ?? '').toLowerCase().trim();
-				const nameMatches = authorNameParts.length > 0 && (
+				const nameMatches = authorNameParts.length > 0 && !!(
 					(recFirst && authorNameParts.includes(recFirst)) ||
 					(recLast && authorNameParts.includes(recLast))
 				);
-				const isExact = !!(urlExact || nameMatches);
+				const isExact = repoMatches && demoMatches && nameMatches;
 				return {
 					id: r.fields['ID'] ?? r.id,
 					url: airtableRecordUrl(r.id),
