@@ -84,6 +84,12 @@
 	let overflowTooltip = $state<{ x: number; y: number } | null>(null);
 	let scrollContainer = $state<HTMLElement | null>(null);
 	let joeCopied = $state(false);
+	let selectedProject = $state<string | null>(null);
+	let overflowHideTimer: ReturnType<typeof setTimeout> | null = null;
+
+	const effectiveProjectKeys = $derived(
+		selectedProject ? [selectedProject] : hackatimeProjectKeys
+	);
 
 	function monthKey(dateStr: string): string {
 		return dateStr.slice(0, 7);
@@ -135,7 +141,7 @@
 
 		const params = new URLSearchParams({
 			userId: hackatimeUser,
-			projects: hackatimeProjectKeys.join(','),
+			projects: effectiveProjectKeys.join(','),
 			year: y,
 			month: m,
 			tz: authorTimezone
@@ -169,7 +175,7 @@
 		try {
 			const params = new URLSearchParams({
 				userId: hackatimeUser,
-				projects: hackatimeProjectKeys.join(',')
+				projects: effectiveProjectKeys.join(',')
 			});
 
 			let months: string[];
@@ -233,10 +239,12 @@
 
 	$effect(() => {
 		void hackatimeUser;
-		void hackatimeProjectKeys;
-		if (!hackatimeUser || hackatimeProjectKeys.length === 0) 
+		void effectiveProjectKeys;
+		if (!hackatimeUser || effectiveProjectKeys.length === 0)
 			return;
 
+		activityCache = {};
+		hasSelectedInitialDay = false;
 		loadOverview();
 	});
 
@@ -294,7 +302,7 @@
 	$effect(() => {
 		const date = currentDate;
 		const user = hackatimeUser;
-		const keys = hackatimeProjectKeys;
+		const keys = effectiveProjectKeys;
 		if (!user || keys.length === 0)
 			return;
 
@@ -342,13 +350,13 @@
 	);
 
 	const dayProjectKeys = $derived.by(() => {
-		if (!codingHeartbeats) return hackatimeProjectKeys;
-		const keySet = new Set(hackatimeProjectKeys.map((k) => k.toLowerCase()));
+		if (!codingHeartbeats) return effectiveProjectKeys;
+		const keySet = new Set(effectiveProjectKeys.map((k) => k.toLowerCase()));
 		const present = new Set<string>();
 		for (const hb of codingHeartbeats) {
 			if (keySet.has(hb.project.toLowerCase())) present.add(hb.project);
 		}
-		return present.size > 0 ? [...present] : hackatimeProjectKeys;
+		return present.size > 0 ? [...present] : effectiveProjectKeys;
 	});
 
 	function buildJoeUrl(): string {
@@ -369,6 +377,25 @@
 	function handleFocusChange(timestamp: number) {
 		focusedTimestamp = timestamp;
 		animationKey++;
+	}
+
+	function selectProject(name: string) {
+		selectedProject = selectedProject === name ? null : name;
+		overflowTooltip = null;
+	}
+
+	function showOverflowTooltip(e: MouseEvent) {
+		if (overflowHideTimer) { clearTimeout(overflowHideTimer); overflowHideTimer = null; }
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		overflowTooltip = { x: rect.left + rect.width / 2, y: rect.top };
+	}
+
+	function scheduleHideOverflow() {
+		overflowHideTimer = setTimeout(() => { overflowTooltip = null; }, 150);
+	}
+
+	function cancelHideOverflow() {
+		if (overflowHideTimer) { clearTimeout(overflowHideTimer); overflowHideTimer = null; }
 	}
 </script>
 
@@ -399,19 +426,25 @@
 			<span class="text-[12px] text-text-tertiary shrink-0">Projects:</span>
 			<div class="flex flex-wrap gap-1.5 min-w-0">
 				{#each visibleProjects as proj (proj.name)}
-					<span class="text-[12px] font-medium text-text-primary bg-page border border-border-card rounded-tag px-2 py-0.5 truncate">
-						{proj.name} <span class="text-text-tertiary font-normal">{formatHours(proj.totalSeconds)}</span>
-					</span>
+					<button
+						class="text-[12px] font-medium rounded-tag px-2 py-0.5 truncate cursor-pointer transition-colors
+							{selectedProject === proj.name
+								? 'text-accent bg-accent-bg border border-accent'
+								: 'text-text-primary bg-page border border-border-card hover:border-accent/50'}"
+						onclick={() => selectProject(proj.name)}
+					>
+						{proj.name} <span class="{selectedProject === proj.name ? 'text-accent/70' : 'text-text-tertiary'} font-normal">{formatHours(proj.totalSeconds)}</span>
+					</button>
 				{/each}
 				{#if overflowProjects.length > 0}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<span
-						class="overflow-pill text-[12px] font-medium text-text-secondary bg-page border border-border-card rounded-tag px-2 py-0.5 cursor-default"
-						onmouseenter={(e) => {
-							const rect = e.currentTarget.getBoundingClientRect();
-							overflowTooltip = { x: rect.left + rect.width / 2, y: rect.top };
-						}}
-						onmouseleave={() => (overflowTooltip = null)}
+						class="overflow-pill text-[12px] font-medium rounded-tag px-2 py-0.5 cursor-default
+							{overflowProjects.some((p) => p.name === selectedProject)
+								? 'text-accent bg-accent-bg border border-accent'
+								: 'text-text-secondary bg-page border border-border-card'}"
+						onmouseenter={showOverflowTooltip}
+						onmouseleave={scheduleHideOverflow}
 					>
 						+{overflowProjects.length}
 					</span>
@@ -535,12 +568,23 @@
 </div>
 
 {#if overflowTooltip}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="overflow-tooltip"
 		style="left: {overflowTooltip.x}px; top: {overflowTooltip.y}px;"
+		onmouseenter={cancelHideOverflow}
+		onmouseleave={scheduleHideOverflow}
 	>
 		{#each overflowProjects as proj (proj.name)}
-			<span class="whitespace-nowrap text-[12px] text-text-primary">{proj.name} <span class="text-text-tertiary">{formatHours(proj.totalSeconds)}</span></span>
+			<button
+				class="whitespace-nowrap text-[12px] text-left cursor-pointer rounded px-1 py-0.5 transition-colors
+					{selectedProject === proj.name
+						? 'text-accent font-medium'
+						: 'text-text-primary hover:text-accent'}"
+				onclick={() => selectProject(proj.name)}
+			>
+				{proj.name} <span class="{selectedProject === proj.name ? 'text-accent/70' : 'text-text-tertiary'}">{formatHours(proj.totalSeconds)}</span>
+			</button>
 		{/each}
 	</div>
 {/if}
@@ -558,6 +602,5 @@
 		gap: 2px;
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 		z-index: 50;
-		pointer-events: none;
 	}
 </style>
