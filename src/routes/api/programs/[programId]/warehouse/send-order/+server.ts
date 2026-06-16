@@ -134,7 +134,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const skuList = contents.length === 1 && contents[0].quantity === 1
 		? contents[0].sku
 		: contents.map(c => `${c.quantity}x ${c.sku}`).join(', ');
-	const transferName = `Warehouse order for ${skuList} (contents: ${fmtCost(result.contents_cost)}, labor: ${fmtCost(result.labor_cost)}, postage: ${fmtCost(result.postage_cost)}) via sidekick.ascpixi.dev`;
+	const transferName = `Warehouse order for ${skuList}, order ${orderId} (contents: ${fmtCost(result.contents_cost)}, labor: ${fmtCost(result.labor_cost)}, postage: ${fmtCost(result.postage_cost)}) via sidekick.ascpixi.dev`;
 
 	let transfer = null;
 	if (totalCostCents > 0) {
