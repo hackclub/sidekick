@@ -44,10 +44,11 @@
 		programId: string;
 		defaultDate?: string;
 		projectBreakdown?: ProjectBreakdown[];
+		authorTimezone?: string;
 		class?: string;
 	}
 
-	let { hackatimeUser, hackatimeProjectKeys, programId, defaultDate, projectBreakdown = [], class: className = '' }: Props = $props();
+	let { hackatimeUser, hackatimeProjectKeys, programId, defaultDate, projectBreakdown = [], authorTimezone = 'UTC', class: className = '' }: Props = $props();
 
 	const MAX_VISIBLE_PROJECTS = 4;
 
@@ -90,7 +91,7 @@
 
 	function formatDateLabel(dateStr: string): string {
 		const d = new Date(dateStr + 'T12:00:00Z');
-		return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+		return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: authorTimezone });
 	}
 
 	function formatDuration(seconds: number): string {
@@ -136,7 +137,8 @@
 			userId: hackatimeUser,
 			projects: hackatimeProjectKeys.join(','),
 			year: y,
-			month: m
+			month: m,
+			tz: authorTimezone
 		});
 
 		log.debug('Fetching activity data', { ym });
@@ -173,6 +175,7 @@
 			let months: string[];
 			try {
 				log.debug('Fetching date range');
+				params.set('tz', authorTimezone);
 				const res = await fetch(`/api/programs/${programId}/hackatime/date-range?${params}`);
 				log.debug('Date range response', { status: res.status });
 				const data = res.ok ? await res.json() : null;
@@ -259,7 +262,7 @@
 			const ym = monthKey(day.date);
 			if (ym !== curYm) {
 				const [y, m] = ym.split('-').map(Number);
-				const label = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+				const label = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: authorTimezone });
 				groups.push({ ym, label, startIdx: idx, days: [] });
 				curYm = ym;
 			}
@@ -300,7 +303,7 @@
 
 		log.debug('Fetching heartbeats', { date, user });
 		const t = log.time(`fetchHeartbeats:${date}`);
-		const params = new URLSearchParams({ userId: user, projects: keys.join(','), date });
+		const params = new URLSearchParams({ userId: user, projects: keys.join(','), date, tz: authorTimezone });
 
 		fetch(`/api/programs/${programId}/hackatime/heartbeats?${params}`)
 			.then(async (res) => {
@@ -454,7 +457,7 @@
 										</svg>
 										<div class="flex items-center justify-between px-0.5">
 											<span class="text-[10px] text-text-secondary">
-												{new Date(day.date + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}
+												{new Date(day.date + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: authorTimezone })}
 											</span>
 											<span class="text-[10px] font-mono text-text-tertiary">
 												{formatDuration(day.totalSeconds)}
@@ -498,13 +501,15 @@
 		<HeartbeatFrequencyBar
 			heartbeats={codingHeartbeats}
 			{visibleRange}
+			timezone={authorTimezone}
 			onhover={(range) => (hoveredTimeRange = range)}
 			onclick={(timestamp) => handleFocusChange(timestamp)}
 		/>
-		
+
 		<HeartbeatScatter
 			heartbeats={codingHeartbeats}
 			{hoveredTimeRange}
+			timezone={authorTimezone}
 			onfocuschange={(timestamp) => handleFocusChange(timestamp)}
 		/>
 
@@ -513,6 +518,7 @@
 				heartbeats={codingHeartbeats}
 				{focusedTimestamp}
 				{animationKey}
+				timezone={authorTimezone}
 				onrangechange={(range) => (visibleRange = range)}
 			/>
 		</div>

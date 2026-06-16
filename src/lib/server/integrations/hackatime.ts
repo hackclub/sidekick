@@ -15,6 +15,11 @@ interface TrustFactor {
 	trustValue: number;
 }
 
+export interface UserInfo {
+	trustLevel: string;
+	timezone: string;
+}
+
 export interface TrustLog {
 	id: number;
 	createdAt: string;
@@ -82,11 +87,26 @@ async function authFetch(path: string, params?: Record<string, string>): Promise
 	return response;
 }
 
+export function tzDayBounds(dateStr: string, tz: string): { startS: number; endS: number } {
+	const noon = new Date(`${dateStr}T12:00:00Z`);
+	const utcStr = noon.toLocaleString('en-US', { timeZone: 'UTC' });
+	const tzStr = noon.toLocaleString('en-US', { timeZone: tz });
+	const offsetMs = new Date(utcStr).getTime() - new Date(tzStr).getTime();
+	const midnight = new Date(`${dateStr}T00:00:00Z`);
+	const startS = Math.floor((midnight.getTime() + offsetMs) / 1000);
+	return { startS, endS: startS + 86400 - 1 };
+}
+
+export function dateInTimezone(timestampS: number, tz: string): string {
+	return new Date(timestampS * 1000).toLocaleDateString('sv-SE', { timeZone: tz });
+}
+
 export async function getProjectDateRange(
 	userId: string,
-	projectKeys: string[]
+	projectKeys: string[],
+	tz?: string
 ): Promise<{ firstDate: string; lastDate: string } | null> {
-	log.debug('getProjectDateRange called', { userId, projectKeys: projectKeys.join(',') });
+	log.debug('getProjectDateRange called', { userId, projectKeys: projectKeys.join(','), tz });
 	const response = await authFetch('/api/admin/v1/user/projects', { id: userId });
 	const data = await response.json();
 	const keySet = new Set(projectKeys.map((k) => k.toLowerCase()));
@@ -118,10 +138,17 @@ export async function getProjectDateRange(
 
 	const fd = new Date(earliest * 1000);
 	const ld = new Date(latest * 1000);
-	const result = {
-		firstDate: `${fd.getUTCFullYear()}-${String(fd.getUTCMonth() + 1).padStart(2, '0')}-${String(fd.getUTCDate()).padStart(2, '0')}`,
-		lastDate: `${ld.getUTCFullYear()}-${String(ld.getUTCMonth() + 1).padStart(2, '0')}-${String(ld.getUTCDate()).padStart(2, '0')}`
-	};
+
+	const result = tz
+		? {
+				firstDate: fd.toLocaleDateString('sv-SE', { timeZone: tz }),
+				lastDate: ld.toLocaleDateString('sv-SE', { timeZone: tz })
+			}
+		: {
+				firstDate: `${fd.getUTCFullYear()}-${String(fd.getUTCMonth() + 1).padStart(2, '0')}-${String(fd.getUTCDate()).padStart(2, '0')}`,
+				lastDate: `${ld.getUTCFullYear()}-${String(ld.getUTCMonth() + 1).padStart(2, '0')}-${String(ld.getUTCDate()).padStart(2, '0')}`
+			};
+
 	log.debug('getProjectDateRange result', { userId, matchedCount: matched.length, firstDate: result.firstDate, lastDate: result.lastDate });
 	return result;
 }
@@ -173,6 +200,18 @@ export async function getUserTrustFactor(
 		trustValue: 0
 	};
 	log.debug('getUserTrustFactor result', { userId, trustLevel: result.trustLevel });
+	return result;
+}
+
+export async function getUserInfo(userId: string): Promise<UserInfo> {
+	log.debug('getUserInfo called', { userId });
+	const response = await authFetch('/api/admin/v1/user/info', { id: userId });
+	const data = await response.json();
+	const result = {
+		trustLevel: data.user.trust_level ?? 'unknown',
+		timezone: data.user.timezone ?? 'UTC'
+	};
+	log.debug('getUserInfo result', { userId, trustLevel: result.trustLevel, timezone: result.timezone });
 	return result;
 }
 

@@ -468,8 +468,11 @@
 						hackatimeUser={data.hackatimeUser}
 						hackatimeProjectKeys={data.project.hackatimeProjectKeys}
 						programId={data.program.id}
-						defaultDate={data.pendingShip?.submittedAt?.split('T')[0]}
+						defaultDate={data.pendingShip?.submittedAt
+							? new Date(data.pendingShip.submittedAt).toLocaleDateString('sv-SE', { timeZone: data.authorTimezone })
+							: undefined}
 						projectBreakdown={hackatime?.projectBreakdown ?? []}
+						authorTimezone={data.authorTimezone}
 					/>
 				</div>
 			{/if}
