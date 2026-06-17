@@ -80,9 +80,6 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		author: string;
 		authorAvatarUrl: string | null;
 		date: string;
-		additions: number;
-		deletions: number;
-		files: Array<{ filename: string; status: string; additions: number; deletions: number }>;
 	};
 	type LapseEntry = {
 		id: string;
@@ -233,8 +230,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 						commits: gh.githubCommits.map((c) => ({
 							sha: c.sha,
 							message: c.message,
-							date: c.date,
-							files: c.files.map((f) => ({ filename: f.filename }))
+							date: c.date
 						})),
 						readmeContent: gh.githubReadme,
 						isPublic: gh.githubIsPublic

@@ -1,4 +1,5 @@
 import { env } from '$env/dynamic/private';
+import { getRedis } from '../queue/connection.js';
 import { createLogger } from '../logger.js';
 
 const log = createLogger('github');
@@ -6,6 +7,9 @@ const BASE_URL = 'https://api.github.com';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const responseCache = new Map<string, { data: unknown; expiresAt: number }>();
+
+const REDIS_COMMIT_PREFIX = 'gh:commit:';
+const commitDetailMemCache = new Map<string, CommitDetail>();
 
 function getCached<T>(key: string): T | undefined {
 	const entry = responseCache.get(key);
@@ -27,11 +31,17 @@ interface RepoInfo {
 	description: string | null;
 }
 
-interface CommitFile {
+export interface CommitFile {
 	filename: string;
 	status: string;
 	additions: number;
 	deletions: number;
+}
+
+export interface CommitDetail {
+	additions: number;
+	deletions: number;
+	files: CommitFile[];
 }
 
 interface Commit {
@@ -40,9 +50,6 @@ interface Commit {
 	author: string;
 	authorAvatarUrl: string | null;
 	date: string;
-	additions: number;
-	deletions: number;
-	files: CommitFile[];
 }
 
 async function authFetch(path: string, params?: Record<string, string>): Promise<Response> {
@@ -77,13 +84,31 @@ async function authFetch(path: string, params?: Record<string, string>): Promise
 		const rateLimitRemaining = response.headers.get('x-ratelimit-remaining');
 		if (rateLimitRemaining === '0') {
 			const reset = response.headers.get('x-ratelimit-reset');
-			const resetAt = reset ? new Date(parseInt(reset) * 1000).toISOString() : 'unknown';
-			log.warn('authFetch rate limited', { path, resetAt });
+			const resetEpoch = reset ? parseInt(reset) * 1000 : 0;
+			const waitMs = resetEpoch - Date.now();
+
+			if (waitMs > 0 && waitMs <= 60_000) {
+				log.info('authFetch rate limited, waiting for reset', { path, waitMs });
+				await new Promise((r) => setTimeout(r, waitMs + 1000));
+				response = await fetch(url.toString(), { headers });
+			} else {
+				const resetAt = reset ? new Date(resetEpoch).toISOString() : 'unknown';
+				log.warn('authFetch rate limited', { path, resetAt });
+			}
 		} else {
 			log.debug('authFetch falling back to unauthenticated', { path, status: response.status });
 			// eslint-disable-next-line @typescript-eslint/no-unused-vars
 			const { Authorization: _auth, ...unauthHeaders } = headers;
 			response = await fetch(url.toString(), { headers: unauthHeaders });
+		}
+	}
+
+	if ((response.status === 403 || response.status === 429) && response.headers.has('retry-after')) {
+		const retryAfter = parseInt(response.headers.get('retry-after')!);
+		if (!isNaN(retryAfter) && retryAfter <= 60) {
+			log.info('authFetch secondary rate limit, retrying', { path, retryAfter });
+			await new Promise((r) => setTimeout(r, retryAfter * 1000));
+			response = await fetch(url.toString(), { headers });
 		}
 	}
 
@@ -193,41 +218,12 @@ export async function getCommits(
 				message: c.commit.message,
 				author: c.commit.author.name,
 				authorAvatarUrl: c.author?.avatar_url ?? null,
-				date: c.commit.author.date,
-				additions: 0,
-				deletions: 0,
-				files: []
+				date: c.commit.author.date
 			});
 		}
 
 		if (data.length < perPage) break;
 		page++;
-	}
-
-	log.debug('getCommits fetching commit details', { owner, repo, totalCommits: allCommits.length, pages: page });
-
-	// Fetch stats + files in parallel (batched to avoid overwhelming the API)
-	const batchSize = 15;
-	const repoPath = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits`;
-	for (let i = 0; i < allCommits.length; i += batchSize) {
-		const batch = allCommits.slice(i, i + batchSize);
-		log.trace('getCommits detail batch', { owner, repo, batchStart: i, batchSize: batch.length });
-		await Promise.all(batch.map(async (commit) => {
-			try {
-				const resp = await authFetch(`${repoPath}/${commit.sha}`);
-				const detail = await resp.json();
-				commit.additions = detail.stats?.additions ?? 0;
-				commit.deletions = detail.stats?.deletions ?? 0;
-				commit.files = (detail.files ?? []).map((f: { filename: string; status: string; additions?: number; deletions?: number }) => ({
-					filename: f.filename,
-					status: f.status,
-					additions: f.additions ?? 0,
-					deletions: f.deletions ?? 0
-				}));
-			} catch (err) {
-				log.warn('getCommits detail fetch failed', { sha: commit.sha });
-			}
-		}));
 	}
 
 	timer.end({ owner, repo, totalCommits: allCommits.length });
@@ -267,23 +263,52 @@ export async function getReadme(owner: string, repo: string): Promise<string | n
 	}
 }
 
-export async function getLanguages(
-	owner: string,
-	repo: string
-): Promise<Record<string, number>> {
-	log.debug('getLanguages called', { owner, repo });
-	const cacheKey = `languages:${owner}/${repo}`;
-	const cached = getCached<Record<string, number>>(cacheKey);
-	if (cached) {
-		log.debug('getLanguages cache hit', { owner, repo });
-		return cached;
+export async function getCommitDetail(owner: string, repo: string, sha: string): Promise<CommitDetail> {
+	const cacheKey = `${owner}/${repo}:${sha}`;
+
+	const memCached = commitDetailMemCache.get(cacheKey);
+	if (memCached) {
+		log.debug('getCommitDetail memory hit', { sha: sha.slice(0, 7) });
+		return memCached;
+	}
+
+	try {
+		const redis = getRedis();
+		const redisVal = await redis.get(`${REDIS_COMMIT_PREFIX}${cacheKey}`);
+		if (redisVal) {
+			const detail = JSON.parse(redisVal) as CommitDetail;
+			commitDetailMemCache.set(cacheKey, detail);
+			log.debug('getCommitDetail redis hit', { sha: sha.slice(0, 7) });
+			return detail;
+		}
+	} catch (e) {
+		log.warn('getCommitDetail redis read failed', { sha: sha.slice(0, 7) });
 	}
 
 	const response = await authFetch(
-		`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/languages`
+		`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(sha)}`
 	);
-	const languages = await response.json();
-	log.debug('getLanguages result', { owner, repo, languageCount: Object.keys(languages).length });
-	setCache(cacheKey, languages);
-	return languages;
+	const data = await response.json();
+
+	const detail: CommitDetail = {
+		additions: data.stats?.additions ?? 0,
+		deletions: data.stats?.deletions ?? 0,
+		files: (data.files ?? []).map((f: { filename: string; status: string; additions?: number; deletions?: number }) => ({
+			filename: f.filename,
+			status: f.status,
+			additions: f.additions ?? 0,
+			deletions: f.deletions ?? 0
+		}))
+	};
+
+	commitDetailMemCache.set(cacheKey, detail);
+	try {
+		const redis = getRedis();
+		await redis.set(`${REDIS_COMMIT_PREFIX}${cacheKey}`, JSON.stringify(detail), 'EX', 2592000);
+	} catch (e) {
+		log.warn('getCommitDetail redis write failed', { sha: sha.slice(0, 7) });
+	}
+
+	log.debug('getCommitDetail fetched', { sha: sha.slice(0, 7), files: detail.files.length });
+	return detail;
 }

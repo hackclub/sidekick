@@ -444,6 +444,7 @@
 					<MultiSourceDetails
 						commits={github?.githubCommits ?? []}
 						repoUrl={data.project.codeUrl}
+						programId={data.program.id}
 						loading={!github}
 						markers={data.timeline
 							.filter((e) => e.type === 'ship' || e.type === 'approval' || e.type === 'authorized_approval' || e.type === 'rejection')

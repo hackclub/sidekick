@@ -8,13 +8,12 @@ import { G1 } from './rules/G1.js';
 import { G2 } from './rules/G2.js';
 import { G3 } from './rules/G3.js';
 import { H1 } from './rules/H1.js';
-import { H2 } from './rules/H2.js';
 import { AT1 } from './rules/AT1.js';
 import { D5 } from './rules/D5.js';
 
 const log = createLogger('checks:registry');
 
-export const CHECKS: ReadonlyArray<CheckDefinition> = [D1, D2, D3, D4, D5, G1, G2, G3, H1, H2, AT1];
+export const CHECKS: ReadonlyArray<CheckDefinition> = [D1, D2, D3, D4, D5, G1, G2, G3, H1, AT1];
 
 export async function runAllChecks(
 	ctx: CheckContext
