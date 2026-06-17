@@ -27,7 +27,6 @@ export interface CheckContext {
 			sha: string;
 			message: string;
 			date: string;
-			files: Array<{ filename: string }>;
 		}>;
 		readmeContent: string | null;
 		isPublic: boolean;

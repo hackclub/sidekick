@@ -50,9 +50,6 @@ interface Commit {
 	author: string;
 	authorAvatarUrl: string | null;
 	date: string;
-	additions: number;
-	deletions: number;
-	files: CommitFile[];
 }
 
 async function authFetch(path: string, params?: Record<string, string>): Promise<Response> {
@@ -221,10 +218,7 @@ export async function getCommits(
 				message: c.commit.message,
 				author: c.commit.author.name,
 				authorAvatarUrl: c.author?.avatar_url ?? null,
-				date: c.commit.author.date,
-				additions: 0,
-				deletions: 0,
-				files: []
+				date: c.commit.author.date
 			});
 		}
 
@@ -310,7 +304,7 @@ export async function getCommitDetail(owner: string, repo: string, sha: string):
 	commitDetailMemCache.set(cacheKey, detail);
 	try {
 		const redis = getRedis();
-		await redis.set(`${REDIS_COMMIT_PREFIX}${cacheKey}`, JSON.stringify(detail));
+		await redis.set(`${REDIS_COMMIT_PREFIX}${cacheKey}`, JSON.stringify(detail), 'EX', 2592000);
 	} catch (e) {
 		log.warn('getCommitDetail redis write failed', { sha: sha.slice(0, 7) });
 	}

@@ -230,8 +230,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 						commits: gh.githubCommits.map((c) => ({
 							sha: c.sha,
 							message: c.message,
-							date: c.date,
-							files: []
+							date: c.date
 						})),
 						readmeContent: gh.githubReadme,
 						isPublic: gh.githubIsPublic
