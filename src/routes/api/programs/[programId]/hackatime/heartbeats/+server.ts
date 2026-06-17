@@ -53,19 +53,26 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 	const userId = url.searchParams.get('userId');
 	const projects = url.searchParams.get('projects');
 	const date = url.searchParams.get('date');
+	const endDate = url.searchParams.get('endDate');
 	const tz = url.searchParams.get('tz') || 'UTC';
 
 	if (!userId || !projects || !date) {
 		throw error(400, 'Missing userId, projects, or date');
 	}
 
-	logger.debug('GET request', { userId, projects, date, tz, programId: params.programId });
+	logger.debug('GET request', { userId, projects, date, endDate, tz, programId: params.programId });
 
 	const dateMatch = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
 	if (!dateMatch) throw error(400, 'Invalid date format, expected YYYY-MM-DD');
 
+	if (endDate) {
+		const endDateMatch = endDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+		if (!endDateMatch) throw error(400, 'Invalid endDate format, expected YYYY-MM-DD');
+	}
+
 	const projectKeys = new Set(projects.split(',').map((p) => p.trim().toLowerCase()));
-	const cacheKey = `${userId}:${[...projectKeys].sort().join(',')}:${date}:${tz}`;
+	const effectiveEndDate = endDate ?? date;
+	const cacheKey = `${userId}:${[...projectKeys].sort().join(',')}:${date}:${effectiveEndDate}:${tz}`;
 
 	const cached = cache.get(cacheKey);
 	if (cached) {
@@ -74,15 +81,16 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 	}
 	logger.trace('Cache miss', { cacheKey });
 
-	const { startS, endS } = tzDayBounds(date, tz);
+	const { startS } = tzDayBounds(date, tz);
+	const { endS } = tzDayBounds(effectiveEndDate, tz);
 
 	const raw = await getRawHeartbeatRange(userId, startS, endS);
 	const heartbeats = transformHeartbeats(raw, projectKeys);
 
 	const result = { heartbeats };
-	logger.debug('Fetched heartbeats', { date, tz, heartbeatCount: heartbeats.length, cached: isCacheable(date, tz) });
+	logger.debug('Fetched heartbeats', { date, endDate: effectiveEndDate, tz, heartbeatCount: heartbeats.length, cached: isCacheable(date, tz) });
 
-	if (isCacheable(date, tz)) {
+	if (!endDate && isCacheable(date, tz)) {
 		cache.set(cacheKey, result);
 	}
 

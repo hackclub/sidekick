@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { createLogger } from '$lib/logger.js';
-	import { Activity, LoaderCircle, FolderCode, ExternalLink, Check } from 'lucide-svelte';
+	import { Activity, LoaderCircle, FolderCode, ExternalLink, Check, ChartLine, PieChart } from 'lucide-svelte';
 	import HeartbeatFrequencyBar from './HeartbeatFrequencyBar.svelte';
 	import HeartbeatScatter from './HeartbeatScatter.svelte';
 	import HeartbeatTable from './HeartbeatTable.svelte';
+	import HackatimeBreakdown from './HackatimeBreakdown.svelte';
+	import TabBar from '$lib/components/ui/TabBar.svelte';
 
 	const log = createLogger('HackatimeViewer');
 
@@ -86,6 +88,15 @@
 	let joeCopied = $state(false);
 	let selectedProject = $state<string | null>(null);
 	let overflowHideTimer: ReturnType<typeof setTimeout> | null = null;
+	let activeTab = $state('graph');
+	let breakdownScope = $state<'day' | 'all'>('day');
+	let allHeartbeats = $state<HeartbeatRow[] | null>(null);
+	let allHeartbeatsLoading = $state(false);
+
+	const detailTabs = [
+		{ id: 'graph', label: 'Graph', icon: ChartLine },
+		{ id: 'breakdown', label: 'Breakdown', icon: PieChart },
+	];
 
 	const effectiveProjectKeys = $derived(
 		selectedProject ? [selectedProject] : hackatimeProjectKeys
@@ -374,6 +385,53 @@
 		setTimeout(() => (joeCopied = false), 2000);
 	}
 
+	async function fetchAllHeartbeats() {
+		if (allHeartbeatsLoading) return;
+		if (!allActiveDays.length) return;
+
+		const firstDate = allActiveDays[allActiveDays.length - 1].date;
+		const lastDate = allActiveDays[0].date;
+
+		allHeartbeatsLoading = true;
+		try {
+			const params = new URLSearchParams({
+				userId: hackatimeUser,
+				projects: effectiveProjectKeys.join(','),
+				date: firstDate,
+				endDate: lastDate,
+				tz: authorTimezone,
+			});
+			const res = await fetch(`/api/programs/${programId}/hackatime/heartbeats?${params}`);
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			const data = await res.json();
+			allHeartbeats = data.heartbeats;
+		} catch (e) {
+			log.error('Failed to fetch all heartbeats', {}, e);
+			allHeartbeats = null;
+		} finally {
+			allHeartbeatsLoading = false;
+		}
+	}
+
+	$effect(() => {
+		if (breakdownScope === 'all' && !allHeartbeats && !allHeartbeatsLoading) {
+			fetchAllHeartbeats();
+		}
+	});
+
+	$effect(() => {
+		void effectiveProjectKeys;
+		allHeartbeats = null;
+	});
+
+	const allCodingHeartbeats = $derived(
+		allHeartbeats?.filter((hb) => hb.editor !== 'lapse' && !hb.user_agent.toLowerCase().includes('lapse')) ?? null
+	);
+
+	const breakdownHeartbeats = $derived(
+		breakdownScope === 'all' ? allCodingHeartbeats : codingHeartbeats
+	);
+
 	function handleFocusChange(timestamp: number) {
 		focusedTimestamp = timestamp;
 		animationKey++;
@@ -531,30 +589,67 @@
 			</div>
 		</div>
 	{:else if codingHeartbeats && codingHeartbeats.length > 0}
-		<HeartbeatFrequencyBar
-			heartbeats={codingHeartbeats}
-			{visibleRange}
-			timezone={authorTimezone}
-			onhover={(range) => (hoveredTimeRange = range)}
-			onclick={(timestamp) => handleFocusChange(timestamp)}
-		/>
+		<TabBar tabs={detailTabs} active={activeTab} onchange={(id) => (activeTab = id)} />
 
-		<HeartbeatScatter
-			heartbeats={codingHeartbeats}
-			{hoveredTimeRange}
-			timezone={authorTimezone}
-			onfocuschange={(timestamp) => handleFocusChange(timestamp)}
-		/>
-
-		<div class="flex flex-col min-h-[300px] max-h-[500px] border-t border-border-card">
-			<HeartbeatTable
+		{#if activeTab === 'graph'}
+			<HeartbeatFrequencyBar
 				heartbeats={codingHeartbeats}
-				{focusedTimestamp}
-				{animationKey}
+				{visibleRange}
 				timezone={authorTimezone}
-				onrangechange={(range) => (visibleRange = range)}
+				onhover={(range) => (hoveredTimeRange = range)}
+				onclick={(timestamp) => handleFocusChange(timestamp)}
 			/>
-		</div>
+
+			<HeartbeatScatter
+				heartbeats={codingHeartbeats}
+				{hoveredTimeRange}
+				timezone={authorTimezone}
+				onfocuschange={(timestamp) => handleFocusChange(timestamp)}
+			/>
+
+			<div class="flex flex-col min-h-[300px] max-h-[500px] border-t border-border-card">
+				<HeartbeatTable
+					heartbeats={codingHeartbeats}
+					{focusedTimestamp}
+					{animationKey}
+					timezone={authorTimezone}
+					onrangechange={(range) => (visibleRange = range)}
+				/>
+			</div>
+		{:else if activeTab === 'breakdown'}
+			<div class="flex items-center gap-1 px-6 pt-4">
+				<button
+					class="text-[12px] font-medium rounded-tag px-2.5 py-1 cursor-pointer transition-colors
+						{breakdownScope === 'day'
+							? 'text-accent bg-accent-bg border border-accent'
+							: 'text-text-secondary bg-page border border-border-card hover:border-accent/50'}"
+					onclick={() => (breakdownScope = 'day')}
+				>
+					Selected day
+				</button>
+				<button
+					class="text-[12px] font-medium rounded-tag px-2.5 py-1 cursor-pointer transition-colors
+						{breakdownScope === 'all'
+							? 'text-accent bg-accent-bg border border-accent'
+							: 'text-text-secondary bg-page border border-border-card hover:border-accent/50'}"
+					onclick={() => (breakdownScope = 'all')}
+				>
+					All time
+				</button>
+			</div>
+			{#if breakdownScope === 'all' && allHeartbeatsLoading}
+				<div class="flex flex-col items-center justify-center py-16 gap-3 text-text-tertiary">
+					<LoaderCircle size={20} class="animate-spin" />
+					<span class="text-[12px]">Loading all heartbeats...</span>
+				</div>
+			{:else if breakdownHeartbeats && breakdownHeartbeats.length > 0}
+				<HackatimeBreakdown heartbeats={breakdownHeartbeats} />
+			{:else}
+				<div class="flex items-center justify-center py-16 text-sm text-text-tertiary">
+					No heartbeat data available.
+				</div>
+			{/if}
+		{/if}
 	{:else if codingHeartbeats}
 		<div class="flex items-center justify-center py-16 text-sm text-text-tertiary">
 			No heartbeats found for {formatDateLabel(currentDate)}.
