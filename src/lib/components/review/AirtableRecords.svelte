@@ -97,7 +97,7 @@
 			</div>
 		{:else}
 			<div class="flex flex-col px-8 py-3">
-				{#each displayedRecords as record (record.id)}
+				{#each displayedRecords as record (record.url)}
 					<!-- eslint-disable svelte/no-navigation-without-resolve -->
 					<a
 						href={record.url}
