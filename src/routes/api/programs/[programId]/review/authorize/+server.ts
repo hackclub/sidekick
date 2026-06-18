@@ -210,12 +210,39 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		isSuperAdmin: user.isSuperAdmin
 	});
 
-	const { pendingApprovalId, feedbackMessage, justification, hoursAssigned } = await request.json();
+	const { pendingApprovalId, reviewerId, feedbackMessage, justification, hoursAssigned } = await request.json();
 	if (!pendingApprovalId) throw error(400, 'pendingApprovalId is required');
 
 	logger.debug('PATCH pending approval', { programId: params.programId, pendingApprovalId });
 
 	if (pendingApprovalId.startsWith('hq:')) {
+		if (!reviewerId) throw error(400, 'reviewerId is required for HQ pending approvals');
+		const shipId = pendingApprovalId.slice(3);
+
+		const program = await db.program.findUniqueOrThrow({
+			where: { id: params.programId }
+		});
+		const client = new ProtocolClient(program.masterEndpoint, program.secretKey);
+
+		try {
+			await client.updateReviewAction({
+				shipId,
+				reviewerId,
+				type: 'approval',
+				feedbackMessage: feedbackMessage ?? '',
+				justification: justification ?? '',
+				hoursAssigned: hoursAssigned != null ? hoursAssigned : undefined
+			});
+		} catch (e) {
+			if (e instanceof ProtocolError) {
+				const parsed = parseProtocolError(e);
+				logger.warn('HQ edit protocol error', { pendingApprovalId, status: parsed.status, error: parsed.body.message });
+				return json(parsed.body, { status: parsed.status });
+			}
+			throw e;
+		}
+
+		logger.info('HQ pending approval updated via protocol', { shipId });
 		return json({ success: true });
 	}
 

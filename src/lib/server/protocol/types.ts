@@ -219,6 +219,7 @@ export type UpdateReviewActionInput = {
       type: "approval";
       feedbackMessage: string;
       justification: string;
+      hoursAssigned?: number;
       fields?: ReviewFieldValues;
     }
   | {
