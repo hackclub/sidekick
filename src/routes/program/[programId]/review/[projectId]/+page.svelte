@@ -296,19 +296,20 @@
 		}
 	}
 
-	async function handleEditPending(pendingApprovalId: string, feedbackMessage: string, justification: string, hoursAssigned: number) {
+	async function handleEditPending(pendingApprovalId: string, reviewerId: string, feedbackMessage: string, justification: string, hoursAssigned: number) {
 		log.info('Editing pending approval', { pendingApprovalId, hoursAssigned });
 		const t = log.time('handleEditPending');
 		const res = await fetch(`/api/programs/${data.program.id}/review/authorize`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ pendingApprovalId, feedbackMessage, justification, hoursAssigned })
+			body: JSON.stringify({ pendingApprovalId, reviewerId, feedbackMessage, justification, hoursAssigned })
 		});
 		t.end('status', res.status);
 		if (!res.ok) {
 			log.error('Failed to edit pending approval', { pendingApprovalId, status: res.status });
 		} else {
 			log.debug('Pending approval edited successfully');
+			await invalidateAll();
 		}
 	}
 </script>

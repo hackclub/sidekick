@@ -20,7 +20,7 @@
 		onsave?: (data: EditData) => void;
 		onauthorize?: (id: string) => void;
 		ondelete?: (id: string) => void;
-		oneditpending?: (id: string, feedbackMessage: string, justification: string, hoursAssigned: number) => void;
+		oneditpending?: (id: string, reviewerId: string, feedbackMessage: string, justification: string, hoursAssigned: number) => void;
 		authorizing?: string | null;
 	}
 
@@ -76,7 +76,7 @@
 			});
 		} else if (event.type === 'pending_approval') {
 			savedHours = editHours;
-			oneditpending?.(event.id, editFeedback, editInternal, editHours);
+			oneditpending?.(event.id, event.actorId, editFeedback, editInternal, editHours);
 		}
 		editing = false;
 	}
