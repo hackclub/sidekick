@@ -1,10 +1,11 @@
 <script lang="ts">
 	import type { PageData } from './$types.js';
 	import { resolve } from '$app/paths';
-	import { Scale, Clock, CheckCircle, Hourglass, Trophy, ShieldCheck } from 'lucide-svelte';
+	import { Scale, Clock, CheckCircle, Hourglass, Trophy, ShieldCheck, Download, Copy, ChevronDown, Check } from 'lucide-svelte';
 	import BentoGraph from '$lib/components/ui/BentoGraph.svelte';
 	import BentoLeaderboard from '$lib/components/ui/BentoLeaderboard.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
+	import CsvExportModal from '$lib/components/ui/CsvExportModal.svelte';
 
 	interface Props {
 		data: PageData;
@@ -23,6 +24,101 @@
 	const projectMap = $derived(
 		Object.fromEntries(data.projects.map((p) => [p.id, p]))
 	);
+
+	// CSV export
+	let csvDropdownOpen = $state(false);
+	let csvExportMode = $state<'download' | 'copy'>('download');
+	let csvModalOpen = $state(false);
+	let excludedProjectIds = $state(new Set<string>());
+	let csvCopied = $state(false);
+
+	const allExportableProjects = $derived([...data.projects, ...data.hqProjects]);
+
+	const includedProjects = $derived(
+		allExportableProjects.filter(p => !excludedProjectIds.has(p.id))
+	);
+
+	function csvField(value: string): string {
+		if (value.includes(',') || value.includes('"') || value.includes('\n'))
+			return `"${value.replace(/"/g, '""')}"`;
+		return value;
+	}
+
+	function buildProjectCsv(excluded: Set<string>): string {
+		const header = 'Project ID,Title,Author,Demo URL,Code URL,Status,Hours Submitted,Submitted At,Description';
+		const rows = [header];
+		for (const project of allExportableProjects) {
+			if (excluded.has(project.id)) continue;
+			const pendingShip = project.ships.find(s => s.status === 'pending' || s.status === 'pending_hq');
+			const actor = data.actors[project.authorId];
+			rows.push([
+				csvField(project.id),
+				csvField(project.title),
+				csvField(actor?.name ?? project.authorId),
+				csvField(project.demoUrl ?? ''),
+				csvField(project.codeUrl),
+				csvField(pendingShip?.status ?? 'pending'),
+				csvField(String(pendingShip?.hoursSubmitted ?? '')),
+				csvField(pendingShip?.submittedAt ?? ''),
+				csvField(project.description),
+			].join(','));
+		}
+		return rows.join('\r\n') + '\r\n';
+	}
+
+	function startCsvExport(mode: 'download' | 'copy') {
+		csvDropdownOpen = false;
+		csvExportMode = mode;
+		excludedProjectIds = new Set();
+		csvModalOpen = true;
+	}
+
+	function executeCsvExport() {
+		const csv = buildProjectCsv(excludedProjectIds);
+		if (csvExportMode === 'download') {
+			const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			const date = new Date().toISOString().slice(0, 10);
+			const slug = data.program.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+			a.download = `${slug}-review-queue-${date}.csv`;
+			a.click();
+			URL.revokeObjectURL(url);
+		} else {
+			navigator.clipboard.writeText(csv);
+			csvCopied = true;
+			setTimeout(() => (csvCopied = false), 2000);
+		}
+		csvModalOpen = false;
+	}
+
+	function toggleProjectExclusion(id: string) {
+		const next = new Set(excludedProjectIds);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		excludedProjectIds = next;
+	}
+
+	function toggleAllProjects() {
+		if (excludedProjectIds.size === 0) {
+			excludedProjectIds = new Set(allExportableProjects.map(p => p.id));
+		} else {
+			excludedProjectIds = new Set();
+		}
+	}
+
+	function handleCsvDropdownWindowClick(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		if (!target.closest('[data-csv-dropdown]')) csvDropdownOpen = false;
+	}
+
+	$effect(() => {
+		if (csvDropdownOpen) {
+			window.addEventListener('click', handleCsvDropdownWindowClick, true);
+			return () => window.removeEventListener('click', handleCsvDropdownWindowClick, true);
+		}
+	});
 
 </script>
 
@@ -65,12 +161,47 @@
 		<div class="size-9 bg-surface rounded-lg flex items-center justify-center shrink-0">
 			<Scale size={18} class="text-text-secondary" />
 		</div>
-		<div>
+		<div class="flex-1">
 			<h1 class="font-bold text-[17px] tracking-[-0.51px]">Review Queue</h1>
 			<p class="text-[13px] text-text-secondary tracking-[-0.3px]">
 			{data.pendingCount} pending review{#if data.pendingHqCount > 0}, {data.pendingHqCount} under HQ review{/if}
 		</p>
 		</div>
+		{#if allExportableProjects.length > 0}
+			<div class="relative shrink-0" data-csv-dropdown>
+				<button
+					class="border border-border-input rounded-tag flex gap-1.5 items-center px-2.5 py-1 cursor-pointer hover:bg-surface text-sm font-medium text-text-dim whitespace-nowrap"
+					onclick={() => (csvDropdownOpen = !csvDropdownOpen)}
+				>
+					{#if csvCopied}
+						<Check size={13} class="shrink-0 text-check-pass" />
+						<span class="text-check-pass">Copied!</span>
+					{:else}
+						<Download size={13} class="shrink-0" />
+						<span>CSV</span>
+						<ChevronDown size={12} class="shrink-0" />
+					{/if}
+				</button>
+				{#if csvDropdownOpen}
+					<div class="absolute top-full right-0 mt-1 bg-page border border-border-card rounded-input shadow-lg z-30 min-w-[180px] py-1">
+						<button
+							class="w-full text-left px-3 py-1.5 text-sm hover:bg-surface cursor-pointer flex items-center gap-2"
+							onclick={() => startCsvExport('download')}
+						>
+							<Download size={13} class="shrink-0" />
+							Download CSV
+						</button>
+						<button
+							class="w-full text-left px-3 py-1.5 text-sm hover:bg-surface cursor-pointer flex items-center gap-2"
+							onclick={() => startCsvExport('copy')}
+						>
+							<Copy size={13} class="shrink-0" />
+							Copy CSV
+						</button>
+					</div>
+				{/if}
+			</div>
+		{/if}
 	</div>
 
 	{#if data.canAuthorize && data.pendingApprovals.length > 0}
@@ -227,3 +358,54 @@
 		</div>
 	{/if}
 </div>
+
+{#if csvModalOpen}
+	<CsvExportModal
+		mode={csvExportMode}
+		totalCount={allExportableProjects.length}
+		selectedCount={includedProjects.length}
+		onclose={() => (csvModalOpen = false)}
+		onexport={executeCsvExport}
+		class="w-[700px] xl:w-[900px]"
+	>
+		{#snippet header()}
+			<div class="w-8 px-2 py-1.5 flex items-center justify-center">
+				<input
+					type="checkbox"
+					checked={excludedProjectIds.size === 0}
+					indeterminate={excludedProjectIds.size > 0 && excludedProjectIds.size < allExportableProjects.length}
+					onchange={toggleAllProjects}
+					class="cursor-pointer accent-accent"
+				/>
+			</div>
+			<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Title</div>
+			<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Author</div>
+			<div class="flex-[3] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Demo URL</div>
+			<div class="flex-[3] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Code URL</div>
+			<div class="flex-[1] text-right text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Hours</div>
+		{/snippet}
+		{#each allExportableProjects as project (project.id)}
+			{@const pendingShip = project.ships.find(s => s.status === 'pending' || s.status === 'pending_hq')}
+			{@const actor = data.actors[project.authorId]}
+			<button
+				class="flex items-center w-full text-sm border-b border-border-card last:border-b-0 hover:bg-surface/50 cursor-pointer text-left"
+				onclick={() => toggleProjectExclusion(project.id)}
+			>
+				<div class="w-8 px-2 py-1.5 flex items-center justify-center">
+					<input
+						type="checkbox"
+						checked={!excludedProjectIds.has(project.id)}
+						onchange={() => toggleProjectExclusion(project.id)}
+						onclick={(e) => e.stopPropagation()}
+						class="cursor-pointer accent-accent"
+					/>
+				</div>
+				<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{project.title}</div>
+				<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{actor?.name ?? project.authorId}</div>
+				<div class="flex-[3] text-text-secondary tracking-[-0.3px] px-2 py-1.5 truncate font-mono text-xs">{project.demoUrl ?? ''}</div>
+				<div class="flex-[3] text-text-secondary tracking-[-0.3px] px-2 py-1.5 truncate font-mono text-xs">{project.codeUrl}</div>
+				<div class="flex-[1] text-text-secondary tracking-[-0.3px] px-2 py-1.5 text-right">{pendingShip ? formatHours(pendingShip.hoursSubmitted) : ''}</div>
+			</button>
+		{/each}
+	</CsvExportModal>
+{/if}

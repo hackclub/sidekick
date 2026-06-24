@@ -8,6 +8,7 @@
 	import StatusLight from '$lib/components/ui/StatusLight.svelte';
 	import { UserSearch, Funnel, Package, Search, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, RefreshCw, Check, Download, TriangleAlert, X, Send, ListChecks, ClipboardList, Loader2, Pencil, Unlink } from 'lucide-svelte';
 	import type { Order, ShopItem } from '$lib/server/protocol/types.js';
+	import CsvExportModal from '$lib/components/ui/CsvExportModal.svelte';
 
 	interface Props {
 		data: PageData;
@@ -1091,109 +1092,71 @@
 </div>
 
 {#if exportResult}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div
-		class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center"
-		onmousedown={(e) => { if (e.target === e.currentTarget) exportResult = null; }}
+	<CsvExportModal
+		mode={exportMode}
+		totalCount={exportResult.orders.length}
+		selectedCount={includedOrders.length}
+		onclose={() => (exportResult = null)}
+		onexport={executeExport}
+		class="w-[600px] xl:w-[800px]"
 	>
-		<div class="bg-page border border-border-card rounded-card shadow-xl w-[600px] xl:w-[800px] max-h-[80vh] flex flex-col">
-			<div class="flex items-center justify-between px-5 py-4 border-b border-border-card">
-				<div class="flex items-center gap-2">
-					<Download size={16} class="text-text-primary" />
-					<span class="font-bold text-[15px] text-text-primary tracking-[-0.4px]">Export CSV</span>
-				</div>
-				<button
-					class="text-text-tertiary hover:text-text-primary cursor-pointer"
-					onclick={() => (exportResult = null)}
-				>
-					<X size={16} />
-				</button>
+		{#snippet header()}
+			<div class="w-8 px-2 py-1.5 flex items-center justify-center">
+				<input
+					type="checkbox"
+					checked={excludedOrderIds.size === 0}
+					indeterminate={excludedOrderIds.size > 0 && excludedOrderIds.size < exportResult!.orders.length}
+					onchange={toggleAllOrders}
+					class="cursor-pointer accent-accent"
+				/>
 			</div>
-			<div class="px-5 py-4 flex flex-col gap-3 overflow-y-auto">
-				<p class="text-sm text-text-dim tracking-[-0.3px]">
-					{exportResult.orders.length} orders will be exported. Uncheck any orders you'd like to exclude.
-				</p>
-				<div class="border border-border-card rounded-input overflow-hidden flex flex-col max-h-[300px]">
-					<div class="flex items-center border-b border-border-card bg-surface text-sm shrink-0">
-						<div class="w-8 px-2 py-1.5 flex items-center justify-center">
-							<input
-								type="checkbox"
-								checked={excludedOrderIds.size === 0}
-								indeterminate={excludedOrderIds.size > 0 && excludedOrderIds.size < exportResult.orders.length}
-								onchange={toggleAllOrders}
-								class="cursor-pointer accent-accent"
-							/>
-						</div>
-						<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">First</div>
-						<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Last</div>
-						<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">City</div>
-						<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">State</div>
-						<div class="flex-[1] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Country</div>
-					</div>
-					<div class="overflow-y-auto">
-						{#each exportResult.orders as order (order.id)}
-							<button
-								class="flex items-center w-full text-sm border-b border-border-card last:border-b-0 hover:bg-surface/50 cursor-pointer text-left"
-								onclick={() => toggleOrderExclusion(order.id)}
-							>
-								<div class="w-8 px-2 py-1.5 flex items-center justify-center">
-									<input
-										type="checkbox"
-										checked={!excludedOrderIds.has(order.id)}
-										onchange={() => toggleOrderExclusion(order.id)}
-										onclick={(e) => e.stopPropagation()}
-										class="cursor-pointer accent-accent"
-									/>
-								</div>
-								<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.firstName}</div>
-								<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.lastName}</div>
-								<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.city}</div>
-								<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.stateProvince}</div>
-								<div class="flex-[1] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.country}</div>
-							</button>
-						{/each}
-					</div>
+			<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">First</div>
+			<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Last</div>
+			<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">City</div>
+			<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">State</div>
+			<div class="flex-[1] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Country</div>
+		{/snippet}
+		{#each exportResult!.orders as order (order.id)}
+			<button
+				class="flex items-center w-full text-sm border-b border-border-card last:border-b-0 hover:bg-surface/50 cursor-pointer text-left"
+				onclick={() => toggleOrderExclusion(order.id)}
+			>
+				<div class="w-8 px-2 py-1.5 flex items-center justify-center">
+					<input
+						type="checkbox"
+						checked={!excludedOrderIds.has(order.id)}
+						onchange={() => toggleOrderExclusion(order.id)}
+						onclick={(e) => e.stopPropagation()}
+						class="cursor-pointer accent-accent"
+					/>
 				</div>
-				{#if exportResult.skippedOrders.length > 0}
-					<div class="flex items-start gap-2 px-3 py-2.5 bg-yellow-500/10 rounded-input">
-						<TriangleAlert size={14} class="text-yellow-500 shrink-0 mt-0.5" />
-						<div class="flex flex-col gap-1">
-							<span class="text-sm text-text-primary tracking-[-0.3px]">
-								{exportResult.skippedOrders.length} {exportResult.skippedOrders.length === 1 ? 'order' : 'orders'} skipped — no shipping address on file
-							</span>
-							<div class="flex flex-wrap gap-x-2 gap-y-0.5">
-								{#each exportResult.skippedOrders as order (order.id)}
-									<span class="text-xs text-text-dim tracking-[-0.2px]">
-										<span class="text-text-tertiary">#{order.id}</span> {order.userName}
-									</span>
-								{/each}
-							</div>
+				<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.firstName}</div>
+				<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.lastName}</div>
+				<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.city}</div>
+				<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.stateProvince}</div>
+				<div class="flex-[1] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.country}</div>
+			</button>
+		{/each}
+		{#snippet extra()}
+			{#if exportResult!.skippedOrders.length > 0}
+				<div class="flex items-start gap-2 px-3 py-2.5 bg-yellow-500/10 rounded-input">
+					<TriangleAlert size={14} class="text-yellow-500 shrink-0 mt-0.5" />
+					<div class="flex flex-col gap-1">
+						<span class="text-sm text-text-primary tracking-[-0.3px]">
+							{exportResult!.skippedOrders.length} {exportResult!.skippedOrders.length === 1 ? 'order' : 'orders'} skipped — no shipping address on file
+						</span>
+						<div class="flex flex-wrap gap-x-2 gap-y-0.5">
+							{#each exportResult!.skippedOrders as order (order.id)}
+								<span class="text-xs text-text-dim tracking-[-0.2px]">
+									<span class="text-text-tertiary">#{order.id}</span> {order.userName}
+								</span>
+							{/each}
 						</div>
 					</div>
-				{/if}
-			</div>
-			<div class="flex items-center justify-between px-5 py-4 border-t border-border-card">
-				<span class="text-sm text-text-dim tracking-[-0.3px]">
-					{includedOrders.length} of {exportResult.orders.length} orders selected
-				</span>
-				<div class="flex items-center gap-2">
-					<button
-						class="px-3 py-1.5 text-sm font-medium text-text-dim hover:bg-surface rounded-tag cursor-pointer"
-						onclick={() => (exportResult = null)}
-					>
-						Cancel
-					</button>
-					<button
-						class="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-tag cursor-pointer hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-						disabled={includedOrders.length === 0}
-						onclick={executeExport}
-					>
-						{exportMode === 'dinobox' ? 'Send' : 'Download'} ({includedOrders.length})
-					</button>
 				</div>
-			</div>
-		</div>
-	</div>
+			{/if}
+		{/snippet}
+	</CsvExportModal>
 {/if}
 
 {#if massFulfillStep}
