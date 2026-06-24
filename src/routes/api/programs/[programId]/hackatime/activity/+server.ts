@@ -73,7 +73,7 @@ function generateSvgPaths(heartbeats: RawHeartbeat[]) {
 	};
 }
 
-const HEARTBEAT_TIMEOUT_S = 600;
+const HEARTBEAT_TIMEOUT_S = 120;
 
 export const GET: RequestHandler = async ({ params, url, locals }) => {
 	const user = locals.user;
