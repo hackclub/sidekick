@@ -39,9 +39,10 @@
 	);
 
 	function csvField(value: string): string {
-		if (value.includes(',') || value.includes('"') || value.includes('\n'))
-			return `"${value.replace(/"/g, '""')}"`;
-		return value;
+		const clean = value.replace(/[\r\n]+/g, ' ').trim();
+		if (clean.includes(',') || clean.includes('"'))
+			return `"${clean.replace(/"/g, '""')}"`;
+		return clean;
 	}
 
 	function getChangePeriod(project: typeof allExportableProjects[0]): { isUpdate: boolean; periodStart: string; periodEnd: string } {
@@ -65,7 +66,7 @@
 	}
 
 	function buildProjectCsv(excluded: Set<string>): string {
-		const header = 'Project ID,Title,Author,Demo URL,Code URL,Status,Hours Submitted,Submitted At,Is Update,Change Period Start,Change Period End,Description';
+		const header = 'Project ID,Title,Author,Demo URL,Code URL,Status,Hours Submitted,Submitted At,Is Update,Change Period Start,Change Period End';
 		const rows = [header];
 		for (const project of allExportableProjects) {
 			if (excluded.has(project.id)) continue;
@@ -84,7 +85,6 @@
 				csvField(change.isUpdate ? 'Yes' : 'No'),
 				csvField(change.periodStart),
 				csvField(change.periodEnd),
-				csvField(project.description),
 			].join(','));
 		}
 		return rows.join('\r\n') + '\r\n';
