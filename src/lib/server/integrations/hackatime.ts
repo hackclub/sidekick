@@ -319,7 +319,7 @@ function durationFromHeartbeats(heartbeats: RawHeartbeat[]): number {
 	let total = 0;
 	for (let i = 1; i < sorted.length; i++) {
 		const gap = sorted[i].time - sorted[i - 1].time;
-		if (gap <= HEARTBEAT_TIMEOUT_S) total += gap;
+		total += Math.min(gap, HEARTBEAT_TIMEOUT_S);
 	}
 	return Math.round(total);
 }

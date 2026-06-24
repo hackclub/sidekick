@@ -148,7 +148,7 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 		let totalSeconds = 0;
 		for (let i = 1; i < sorted.length; i++) {
 			const gap = sorted[i].time - sorted[i - 1].time;
-			if (gap <= HEARTBEAT_TIMEOUT_S) totalSeconds += gap;
+			totalSeconds += Math.min(gap, HEARTBEAT_TIMEOUT_S);
 		}
 
 		const { cursorPath, lineNoPath } = sorted.length > 0

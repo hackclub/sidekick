@@ -23,7 +23,7 @@
 		let total = 0;
 		for (let i = 1; i < sorted.length; i++) {
 			const gap = (sorted[i].time - sorted[i - 1].time) / 1000;
-			if (gap <= TIMEOUT_GAP) total += gap;
+			total += Math.min(gap, TIMEOUT_GAP);
 		}
 		return total;
 	}
