@@ -54,6 +54,30 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		(p) => p.ships.some((s) => s.status === 'pending_hq')
 	);
 
+	const allProjects = [...projectsResult.projects, ...hqProjects];
+	const approvedShipIds = allProjects
+		.flatMap((p) => p.ships.filter((s) => s.status === 'approved').map((s) => s.id));
+
+	const approvalLogs = approvedShipIds.length > 0
+		? await db.auditLog.findMany({
+				where: {
+					programId: params.programId,
+					action: { in: ['review_approve', 'review_authorize'] },
+					entityType: 'ship',
+					entityId: { in: approvedShipIds }
+				},
+				orderBy: { createdAt: 'desc' },
+				select: { entityId: true, createdAt: true }
+			})
+		: [];
+
+	const shipApprovalDates: Record<string, string> = {};
+	for (const log of approvalLogs) {
+		if (log.entityId && !shipApprovalDates[log.entityId]) {
+			shipApprovalDates[log.entityId] = log.createdAt.toISOString();
+		}
+	}
+
 	// Sort by earliest pending ship submission date so longest-waiting projects
 	// appear first in the review queue.
 	const getPendingDate = (p: typeof projectsResult.projects[0], shipStatus: string) => {
@@ -108,6 +132,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		reviewLeaderboardAllTime,
 		reviewVolume,
 		totalReviewsThisWeek,
+		shipApprovalDates,
 		canAuthorize: membership.canAuthorizeReviews,
 		pendingApprovals: pendingApprovals.map((pa) => ({
 			id: pa.id,

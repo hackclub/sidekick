@@ -44,13 +44,34 @@
 		return value;
 	}
 
+	function getChangePeriod(project: typeof allExportableProjects[0]): { isUpdate: boolean; periodStart: string; periodEnd: string } {
+		const pendingShip = project.ships.find(s => s.status === 'pending' || s.status === 'pending_hq');
+		const approvedShips = project.ships
+			.filter(s => s.status === 'approved')
+			.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
+
+		if (approvedShips.length === 0 || !pendingShip) {
+			return { isUpdate: false, periodStart: '', periodEnd: '' };
+		}
+
+		const lastApproved = approvedShips[0];
+		const approvalDate = data.shipApprovalDates[lastApproved.id] ?? '';
+
+		return {
+			isUpdate: true,
+			periodStart: approvalDate,
+			periodEnd: pendingShip.submittedAt,
+		};
+	}
+
 	function buildProjectCsv(excluded: Set<string>): string {
-		const header = 'Project ID,Title,Author,Demo URL,Code URL,Status,Hours Submitted,Submitted At,Description';
+		const header = 'Project ID,Title,Author,Demo URL,Code URL,Status,Hours Submitted,Submitted At,Is Update,Change Period Start,Change Period End,Description';
 		const rows = [header];
 		for (const project of allExportableProjects) {
 			if (excluded.has(project.id)) continue;
 			const pendingShip = project.ships.find(s => s.status === 'pending' || s.status === 'pending_hq');
 			const actor = data.actors[project.authorId];
+			const change = getChangePeriod(project);
 			rows.push([
 				csvField(project.id),
 				csvField(project.title),
@@ -60,6 +81,9 @@
 				csvField(pendingShip?.status ?? 'pending'),
 				csvField(String(pendingShip?.hoursSubmitted ?? '')),
 				csvField(pendingShip?.submittedAt ?? ''),
+				csvField(change.isUpdate ? 'Yes' : 'No'),
+				csvField(change.periodStart),
+				csvField(change.periodEnd),
 				csvField(project.description),
 			].join(','));
 		}
