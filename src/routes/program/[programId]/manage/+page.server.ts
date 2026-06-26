@@ -484,6 +484,28 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
+	deleteProgram: async ({ params, locals }) => {
+		const user = locals.user;
+		if (!user) throw error(401);
+
+		await requirePermission(user.id, params.programId, 'isRoot', {
+			isSuperAdmin: user.isSuperAdmin
+		});
+
+		logger.warn('deleteProgram action', { programId: params.programId, userId: user.id });
+
+		// CheckResult and AuditLog reference the program without onDelete: Cascade,
+		// so they must be removed explicitly before the program itself. The remaining
+		// relations (memberships, invites, approvals, templates) cascade automatically.
+		await db.$transaction([
+			db.checkResult.deleteMany({ where: { programId: params.programId } }),
+			db.auditLog.deleteMany({ where: { programId: params.programId } }),
+			db.program.delete({ where: { id: params.programId } })
+		]);
+
+		return { success: true };
+	},
+
 	cancelInvite: async ({ request, params, locals }) => {
 		const user = locals.user;
 		if (!user) throw error(401);

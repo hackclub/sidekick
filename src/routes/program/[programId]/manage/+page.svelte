@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { invalidateAll } from '$app/navigation';
+	import { invalidateAll, goto } from '$app/navigation';
 	import {
+		AlertTriangle,
 		Users,
 		ChevronDown,
 		ChevronUp,
@@ -80,6 +81,28 @@
 	let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	const canManageMembers = $derived(data.currentMembership.isRoot);
+
+	let showDeleteModal = $state(false);
+	let deleteConfirmText = $state('');
+	let deletingProgram = $state(false);
+
+	async function deleteProgram() {
+		if (deleteConfirmText !== data.program.name)
+			return;
+
+		deletingProgram = true;
+		try {
+			const res = await fetch('?/deleteProgram', {
+				method: 'POST',
+				body: new FormData()
+			});
+			if (res.ok) {
+				await goto('/');
+			}
+		} finally {
+			deletingProgram = false;
+		}
+	}
 
 	function toggleMember(id: string) {
 		expandedMembers[id] = !expandedMembers[id];
@@ -1412,8 +1435,90 @@
 					{/each}
 				</div>
 			</ManageSection>
+
+			{#if data.currentMembership.isRoot}
+			<ManageSection title="Danger Zone" description="Irreversible and destructive actions.">
+				{#snippet icon()}<AlertTriangle size={16} class="text-check-fail" />{/snippet}
+				<div class="border border-check-fail/30 rounded-section p-6 flex items-center justify-between gap-4">
+					<div class="flex flex-col gap-0.5">
+						<span class="text-sm font-semibold text-text-primary">Delete this program</span>
+						<span class="text-xs text-text-tertiary">Permanently removes the program along with all of its members, templates, audit logs, and review data. This cannot be undone.</span>
+					</div>
+					<button
+						class="flex items-center gap-1.5 px-3 py-2 rounded-tag text-check-fail border border-check-fail/30 hover:bg-check-fail/5 transition-colors cursor-pointer text-sm font-medium shrink-0"
+						onclick={() => { deleteConfirmText = ''; showDeleteModal = true; }}
+					>
+						<Trash2 size={14} />
+						Delete program
+					</button>
+				</div>
+			</ManageSection>
+			{/if}
 		</div>
 </ManageLayout>
+
+{#if showDeleteModal}
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+	class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center"
+	onmousedown={(e) => { if (e.target === e.currentTarget && !deletingProgram) showDeleteModal = false; }}
+>
+	<div class="bg-page border border-border-card rounded-card shadow-xl w-[440px] max-w-[90vw] flex flex-col">
+		<div class="flex items-center justify-between px-5 py-4 border-b border-border-card">
+			<div class="flex items-center gap-2">
+				<AlertTriangle size={16} class="text-check-fail" />
+				<span class="font-bold text-[15px] text-text-primary tracking-[-0.4px]">Delete program</span>
+			</div>
+			<button
+				class="text-text-tertiary hover:text-text-primary cursor-pointer disabled:opacity-50"
+				onclick={() => showDeleteModal = false}
+				disabled={deletingProgram}
+			>
+				<X size={16} />
+			</button>
+		</div>
+		<div class="px-5 py-4 flex flex-col gap-3">
+			<p class="text-sm text-text-secondary leading-relaxed">
+				This will permanently delete <span class="font-semibold text-text-primary">{data.program.name}</span> along with all of its members, templates, audit logs, and review data. This action cannot be undone.
+			</p>
+			<div class="flex flex-col gap-1.5">
+				<label for="delete-confirm" class="text-xs font-medium text-text-secondary">
+					Type <span class="font-semibold text-text-primary">{data.program.name}</span> to confirm
+				</label>
+				<input
+					id="delete-confirm"
+					type="text"
+					bind:value={deleteConfirmText}
+					placeholder={data.program.name}
+					autocomplete="off"
+					class="w-full h-9 px-3 rounded-input border border-border-input text-sm text-text-input tracking-[-0.3px] placeholder:text-text-placeholder focus:outline-none focus:border-border-active transition-colors"
+				/>
+			</div>
+		</div>
+		<div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-border-card">
+			<button
+				class="px-3 py-1.5 text-sm font-medium text-text-dim hover:bg-surface rounded-tag cursor-pointer disabled:opacity-50"
+				onclick={() => showDeleteModal = false}
+				disabled={deletingProgram}
+			>
+				Cancel
+			</button>
+			<button
+				class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-check-fail text-white rounded-tag cursor-pointer hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+				disabled={deleteConfirmText !== data.program.name || deletingProgram}
+				onclick={deleteProgram}
+			>
+				{#if deletingProgram}
+					<Loader2 size={14} class="animate-spin" />
+				{:else}
+					<Trash2 size={14} />
+				{/if}
+				Delete program
+			</button>
+		</div>
+	</div>
+</div>
+{/if}
 
 {#if popupPos && merchantSearchOpen}
 <!-- svelte-ignore a11y_no_static_element_interactions -->
