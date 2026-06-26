@@ -567,11 +567,6 @@ export const actions: Actions = {
 		let result;
 		try {
 			result = await client.submitReviewAction(input);
-
-			// HQ users skip the pending_hq step — auto-authorize after approve
-			if (action === 'approve' && membership.canAuthorizeReviews) {
-				result = await client.submitReviewAction({ shipId, reviewerId, action: 'authorize' });
-			}
 		} catch (e) {
 			if (e instanceof ProtocolError) {
 				const parsed = JSON.parse(e.body).message ?? e.body;
