@@ -2,11 +2,35 @@ import { redirect } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient } from '$lib/server/protocol/client.js';
+import type { Project } from '$lib/server/protocol/types.js';
 import { resolveActorIds } from '$lib/server/actors.js';
 import { createLogger } from '$lib/server/logger.js';
 import type { PageServerLoad } from './$types.js';
 
 const log = createLogger('page:review-list');
+
+// Fetch every page of projects for a status. The review queue must surface all
+// pending projects — including the longest-waiting ones, which the upstream's
+// created_at-desc ordering pushes past the first page. The upstream caps `limit`
+// at 100, so a single large fetch is not enough once pending exceeds that.
+async function fetchAllProjects(
+	client: ProtocolClient,
+	status: 'pending' | 'pending_hq'
+): Promise<{ projects: Project[]; totalCount: number }> {
+	const projects: Project[] = [];
+	let cursor: string | undefined;
+	let totalCount = 0;
+
+	for (;;) {
+		const result = await client.fetchProjects({ status, cursor, limit: 100 });
+		projects.push(...result.projects);
+		totalCount = result.totalCount;
+		if (!result.nextCursor) break;
+		cursor = result.nextCursor;
+	}
+
+	return { projects, totalCount };
+}
 
 export const load: PageServerLoad = async ({ params, parent }) => {
 	const tLoad = log.time('load');
@@ -28,8 +52,8 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	const twelveWeeksAgo = new Date(now.getTime() - 12 * 7 * 86400000);
 
 	const [projectsResult, hqProjectsResult, statsResult, reviewLogs, pendingApprovals] = await Promise.all([
-		client.fetchProjects({ status: 'pending', limit: 50 }),
-		client.fetchProjects({ status: 'pending_hq', limit: 50 }),
+		fetchAllProjects(client, 'pending'),
+		fetchAllProjects(client, 'pending_hq'),
 		client.getProgramStats({}),
 		db.auditLog.findMany({
 			where: {
@@ -124,7 +148,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		projects: projectsResult.projects,
 		hqProjects,
 		actors: actorsObj,
-		nextCursor: projectsResult.nextCursor ?? null,
+		nextCursor: null,
 		totalCount: projectsResult.totalCount,
 		pendingCount: statsResult.pendingReviewCount,
 		pendingHqCount: statsResult.pendingHqCount ?? hqProjects.length,
