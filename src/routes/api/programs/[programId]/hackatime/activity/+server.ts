@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { requirePermission } from '$lib/server/rbac.js';
 import { getRawHeartbeatRange, tzDayBounds, dateInTimezone, type RawHeartbeat } from '$lib/server/integrations/hackatime.js';
+import { sumCappedGaps } from '$lib/server/integrations/hackatime-duration.js';
 import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
 
@@ -73,8 +74,6 @@ function generateSvgPaths(heartbeats: RawHeartbeat[]) {
 	};
 }
 
-const HEARTBEAT_TIMEOUT_S = 120;
-
 export const GET: RequestHandler = async ({ params, url, locals }) => {
 	const user = locals.user;
 	if (!user) throw error(401);
@@ -145,17 +144,13 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 	for (const [date, heartbeats] of dayBuckets) {
 		const sorted = heartbeats.sort((a, b) => a.time - b.time);
 
-		let totalSeconds = 0;
-		for (let i = 1; i < sorted.length; i++) {
-			const gap = sorted[i].time - sorted[i - 1].time;
-			totalSeconds += Math.min(gap, HEARTBEAT_TIMEOUT_S);
-		}
+		const totalSeconds = sumCappedGaps(sorted);
 
 		const { cursorPath, lineNoPath } = sorted.length > 0
 			? generateSvgPaths(sorted)
 			: { cursorPath: '', lineNoPath: '' };
 
-		days.push({ date, count: sorted.length, totalSeconds: Math.round(totalSeconds), lineNoPath, cursorPath });
+		days.push({ date, count: sorted.length, totalSeconds, lineNoPath, cursorPath });
 	}
 
 	days.sort((a, b) => a.date.localeCompare(b.date));

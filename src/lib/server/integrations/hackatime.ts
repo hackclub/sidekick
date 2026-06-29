@@ -1,5 +1,6 @@
 import { env } from '$env/dynamic/private';
 import { createLogger } from '../logger.js';
+import { aggregateByProject } from './hackatime-duration.js';
 
 const log = createLogger('hackatime');
 const BASE_URL = 'https://hackatime.hackclub.com';
@@ -311,19 +312,17 @@ export interface RawHeartbeat {
 	source_type: number | string;
 }
 
-const HEARTBEAT_TIMEOUT_S = 120;
-
-function durationFromHeartbeats(heartbeats: RawHeartbeat[]): number {
-	if (heartbeats.length === 0) return 0;
-	const sorted = [...heartbeats].sort((a, b) => a.time - b.time);
-	let total = 0;
-	for (let i = 1; i < sorted.length; i++) {
-		const gap = sorted[i].time - sorted[i - 1].time;
-		total += Math.min(gap, HEARTBEAT_TIMEOUT_S);
-	}
-	return Math.round(total);
-}
-
+/**
+ * Returns the number of seconds attributable to AI coding, computed as the
+ * delta between the full aggregate and the aggregate with `ai coding` heartbeats
+ * removed: `aggregate(all) - aggregate(excluding "ai coding")`.
+ *
+ * This matches how Hackatime would credit the remaining (non-AI) time 1:1, and
+ * is robust to interleaving: a stray AI heartbeat sitting between two human ones
+ * no longer fragments the human session, because removing it re-merges the gap
+ * (capped at the 2-minute timeout). The delta is always >= 0 since dropping
+ * interior heartbeats can only shrink the aggregate.
+ */
 export async function getAiCodingSeconds(
 	userId: string,
 	projectKeys: string[]
@@ -340,14 +339,19 @@ export async function getAiCodingSeconds(
 	const all = await getRawHeartbeatRange(userId, startS, endS);
 
 	const keySet = new Set(projectKeys.map((k) => k.toLowerCase()));
-	const aiHeartbeats = all.filter(
-		(hb) =>
-			keySet.has((hb.project ?? '').toLowerCase()) &&
-			(hb.category ?? '').toLowerCase() === 'ai coding'
-	);
+	const scoped = all.filter((hb) => keySet.has((hb.project ?? '').toLowerCase()));
 
-	const seconds = durationFromHeartbeats(aiHeartbeats);
-	log.debug('getAiCodingSeconds result', { userId, aiHeartbeatCount: aiHeartbeats.length, seconds });
+	const total = aggregateByProject(scoped);
+	const nonAi = aggregateByProject(scoped, { excludeCategories: ['ai coding'] });
+	const seconds = Math.max(0, total - nonAi);
+
+	log.debug('getAiCodingSeconds result', {
+		userId,
+		scopedHeartbeatCount: scoped.length,
+		total,
+		nonAi,
+		seconds
+	});
 	return seconds;
 }
 
