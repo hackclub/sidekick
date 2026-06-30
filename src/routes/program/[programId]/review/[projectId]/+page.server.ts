@@ -46,12 +46,19 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	]);
 	tProtocol.end();
 
-	const pendingShip = project.ships.find((s) => s.status === 'pending' || s.status === 'pending_hq');
+	// Ships are ordered oldest-first; target the *most recent* pending ship so a stale
+	// earlier submission (e.g. one whose verdict record is missing upstream) can never be
+	// surfaced for review ahead of the live one.
+	const pendingShip = project.ships.findLast((s) => s.status === 'pending' || s.status === 'pending_hq');
 
-	// Resolve author and all timeline actors in one batch
+	// Resolve author and all timeline actors in one batch. Some event types carry
+	// a second actor (who discarded/authorized the approval) that the upstream
+	// sends as a raw ID — resolve those too so their pills show a name + avatar.
 	const actorIds = new Set([project.authorId]);
 	for (const event of timeline.events) {
 		actorIds.add(event.actorId);
+		if (event.type === 'discarded_approval') actorIds.add(event.discardedByActorId);
+		if (event.type === 'authorized_approval') actorIds.add(event.authorizedByActorId);
 	}
 
 	const hackatimeUser = project.hackatimeId ?? project.authorId;
