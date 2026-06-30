@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Avatar from './Avatar.svelte';
 	import SlackIcon from '../icons/SlackIcon.svelte';
-	import { ShieldAlert, Clock, Mail, ArrowRight } from 'lucide-svelte';
+	import { ShieldAlert, Clock, Mail, ArrowRight, Eye } from 'lucide-svelte';
 	import type { TrustLog } from '$lib/server/integrations/hackatime.js';
 
 	interface Props {
@@ -38,6 +38,15 @@
 		}
 	}
 
+	// Joe identifies users by Hackatime ID first, falling back to Slack ID.
+	const joeId = $derived(hackatimeId ?? slackId);
+
+	function openJoe() {
+		if (joeId) {
+			window.open(`https://joe.fraud.hackclub.com/profile/${joeId}`, '_blank');
+		}
+	}
+
 	const trustColorClasses = $derived(
 		trustLevel === 'green'
 			? 'bg-check-pass text-white'
@@ -52,11 +61,16 @@
 
 	function trustPillClasses(level: string): string {
 		switch (level) {
-			case 'green': return 'bg-check-pass text-white';
-			case 'red': return 'bg-check-fail text-white';
-			case 'yellow': return 'bg-amber-400 text-black';
-			case 'blue': return 'bg-blue-500 text-white';
-			default: return 'bg-text-tertiary text-white';
+			case 'green':
+				return 'bg-check-pass text-white';
+			case 'red':
+				return 'bg-check-fail text-white';
+			case 'yellow':
+				return 'bg-amber-400 text-black';
+			case 'blue':
+				return 'bg-blue-500 text-white';
+			default:
+				return 'bg-text-tertiary text-white';
 		}
 	}
 
@@ -69,7 +83,9 @@
 	let pillEl: HTMLDivElement | undefined = $state();
 </script>
 
-<div class="@container border border-border-card rounded-card shadow-card p-8 flex flex-col gap-4 {className}">
+<div
+	class="@container border border-border-card rounded-card shadow-card p-8 flex flex-col gap-4 {className}"
+>
 	<div class="flex gap-2 items-center w-full">
 		<div class="flex flex-1 gap-2.5 items-center min-w-0">
 			<Avatar {name} url={avatarUrl} size="lg" />
@@ -80,6 +96,15 @@
 				{/if}
 			</div>
 		</div>
+		{#if joeId}
+			<button
+				class="size-8 shrink-0 rounded-tag border border-border-input flex items-center justify-center hover:bg-surface transition-colors cursor-pointer"
+				onclick={openJoe}
+				title="Open profile in Joe"
+			>
+				<Eye size={16} />
+			</button>
+		{/if}
 		{#if slackId}
 			<button
 				class="size-8 shrink-0 rounded-tag border border-border-input flex items-center justify-center hover:bg-surface transition-colors cursor-pointer"
@@ -109,14 +134,18 @@
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div
 					class="relative"
-					onmouseenter={() => { if (trustLogs.length > 0) showTooltip = true; }}
-					onmouseleave={() => showTooltip = false}
+					onmouseenter={() => {
+						if (trustLogs.length > 0) showTooltip = true;
+					}}
+					onmouseleave={() => (showTooltip = false)}
 				>
 					<div
 						bind:this={pillEl}
 						class="px-2.5 py-0.5 rounded-full text-xs font-medium tracking-[-0.3px] cursor-default select-none {trustColorClasses}"
 					>
-						{trustLevel}{#if trustLogs.length > 0}<span class="opacity-75 ml-1">({trustLogs.length})</span>{/if}
+						{trustLevel}{#if trustLogs.length > 0}<span class="opacity-75 ml-1"
+								>({trustLogs.length})</span
+							>{/if}
 					</div>
 
 					{#if showTooltip && trustLogs.length > 0}
@@ -126,12 +155,24 @@
 								{#each trustLogs.slice(0, 10) as log}
 									<div class="flex flex-col gap-2">
 										<div class="flex items-center gap-2">
-											<span class="px-2 py-0.5 rounded-full text-xs font-medium tracking-[-0.3px] leading-none {trustPillClasses(log.previousTrustLevel)}">{log.previousTrustLevel}</span>
+											<span
+												class="px-2 py-0.5 rounded-full text-xs font-medium tracking-[-0.3px] leading-none {trustPillClasses(
+													log.previousTrustLevel
+												)}">{log.previousTrustLevel}</span
+											>
 											<ArrowRight size={12} class="text-text-tertiary shrink-0" />
-											<span class="px-2 py-0.5 rounded-full text-xs font-medium tracking-[-0.3px] leading-none {trustPillClasses(log.newTrustLevel)}">{log.newTrustLevel}</span>
-											<span class="text-xs text-text-tertiary ml-auto shrink-0 leading-none">{formatLogDate(log.createdAt)}</span>
+											<span
+												class="px-2 py-0.5 rounded-full text-xs font-medium tracking-[-0.3px] leading-none {trustPillClasses(
+													log.newTrustLevel
+												)}">{log.newTrustLevel}</span
+											>
+											<span class="text-xs text-text-tertiary ml-auto shrink-0 leading-none"
+												>{formatLogDate(log.createdAt)}</span
+											>
 											{#if log.changedBy}
-												<span class="text-xs text-text-secondary shrink-0 leading-none">{log.changedBy}</span>
+												<span class="text-xs text-text-secondary shrink-0 leading-none"
+													>{log.changedBy}</span
+												>
 												<Avatar name={log.changedBy} url={log.changedByAvatarUrl} size="xs" />
 											{/if}
 										</div>
@@ -154,10 +195,15 @@
 					<span class="text-sm text-text-primary tracking-[-0.3px]">Slack ID</span>
 				</div>
 				<div class="flex gap-2 items-center min-w-0">
-					<span class="font-mono text-sm text-text-primary tracking-[-0.3px] truncate">{slackId}</span>
+					<span class="font-mono text-sm text-text-primary tracking-[-0.3px] truncate"
+						>{slackId}</span
+					>
 					{#if slackDeactivated}
 						<div class="flex gap-1.5 items-center shrink-0">
-							<span class="inline-block rounded-full shrink-0 bg-check-fail" style="width: 8px; height: 8px"></span>
+							<span
+								class="inline-block rounded-full shrink-0 bg-check-fail"
+								style="width: 8px; height: 8px"
+							></span>
 							<span class="text-sm tracking-[-0.3px] text-check-fail">deactivated</span>
 						</div>
 					{/if}
@@ -171,7 +217,9 @@
 					<Clock size={14} class="text-text-primary" />
 					<span class="text-sm text-text-primary tracking-[-0.3px]">Hackatime ID</span>
 				</div>
-				<span class="font-mono text-sm text-text-primary tracking-[-0.3px] truncate min-w-0">{hackatimeId}</span>
+				<span class="font-mono text-sm text-text-primary tracking-[-0.3px] truncate min-w-0"
+					>{hackatimeId}</span
+				>
 			</div>
 		{/if}
 
@@ -181,7 +229,9 @@
 					<Mail size={14} class="text-text-primary" />
 					<span class="text-sm text-text-primary tracking-[-0.3px]">Email</span>
 				</div>
-				<span class="font-mono text-sm text-text-primary tracking-[-0.3px] truncate min-w-0">{email}</span>
+				<span class="font-mono text-sm text-text-primary tracking-[-0.3px] truncate min-w-0"
+					>{email}</span
+				>
 			</div>
 		{/if}
 	</div>
