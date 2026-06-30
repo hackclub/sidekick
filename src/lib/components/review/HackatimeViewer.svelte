@@ -1,6 +1,18 @@
 <script lang="ts">
 	import { createLogger } from '$lib/logger.js';
-	import { Activity, LoaderCircle, FolderCode, ExternalLink, Check, ChartLine, PieChart } from 'lucide-svelte';
+	import {
+		Activity,
+		LoaderCircle,
+		FolderCode,
+		ExternalLink,
+		Check,
+		ChartLine,
+		PieChart,
+		Code,
+		Ship,
+		MessageSquare,
+		X
+	} from 'lucide-svelte';
 	import HeartbeatFrequencyBar from './HeartbeatFrequencyBar.svelte';
 	import HeartbeatScatter from './HeartbeatScatter.svelte';
 	import HeartbeatTable from './HeartbeatTable.svelte';
@@ -40,17 +52,47 @@
 		totalSeconds: number;
 	}
 
+	type MarkerType = 'commit' | 'approval' | 'rejection' | 'comment' | 'ship';
+
+	interface ReviewMarker {
+		type: MarkerType;
+		timestamp: string;
+		title: string;
+		subtitle?: string;
+		avatarUrl?: string;
+	}
+
 	interface Props {
 		hackatimeUser: string;
 		hackatimeProjectKeys: string[];
 		programId: string;
 		defaultDate?: string;
 		projectBreakdown?: ProjectBreakdown[];
+		markers?: ReviewMarker[];
 		authorTimezone?: string;
 		class?: string;
 	}
 
-	let { hackatimeUser, hackatimeProjectKeys, programId, defaultDate, projectBreakdown = [], authorTimezone = 'UTC', class: className = '' }: Props = $props();
+	let {
+		hackatimeUser,
+		hackatimeProjectKeys,
+		programId,
+		defaultDate,
+		projectBreakdown = [],
+		markers = [],
+		authorTimezone = 'UTC',
+		class: className = ''
+	}: Props = $props();
+
+	const MARKER_CONFIG: Record<MarkerType, { icon: typeof Check; label: string; color: string }> = {
+		ship: { icon: Ship, label: 'Ship', color: '#06b6d4' },
+		commit: { icon: Code, label: 'Commit', color: '#8b5cf6' },
+		approval: { icon: Check, label: 'Approval', color: '#22c55e' },
+		rejection: { icon: X, label: 'Rejection', color: '#ef4444' },
+		comment: { icon: MessageSquare, label: 'Comment', color: '#3b82f6' }
+	};
+
+	const MARKER_ORDER: MarkerType[] = ['ship', 'commit', 'approval', 'rejection', 'comment'];
 
 	const MAX_VISIBLE_PROJECTS = 4;
 
@@ -95,12 +137,10 @@
 
 	const detailTabs = [
 		{ id: 'graph', label: 'Graph', icon: ChartLine },
-		{ id: 'breakdown', label: 'Breakdown', icon: PieChart },
+		{ id: 'breakdown', label: 'Breakdown', icon: PieChart }
 	];
 
-	const effectiveProjectKeys = $derived(
-		selectedProject ? [selectedProject] : hackatimeProjectKeys
-	);
+	const effectiveProjectKeys = $derived(selectedProject ? [selectedProject] : hackatimeProjectKeys);
 
 	function monthKey(dateStr: string): string {
 		return dateStr.slice(0, 7);
@@ -108,16 +148,20 @@
 
 	function formatDateLabel(dateStr: string): string {
 		const d = new Date(dateStr + 'T12:00:00Z');
-		return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: authorTimezone });
+		return d.toLocaleDateString('en-US', {
+			weekday: 'short',
+			month: 'short',
+			day: 'numeric',
+			year: 'numeric',
+			timeZone: authorTimezone
+		});
 	}
 
 	function formatDuration(seconds: number): string {
-		if (seconds < 60)
-			return `${Math.round(seconds)}s`;
+		if (seconds < 60) return `${Math.round(seconds)}s`;
 
 		const m = Math.floor(seconds / 60);
-		if (m < 60)
-			return `${m}m`;
+		if (m < 60) return `${m}m`;
 
 		const h = Math.floor(m / 60);
 		const rm = m % 60;
@@ -172,8 +216,7 @@
 			activityCache[ym] = data.days;
 			log.debug('Activity data fetched', { ym, dayCount: data.days?.length ?? 0 });
 			return data.days;
-		}
-		catch (e) {
+		} catch (e) {
 			log.error('Failed to fetch activity data', { ym }, e);
 			return [];
 		}
@@ -181,7 +224,10 @@
 
 	async function loadOverview() {
 		overviewLoading = true;
-		log.info('Loading hackatime overview', { hackatimeUser, projectCount: hackatimeProjectKeys.length });
+		log.info('Loading hackatime overview', {
+			hackatimeUser,
+			projectCount: hackatimeProjectKeys.length
+		});
 		const t = log.time('loadOverview');
 		try {
 			const params = new URLSearchParams({
@@ -202,13 +248,11 @@
 					const endYm = monthKey(data.range.lastDate);
 					months = monthsBetween(startYm, endYm);
 					log.debug('Date range resolved', { startYm, endYm, monthCount: months.length });
-				}
-				else {
+				} else {
 					log.debug('No date range returned, using fallback months');
 					months = fallbackMonths();
 				}
-			}
-			catch (e) {
+			} catch (e) {
 				log.warn('Date range fetch failed, using fallback months', e);
 				months = fallbackMonths();
 			}
@@ -236,8 +280,7 @@
 
 			t.end('months loaded', months.length);
 			requestAnimationFrame(() => scrollToSelected());
-		}
-		finally {
+		} finally {
 			overviewLoading = false;
 		}
 	}
@@ -251,8 +294,7 @@
 	$effect(() => {
 		void hackatimeUser;
 		void effectiveProjectKeys;
-		if (!hackatimeUser || effectiveProjectKeys.length === 0)
-			return;
+		if (!hackatimeUser || effectiveProjectKeys.length === 0) return;
 
 		activityCache = {};
 		hasSelectedInitialDay = false;
@@ -281,7 +323,11 @@
 			const ym = monthKey(day.date);
 			if (ym !== curYm) {
 				const [y, m] = ym.split('-').map(Number);
-				const label = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: authorTimezone });
+				const label = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-US', {
+					month: 'short',
+					year: 'numeric',
+					timeZone: authorTimezone
+				});
 				groups.push({ ym, label, startIdx: idx, days: [] });
 				curYm = ym;
 			}
@@ -298,13 +344,89 @@
 		currentDate = date;
 	}
 
+	interface MarkerGroup {
+		type: MarkerType;
+		items: ReviewMarker[];
+	}
+
+	function markerDate(iso: string): string {
+		return new Date(iso).toLocaleDateString('sv-SE', { timeZone: authorTimezone });
+	}
+
+	// Batches each marker onto an active Hackatime day. Commits attach to the latest
+	// active day on or BEFORE the commit (that's when the work happened — a commit
+	// can't belong to a day after it). Other events attach to the earliest active day
+	// on or after them, so review actions between active days roll onto the next one.
+	const dayMarkers = $derived.by(() => {
+		const result: Record<string, MarkerGroup[]> = {};
+		if (!allActiveDays.length || markers.length === 0) return result;
+
+		const ascDates = allActiveDays.map((d) => d.date).sort();
+		const firstDate = ascDates[0];
+		const lastDate = ascDates[ascDates.length - 1];
+		const byDate: Record<string, Record<string, ReviewMarker[]>> = {};
+
+		for (const m of markers) {
+			const mDate = markerDate(m.timestamp);
+			const target =
+				m.type === 'commit'
+					? (ascDates.findLast((d) => d <= mDate) ?? firstDate)
+					: (ascDates.find((d) => d >= mDate) ?? lastDate);
+			byDate[target] ??= {};
+			(byDate[target][m.type] ??= []).push(m);
+		}
+
+		for (const [date, groups] of Object.entries(byDate)) {
+			result[date] = MARKER_ORDER.filter((type) => groups[type]?.length).map((type) => ({
+				type,
+				items: groups[type].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+			}));
+		}
+
+		return result;
+	});
+
+	let markerTooltip = $state<{ x: number; y: number; group: MarkerGroup } | null>(null);
+	let markerHideTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function formatMarkerTime(iso: string): string {
+		return new Date(iso).toLocaleString('en-US', {
+			month: 'short',
+			day: 'numeric',
+			hour: 'numeric',
+			minute: '2-digit',
+			timeZone: authorTimezone
+		});
+	}
+
+	function showMarkerTooltip(e: MouseEvent, group: MarkerGroup) {
+		if (markerHideTimer) {
+			clearTimeout(markerHideTimer);
+			markerHideTimer = null;
+		}
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		markerTooltip = { x: rect.left + rect.width / 2, y: rect.top, group };
+		ensureCommitGaps(group);
+	}
+
+	function scheduleHideMarker() {
+		markerHideTimer = setTimeout(() => {
+			markerTooltip = null;
+		}, 150);
+	}
+
+	function cancelHideMarker() {
+		if (markerHideTimer) {
+			clearTimeout(markerHideTimer);
+			markerHideTimer = null;
+		}
+	}
+
 	function scrollToSelected() {
-		if (!scrollContainer)
-			return;
+		if (!scrollContainer) return;
 
 		const el = scrollContainer.querySelector('[data-selected="true"]') as HTMLElement | null;
-		if (!el)
-			return;
+		if (!el) return;
 
 		const left = el.offsetLeft - scrollContainer.offsetWidth / 2 + el.offsetWidth / 2;
 		scrollContainer.scrollTo({ left, behavior: 'smooth' });
@@ -314,24 +436,30 @@
 		const date = currentDate;
 		const user = hackatimeUser;
 		const keys = effectiveProjectKeys;
-		if (!user || keys.length === 0)
-			return;
+		if (!user || keys.length === 0) return;
 
 		loading = true;
 		error = null;
 
 		log.debug('Fetching heartbeats', { date, user });
 		const t = log.time(`fetchHeartbeats:${date}`);
-		const params = new URLSearchParams({ userId: user, projects: keys.join(','), date, tz: authorTimezone });
+		const params = new URLSearchParams({
+			userId: user,
+			projects: keys.join(','),
+			date,
+			tz: authorTimezone
+		});
 
 		fetch(`/api/programs/${programId}/hackatime/heartbeats?${params}`)
 			.then(async (res) => {
-				if (!res.ok)
-					throw new Error(`HTTP ${res.status}`);
+				if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
 				const data = await res.json();
 				if (date !== currentDate) {
-					log.debug('Heartbeat response discarded (date changed)', { requestedDate: date, currentDate });
+					log.debug('Heartbeat response discarded (date changed)', {
+						requestedDate: date,
+						currentDate
+					});
 					return;
 				}
 
@@ -340,7 +468,10 @@
 			})
 			.catch((e) => {
 				if (date !== currentDate) {
-					log.debug('Heartbeat error discarded (date changed)', { requestedDate: date, currentDate });
+					log.debug('Heartbeat error discarded (date changed)', {
+						requestedDate: date,
+						currentDate
+					});
 					return;
 				}
 
@@ -349,15 +480,16 @@
 				log.error('Failed to fetch heartbeats', { date }, e);
 			})
 			.finally(() => {
-				if (date !== currentDate)
-					return;
+				if (date !== currentDate) return;
 
 				loading = false;
 			});
 	});
 
 	const codingHeartbeats = $derived(
-		heartbeats?.filter((hb) => hb.editor !== 'lapse' && !hb.user_agent.toLowerCase().includes('lapse')) ?? null
+		heartbeats?.filter(
+			(hb) => hb.editor !== 'lapse' && !hb.user_agent.toLowerCase().includes('lapse')
+		) ?? null
 	);
 
 	const dayProjectKeys = $derived.by(() => {
@@ -399,7 +531,7 @@
 				projects: effectiveProjectKeys.join(','),
 				date: firstDate,
 				endDate: lastDate,
-				tz: authorTimezone,
+				tz: authorTimezone
 			});
 			const res = await fetch(`/api/programs/${programId}/hackatime/heartbeats?${params}`);
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -425,12 +557,102 @@
 	});
 
 	const allCodingHeartbeats = $derived(
-		allHeartbeats?.filter((hb) => hb.editor !== 'lapse' && !hb.user_agent.toLowerCase().includes('lapse')) ?? null
+		allHeartbeats?.filter(
+			(hb) => hb.editor !== 'lapse' && !hb.user_agent.toLowerCase().includes('lapse')
+		) ?? null
 	);
 
 	const breakdownHeartbeats = $derived(
 		breakdownScope === 'all' ? allCodingHeartbeats : codingHeartbeats
 	);
+
+	// Gap (seconds) from each commit to its nearest heartbeat, keyed by commit
+	// timestamp. Populated lazily per tooltip — see ensureCommitGaps. Infinity means
+	// no heartbeat within the searched window (effectively ">1d").
+	let commitGaps = $state<Record<string, number>>({});
+	let commitGapsLoading = $state<Record<string, boolean>>({});
+
+	function dayString(ms: number): string {
+		return new Date(ms).toLocaleDateString('sv-SE', { timeZone: authorTimezone });
+	}
+
+	function nearestGapSeconds(sortedTimesMs: number[], t: number): number {
+		if (sortedTimesMs.length === 0) return Infinity;
+
+		let lo = 0;
+		let hi = sortedTimesMs.length - 1;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if (sortedTimesMs[mid] < t) lo = mid + 1;
+			else hi = mid;
+		}
+
+		let best = Math.abs(sortedTimesMs[lo] - t);
+		if (lo > 0) best = Math.min(best, Math.abs(sortedTimesMs[lo - 1] - t));
+		return best / 1000;
+	}
+
+	// Fetches heartbeats in a bounded window around a commit group and computes each
+	// commit's nearest-heartbeat gap. Scoped to the group's date span (±2 days) rather
+	// than the whole project history — the full range exceeds the heartbeat fetch cap
+	// (100k, oldest-first), which would silently drop recent heartbeats and report
+	// every recent commit as a bogus ~400-day gap.
+	async function ensureCommitGaps(group: MarkerGroup) {
+		if (group.type !== 'commit') return;
+
+		const pending = group.items.filter(
+			(it) => commitGaps[it.timestamp] === undefined && !commitGapsLoading[it.timestamp]
+		);
+		if (pending.length === 0) return;
+
+		const loadingNext = { ...commitGapsLoading };
+		for (const it of pending) loadingNext[it.timestamp] = true;
+		commitGapsLoading = loadingNext;
+
+		const PAD_MS = 2 * 86400000;
+		const times = pending.map((it) => new Date(it.timestamp).getTime());
+		const params = new URLSearchParams({
+			userId: hackatimeUser,
+			projects: effectiveProjectKeys.join(','),
+			date: dayString(Math.min(...times) - PAD_MS),
+			endDate: dayString(Math.max(...times) + PAD_MS),
+			tz: authorTimezone
+		});
+
+		try {
+			const res = await fetch(`/api/programs/${programId}/hackatime/heartbeats?${params}`);
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			const data = await res.json();
+			const hbTimes = (data.heartbeats as HeartbeatRow[])
+				.filter((hb) => hb.editor !== 'lapse' && !hb.user_agent.toLowerCase().includes('lapse'))
+				.map((hb) => hb.time)
+				.sort((a, b) => a - b);
+
+			const gapsNext = { ...commitGaps };
+			for (const it of pending) {
+				gapsNext[it.timestamp] = nearestGapSeconds(hbTimes, new Date(it.timestamp).getTime());
+			}
+			commitGaps = gapsNext;
+		} catch (e) {
+			log.error('Failed to fetch commit-window heartbeats', {}, e);
+		} finally {
+			const doneNext = { ...commitGapsLoading };
+			for (const it of pending) delete doneNext[it.timestamp];
+			commitGapsLoading = doneNext;
+		}
+	}
+
+	// Green (just-committed, near a heartbeat) → red (a day or more away).
+	function gapColor(seconds: number): string {
+		const frac = Math.min(seconds / 86400, 1);
+		const hue = (1 - frac) * 130;
+		return `hsl(${hue}, 65%, 42%)`;
+	}
+
+	// Caps at a day — beyond that the exact distance doesn't matter, it's just "far".
+	function formatGap(seconds: number): string {
+		return seconds >= 86400 ? '>1d' : formatDuration(seconds);
+	}
 
 	function handleFocusChange(timestamp: number) {
 		focusedTimestamp = timestamp;
@@ -443,26 +665,38 @@
 	}
 
 	function showOverflowTooltip(e: MouseEvent) {
-		if (overflowHideTimer) { clearTimeout(overflowHideTimer); overflowHideTimer = null; }
+		if (overflowHideTimer) {
+			clearTimeout(overflowHideTimer);
+			overflowHideTimer = null;
+		}
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		overflowTooltip = { x: rect.left + rect.width / 2, y: rect.top };
 	}
 
 	function scheduleHideOverflow() {
-		overflowHideTimer = setTimeout(() => { overflowTooltip = null; }, 150);
+		overflowHideTimer = setTimeout(() => {
+			overflowTooltip = null;
+		}, 150);
 	}
 
 	function cancelHideOverflow() {
-		if (overflowHideTimer) { clearTimeout(overflowHideTimer); overflowHideTimer = null; }
+		if (overflowHideTimer) {
+			clearTimeout(overflowHideTimer);
+			overflowHideTimer = null;
+		}
 	}
 </script>
 
-<div class="border border-border-card rounded-card shadow-card overflow-hidden flex flex-col {className}">
+<div
+	class="border border-border-card rounded-card shadow-card overflow-hidden flex flex-col {className}"
+>
 	<div class="flex items-center px-6 py-4 border-b border-border-card">
 		<div class="flex items-center gap-2.5">
 			<Activity size={18} class="text-text-secondary" />
 			<div class="flex flex-col gap-0.5">
-				<h2 class="font-bold text-[15px] text-text-primary tracking-[-0.45px]">Hackatime Details</h2>
+				<h2 class="font-bold text-[15px] text-text-primary tracking-[-0.45px]">
+					Hackatime Details
+				</h2>
 				<p class="text-[12px] text-text-secondary tracking-[-0.24px] flex items-center gap-1.5">
 					{#if codingHeartbeats}
 						{codingHeartbeats.length} heartbeat{codingHeartbeats.length === 1 ? '' : 's'}
@@ -475,10 +709,11 @@
 				</p>
 			</div>
 		</div>
-
 	</div>
 
-	<div class="flex items-center justify-between px-6 py-2.5 border-b border-border-card bg-surface/30">
+	<div
+		class="flex items-center justify-between px-6 py-2.5 border-b border-border-card bg-surface/30"
+	>
 		<div class="flex items-center gap-2 min-w-0">
 			<FolderCode size={14} class="text-text-tertiary shrink-0" />
 			<span class="text-[12px] text-text-tertiary shrink-0">Projects:</span>
@@ -487,11 +722,16 @@
 					<button
 						class="text-[12px] font-medium rounded-tag px-2 py-0.5 truncate cursor-pointer transition-colors
 							{selectedProject === proj.name
-								? 'text-accent bg-accent-bg border border-accent'
-								: 'text-text-primary bg-page border border-border-card hover:border-accent/50'}"
+							? 'text-accent bg-accent-bg border border-accent'
+							: 'text-text-primary bg-page border border-border-card hover:border-accent/50'}"
 						onclick={() => selectProject(proj.name)}
 					>
-						{proj.name} <span class="{selectedProject === proj.name ? 'text-accent/70' : 'text-text-tertiary'} font-normal">{formatHours(proj.totalSeconds)}</span>
+						{proj.name}
+						<span
+							class="{selectedProject === proj.name
+								? 'text-accent/70'
+								: 'text-text-tertiary'} font-normal">{formatHours(proj.totalSeconds)}</span
+						>
 					</button>
 				{/each}
 				{#if overflowProjects.length > 0}
@@ -499,8 +739,8 @@
 					<span
 						class="overflow-pill text-[12px] font-medium rounded-tag px-2 py-0.5 cursor-default
 							{overflowProjects.some((p) => p.name === selectedProject)
-								? 'text-accent bg-accent-bg border border-accent'
-								: 'text-text-secondary bg-page border border-border-card'}"
+							? 'text-accent bg-accent-bg border border-accent'
+							: 'text-text-secondary bg-page border border-border-card'}"
 						onmouseenter={showOverflowTooltip}
 						onmouseleave={scheduleHideOverflow}
 					>
@@ -510,7 +750,9 @@
 			</div>
 		</div>
 		<button
-			class="flex items-center gap-1 text-[11px] px-2 py-1 rounded-tag cursor-pointer transition-colors shrink-0 ml-4 {joeCopied ? 'bg-check-pass/10 text-check-pass border border-check-pass/30' : 'bg-page border border-border-card text-text-secondary hover:text-text-primary'}"
+			class="flex items-center gap-1 text-[11px] px-2 py-1 rounded-tag cursor-pointer transition-colors shrink-0 ml-4 {joeCopied
+				? 'bg-check-pass/10 text-check-pass border border-check-pass/30'
+				: 'bg-page border border-border-card text-text-secondary hover:text-text-primary'}"
 			onclick={copyJoeLink}
 		>
 			{#if joeCopied}
@@ -529,32 +771,75 @@
 				<div class="flex px-4 py-3 gap-0" style="min-width: max-content;">
 					{#each monthGroups as group (group.ym)}
 						<div class="flex flex-col shrink-0">
-							<div class="text-[10px] font-bold text-text-tertiary uppercase tracking-wide px-1 pb-1.5 sticky left-0">
+							<div
+								class="text-[10px] font-bold text-text-tertiary uppercase tracking-wide px-1 pb-1.5 sticky left-0"
+							>
 								{group.label}
 							</div>
 							<div class="flex gap-1.5">
 								{#each group.days as day (day.date)}
-									<button
-										class="flex flex-col gap-0.5 rounded-section p-1 cursor-pointer transition-all border w-[140px] shrink-0
+									<div class="relative shrink-0">
+										<button
+											class="flex flex-col gap-0.5 rounded-section p-1 cursor-pointer transition-all border w-[140px] shrink-0
 											{day.date === currentDate
 												? 'border-accent bg-accent-bg ring-1 ring-accent'
 												: 'border-transparent hover:border-border-card hover:bg-surface/50'}"
-										data-selected={day.date === currentDate}
-										onclick={() => selectDay(day.date)}
-									>
-										<svg viewBox="0 0 400 100" class="w-full aspect-[4/1] bg-surface rounded-tag">
-											<path d={day.lineNoPath} stroke="#06b6d4" stroke-width="10" stroke-linecap="round" fill="none" />
-											<path d={day.cursorPath} stroke="#e33062" stroke-width="10" stroke-linecap="round" fill="none" />
-										</svg>
-										<div class="flex items-center justify-between px-0.5">
-											<span class="text-[10px] text-text-secondary">
-												{new Date(day.date + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: authorTimezone })}
-											</span>
-											<span class="text-[10px] font-mono text-text-tertiary">
-												{formatDuration(day.totalSeconds)}
-											</span>
-										</div>
-									</button>
+											data-selected={day.date === currentDate}
+											onclick={() => selectDay(day.date)}
+										>
+											<svg viewBox="0 0 400 100" class="w-full aspect-[4/1] bg-surface rounded-tag">
+												<path
+													d={day.lineNoPath}
+													stroke="#06b6d4"
+													stroke-width="10"
+													stroke-linecap="round"
+													fill="none"
+												/>
+												<path
+													d={day.cursorPath}
+													stroke="#e33062"
+													stroke-width="10"
+													stroke-linecap="round"
+													fill="none"
+												/>
+											</svg>
+											<div class="flex items-center justify-between px-0.5">
+												<span class="text-[10px] text-text-secondary">
+													{new Date(day.date + 'T12:00:00Z').toLocaleDateString('en-US', {
+														month: 'short',
+														day: 'numeric',
+														timeZone: authorTimezone
+													})}
+												</span>
+												<span class="text-[10px] font-mono text-text-tertiary">
+													{formatDuration(day.totalSeconds)}
+												</span>
+											</div>
+										</button>
+										{#if dayMarkers[day.date]}
+											<div
+												class="absolute left-1/2 -translate-x-1/2 -top-1.5 z-10 flex items-center gap-0.5"
+											>
+												{#each dayMarkers[day.date] as group (group.type)}
+													{@const Icon = MARKER_CONFIG[group.type].icon}
+													<!-- svelte-ignore a11y_no_static_element_interactions -->
+													<div
+														class="flex items-center gap-1 rounded-full h-3.5 px-1.5 shadow-sm cursor-default ring-1 ring-page/40"
+														style="background-color: {MARKER_CONFIG[group.type].color}"
+														onmouseenter={(e) => showMarkerTooltip(e, group)}
+														onmouseleave={scheduleHideMarker}
+													>
+														<Icon size={9} color="white" strokeWidth={2.5} />
+														{#if group.items.length > 1}
+															<span class="text-[8px] font-bold text-white leading-none"
+																>{group.items.length}</span
+															>
+														{/if}
+													</div>
+												{/each}
+											</div>
+										{/if}
+									</div>
 								{/each}
 							</div>
 						</div>
@@ -584,7 +869,9 @@
 
 	{#if error}
 		<div class="px-6 py-8">
-			<div class="border border-check-fail/30 bg-check-fail/5 rounded-section px-4 py-3 text-sm text-check-fail">
+			<div
+				class="border border-check-fail/30 bg-check-fail/5 rounded-section px-4 py-3 text-sm text-check-fail"
+			>
 				Failed to load heartbeats: {error}
 			</div>
 		</div>
@@ -621,8 +908,8 @@
 				<button
 					class="text-[12px] font-medium rounded-tag px-2.5 py-1 cursor-pointer transition-colors
 						{breakdownScope === 'day'
-							? 'text-accent bg-accent-bg border border-accent'
-							: 'text-text-secondary bg-page border border-border-card hover:border-accent/50'}"
+						? 'text-accent bg-accent-bg border border-accent'
+						: 'text-text-secondary bg-page border border-border-card hover:border-accent/50'}"
 					onclick={() => (breakdownScope = 'day')}
 				>
 					Selected day
@@ -630,8 +917,8 @@
 				<button
 					class="text-[12px] font-medium rounded-tag px-2.5 py-1 cursor-pointer transition-colors
 						{breakdownScope === 'all'
-							? 'text-accent bg-accent-bg border border-accent'
-							: 'text-text-secondary bg-page border border-border-card hover:border-accent/50'}"
+						? 'text-accent bg-accent-bg border border-accent'
+						: 'text-text-secondary bg-page border border-border-card hover:border-accent/50'}"
 					onclick={() => (breakdownScope = 'all')}
 				>
 					All time
@@ -673,18 +960,110 @@
 		{#each overflowProjects as proj (proj.name)}
 			<button
 				class="whitespace-nowrap text-[12px] text-left cursor-pointer rounded px-1 py-0.5 transition-colors
-					{selectedProject === proj.name
-						? 'text-accent font-medium'
-						: 'text-text-primary hover:text-accent'}"
+					{selectedProject === proj.name ? 'text-accent font-medium' : 'text-text-primary hover:text-accent'}"
 				onclick={() => selectProject(proj.name)}
 			>
-				{proj.name} <span class="{selectedProject === proj.name ? 'text-accent/70' : 'text-text-tertiary'}">{formatHours(proj.totalSeconds)}</span>
+				{proj.name}
+				<span class={selectedProject === proj.name ? 'text-accent/70' : 'text-text-tertiary'}
+					>{formatHours(proj.totalSeconds)}</span
+				>
 			</button>
 		{/each}
 	</div>
 {/if}
 
+{#if markerTooltip}
+	{@const cfg = MARKER_CONFIG[markerTooltip.group.type]}
+	{@const TipIcon = cfg.icon}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="marker-tooltip"
+		style="left: {markerTooltip.x}px; top: {markerTooltip.y}px;"
+		onmouseenter={cancelHideMarker}
+		onmouseleave={scheduleHideMarker}
+	>
+		<div class="flex items-center gap-1.5 pb-1.5 mb-1 border-b border-border-card">
+			<span
+				class="flex items-center justify-center rounded-full w-4 h-4 shrink-0"
+				style="background-color: {cfg.color}"
+			>
+				<TipIcon size={10} color="white" strokeWidth={2.5} />
+			</span>
+			<span class="text-[12px] font-semibold text-text-primary">
+				{markerTooltip.group.items.length}
+				{cfg.label.toLowerCase()}{markerTooltip.group.items.length === 1 ? '' : 's'}
+			</span>
+		</div>
+		<div class="flex flex-col gap-1.5 max-h-64 overflow-y-auto scrollbar-thin">
+			{#each markerTooltip.group.items as item, i (i)}
+				{#if markerTooltip.group.type === 'commit'}
+					{@const gap = commitGaps[item.timestamp]}
+					<div class="flex flex-col gap-1">
+						<span class="text-[12px] text-text-primary leading-snug line-clamp-2">{item.title}</span
+						>
+						<div class="flex items-center justify-between gap-2">
+							<div class="flex items-center gap-1.5 min-w-0">
+								{#if item.avatarUrl}
+									<img
+										src={item.avatarUrl}
+										alt=""
+										class="w-3.5 h-3.5 rounded-full shrink-0 object-cover"
+									/>
+								{/if}
+								<span class="text-[11px] text-text-secondary truncate">{item.subtitle}</span>
+							</div>
+							{#if gap === undefined}
+								<span class="text-[10px] text-text-tertiary shrink-0">checking…</span>
+							{:else}
+								<span
+									class="text-[10px] font-semibold text-white rounded-full px-1.5 py-0.5 leading-none shrink-0"
+									style="background-color: {gapColor(gap)}"
+								>
+									{formatGap(gap)}
+								</span>
+							{/if}
+						</div>
+					</div>
+				{:else}
+					<div class="flex flex-col gap-0.5">
+						<div class="flex items-center gap-1.5 min-w-0">
+							{#if item.avatarUrl}
+								<img
+									src={item.avatarUrl}
+									alt=""
+									class="w-3.5 h-3.5 rounded-full shrink-0 object-cover"
+								/>
+							{/if}
+							<span class="text-[12px] text-text-primary leading-snug truncate">{item.title}</span>
+						</div>
+						{#if item.subtitle}
+							<span class="text-[11px] text-text-secondary leading-snug line-clamp-2"
+								>{item.subtitle}</span
+							>
+						{/if}
+						<span class="text-[10px] text-text-tertiary font-mono"
+							>{formatMarkerTime(item.timestamp)}</span
+						>
+					</div>
+				{/if}
+			{/each}
+		</div>
+	</div>
+{/if}
+
 <style>
+	.marker-tooltip {
+		position: fixed;
+		transform: translate(-50%, calc(-100% - 8px));
+		width: 240px;
+		background: var(--color-page, #fff);
+		border: 1px solid var(--color-border-card);
+		border-radius: 8px;
+		padding: 8px 10px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+		z-index: 50;
+	}
+
 	.overflow-tooltip {
 		position: fixed;
 		transform: translate(-50%, calc(-100% - 6px));

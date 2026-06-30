@@ -43,10 +43,103 @@
 	let github = $state<Awaited<typeof data.githubData> | null>(null);
 	let lapse = $state<Awaited<typeof data.lapseData> | null>(null);
 
-	$effect(() => { hackatime = null; data.hackatimeData.then((v) => { hackatime = v; }); });
-	$effect(() => { airtable = null; data.airtableData.then((v) => { airtable = v; }); });
-	$effect(() => { github = null; data.githubData.then((v) => { github = v; }); });
-	$effect(() => { lapse = null; data.lapseData.then((v) => { lapse = v; }); });
+	$effect(() => {
+		hackatime = null;
+		data.hackatimeData.then((v) => {
+			hackatime = v;
+		});
+	});
+	$effect(() => {
+		airtable = null;
+		data.airtableData.then((v) => {
+			airtable = v;
+		});
+	});
+	$effect(() => {
+		github = null;
+		data.githubData.then((v) => {
+			github = v;
+		});
+	});
+	$effect(() => {
+		lapse = null;
+		data.lapseData.then((v) => {
+			lapse = v;
+		});
+	});
+
+	// Hours come through as raw floats (e.g. 35.71222…) — show at most 2 decimals,
+	// dropping any trailing zeros so whole hours render without a decimal point.
+	function fmtHrs(hours: number): string {
+		return `${Math.round(hours * 100) / 100}`;
+	}
+
+	type ReviewMarker = {
+		type: 'commit' | 'approval' | 'rejection' | 'comment' | 'ship';
+		timestamp: string;
+		title: string;
+		subtitle?: string;
+		avatarUrl?: string;
+	};
+
+	const reviewMarkers = $derived.by<ReviewMarker[]>(() => {
+		const out: ReviewMarker[] = [];
+
+		for (const e of data.timeline) {
+			const actor = data.actors[e.actorId];
+			const name = actor?.name ?? 'Unknown';
+			const avatarUrl = actor?.avatarUrl ?? undefined;
+			if (e.type === 'ship') {
+				out.push({
+					type: 'ship',
+					timestamp: e.timestamp,
+					title: `${name} shipped`,
+					subtitle: `${fmtHrs(e.hoursSubmitted)}h submitted`,
+					avatarUrl
+				});
+			} else if (
+				e.type === 'approval' ||
+				e.type === 'authorized_approval' ||
+				e.type === 'pending_approval'
+			) {
+				out.push({
+					type: 'approval',
+					timestamp: e.timestamp,
+					title: `${name} approved for ${fmtHrs(e.hoursAssigned)}h`,
+					subtitle: e.feedbackMessage || undefined,
+					avatarUrl
+				});
+			} else if (e.type === 'rejection') {
+				out.push({
+					type: 'rejection',
+					timestamp: e.timestamp,
+					title: `${name} rejected`,
+					subtitle: e.feedbackMessage || undefined,
+					avatarUrl
+				});
+			} else if (e.type === 'comment') {
+				out.push({
+					type: 'comment',
+					timestamp: e.timestamp,
+					title: `${name} commented`,
+					subtitle: e.message,
+					avatarUrl
+				});
+			}
+		}
+
+		for (const c of github?.githubCommits ?? []) {
+			out.push({
+				type: 'commit',
+				timestamp: c.date,
+				title: c.message.split('\n')[0],
+				subtitle: c.author,
+				avatarUrl: c.authorAvatarUrl ?? undefined
+			});
+		}
+
+		return out;
+	});
 
 	let polledChecks = $state<typeof data.checks | null>(null);
 	const checks = $derived(polledChecks ?? data.checks);
@@ -54,16 +147,14 @@
 	$effect(() => {
 		const shipId = data.checkShipId;
 		const programId = data.program.id;
-		if (!shipId)
-			return;
+		if (!shipId) return;
 
 		let active = true;
 		let pollCount = 0;
 		log.info('Starting check polling', { shipId, programId });
 
 		const poll = async () => {
-			if (!active)
-				return;
+			if (!active) return;
 			pollCount++;
 			try {
 				const res = await fetch(`/api/programs/${programId}/checks/${shipId}`);
@@ -75,7 +166,11 @@
 				if (result.checks.length > 0) {
 					polledChecks = result.checks;
 				}
-				log.trace('Check poll result', { pollCount, allCompleted: result.allCompleted, checkCount: result.checks?.length });
+				log.trace('Check poll result', {
+					pollCount,
+					allCompleted: result.allCompleted,
+					checkCount: result.checks?.length
+				});
 				if (result.allCompleted) {
 					log.info('All checks completed', { pollCount });
 					active = false;
@@ -101,12 +196,11 @@
 
 	const changelogContext = $derived.by(() => {
 		const ships = data.project.ships;
-		if (ships.length < 2 || !data.pendingShip || !data.project.codeUrl)
-			return null;
+		if (ships.length < 2 || !data.pendingShip || !data.project.codeUrl) return null;
 		const pendingIdx = ships.findIndex((s) => s.id === data.pendingShip!.id);
-		const prevShip = pendingIdx > 0 ? ships[pendingIdx - 1] : ships.length >= 2 ? ships[ships.length - 2] : null;
-		if (!prevShip)
-			return null;
+		const prevShip =
+			pendingIdx > 0 ? ships[pendingIdx - 1] : ships.length >= 2 ? ships[ships.length - 2] : null;
+		if (!prevShip) return null;
 
 		const dayMs = 86400000;
 		const sinceDate = new Date(new Date(prevShip.submittedAt).getTime() - dayMs).toISOString();
@@ -124,8 +218,7 @@
 
 	const overviewContext = $derived.by(() => {
 		const ships = data.project.ships;
-		if (ships.length >= 2 || !data.pendingShip || !data.project.codeUrl)
-			return null;
+		if (ships.length >= 2 || !data.pendingShip || !data.project.codeUrl) return null;
 		return {
 			programId: data.program.id,
 			repoUrl: data.project.codeUrl,
@@ -146,8 +239,7 @@
 	});
 
 	const shippedDeltaHours = $derived.by(() => {
-		if (!data.pendingShip)
-			return undefined;
+		if (!data.pendingShip) return undefined;
 		const ships = data.project.ships;
 		const lastApprovedCumulative = ships
 			.filter((s) => s.id !== data.pendingShip!.id && s.status === 'approved')
@@ -156,18 +248,21 @@
 	});
 
 	const externalPreviousHours = $derived.by(() => {
-		if (!airtable?.airtableRecords)
-			return 0;
+		if (!airtable?.airtableRecords) return 0;
 		const normYsws = normalizeForCompare(data.programYswsName);
 		return airtable.airtableRecords
-			.filter((r) => (showFuzzyAirtable || r.isExact) && r.hours > 0 && normalizeForCompare(r.id.split('–')[0]?.trim() || r.id) !== normYsws)
+			.filter(
+				(r) =>
+					(showFuzzyAirtable || r.isExact) &&
+					r.hours > 0 &&
+					normalizeForCompare(r.id.split('–')[0]?.trim() || r.id) !== normYsws
+			)
 			.reduce((sum, r) => sum + r.hours, 0);
 	});
 
 	const remainingHours = $derived.by(() => {
 		const delta = shippedDeltaHours;
-		if (!hackatime?.hackatime)
-			return delta ?? 0;
+		if (!hackatime?.hackatime) return delta ?? 0;
 		const totalH = hackatime.hackatime.totalSeconds / 3600;
 		const baseH = delta != null ? Math.min(totalH, delta) : totalH;
 		const aiRatio = totalH > 0 ? hackatime.hackatime.aiSeconds / 3600 / totalH : 0;
@@ -278,8 +373,7 @@
 		justification?: string;
 	}) {
 		const event = editData.event;
-		if (event.type !== 'approval' && event.type !== 'rejection')
-			return;
+		if (event.type !== 'approval' && event.type !== 'rejection') return;
 
 		log.info('Saving review edit', { shipId: event.shipId, type: event.type });
 		const t = log.time('handleSaveReview');
@@ -347,20 +441,36 @@
 			} else {
 				const body = await res.json().catch(() => null);
 				protocolError = body?.message ?? `Discard failed (HTTP ${res.status})`;
-				log.error('Failed to delete pending approval', { pendingApprovalId, status: res.status, protocolError });
+				log.error('Failed to delete pending approval', {
+					pendingApprovalId,
+					status: res.status,
+					protocolError
+				});
 			}
 		} finally {
 			authorizing = null;
 		}
 	}
 
-	async function handleEditPending(pendingApprovalId: string, reviewerId: string, feedbackMessage: string, justification: string, hoursAssigned: number) {
+	async function handleEditPending(
+		pendingApprovalId: string,
+		reviewerId: string,
+		feedbackMessage: string,
+		justification: string,
+		hoursAssigned: number
+	) {
 		log.info('Editing pending approval', { pendingApprovalId, hoursAssigned });
 		const t = log.time('handleEditPending');
 		const res = await fetch(`/api/programs/${data.program.id}/review/authorize`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ pendingApprovalId, reviewerId, feedbackMessage, justification, hoursAssigned })
+			body: JSON.stringify({
+				pendingApprovalId,
+				reviewerId,
+				feedbackMessage,
+				justification,
+				hoursAssigned
+			})
 		});
 		t.end('status', res.status);
 		if (!res.ok) {
@@ -377,7 +487,9 @@
 </svelte:head>
 
 <div class="flex flex-col h-full">
-	<div class="border-b border-border-input flex h-11 items-center justify-between px-4 shrink-0 min-w-0">
+	<div
+		class="border-b border-border-input flex h-11 items-center justify-between px-4 shrink-0 min-w-0"
+	>
 		<div class="flex gap-4 items-center min-w-0 flex-1">
 			<a
 				href={resolve(`/program/${data.program.id}/review`)}
@@ -426,8 +538,19 @@
 					shippedHours={shippedDeltaHours}
 					aiSeconds={hackatime?.hackatime?.aiSeconds ?? 0}
 					previousShips={(airtable?.airtableRecords ?? [])
-						.filter((r) => (showFuzzyAirtable || r.isExact) && r.hours > 0 && normalizeForCompare(r.id.split('–')[0]?.trim() || r.id) !== normalizeForCompare(data.programYswsName))
-						.map((r) => ({ programName: r.id.split('–')[0]?.trim() || r.id, date: '', hours: r.hours, url: r.url }))}
+						.filter(
+							(r) =>
+								(showFuzzyAirtable || r.isExact) &&
+								r.hours > 0 &&
+								normalizeForCompare(r.id.split('–')[0]?.trim() || r.id) !==
+									normalizeForCompare(data.programYswsName)
+						)
+						.map((r) => ({
+							programName: r.id.split('–')[0]?.trim() || r.id,
+							date: '',
+							hours: r.hours,
+							url: r.url
+						}))}
 					loading={!hackatime}
 					class="flex-1"
 				/>
@@ -448,19 +571,21 @@
 				</div>
 
 				<div style="grid-area: checks">
-					<CheckList
-						{checks}
-						class="h-full"
-					/>
+					<CheckList {checks} class="h-full" />
 				</div>
 			</div>
 
 			<div class="flex flex-col gap-3" style="grid-area: timeline">
 				{#if protocolError}
-					<div class="flex items-start gap-2 px-4 py-3 rounded-section bg-check-fail/10 border border-check-fail/30 text-sm text-check-fail">
+					<div
+						class="flex items-start gap-2 px-4 py-3 rounded-section bg-check-fail/10 border border-check-fail/30 text-sm text-check-fail"
+					>
 						<AlertTriangle size={16} class="shrink-0 mt-0.5" />
 						<span class="flex-1">{protocolError}</span>
-						<button onclick={() => (protocolError = null)} class="shrink-0 cursor-pointer hover:opacity-70">
+						<button
+							onclick={() => (protocolError = null)}
+							class="shrink-0 cursor-pointer hover:opacity-70"
+						>
 							<X size={14} />
 						</button>
 					</div>
@@ -481,7 +606,7 @@
 				{#if data.canReview && data.pendingShip}
 					<div bind:this={reviewPanelRef}>
 						<ReviewActionPanel
-							remainingHours={remainingHours}
+							{remainingHours}
 							onsubmit={handleReviewSubmit}
 							{submitting}
 							changelog={changelogContext}
@@ -507,14 +632,24 @@
 						programId={data.program.id}
 						loading={!github}
 						markers={data.timeline
-							.filter((e) => e.type === 'ship' || e.type === 'approval' || e.type === 'authorized_approval' || e.type === 'rejection')
+							.filter(
+								(e) =>
+									e.type === 'ship' ||
+									e.type === 'approval' ||
+									e.type === 'authorized_approval' ||
+									e.type === 'rejection'
+							)
 							.map((e) => ({
-								type: (e.type === 'authorized_approval' ? 'approval' : e.type) as 'ship' | 'approval' | 'rejection',
-								label: e.type === 'ship'
-									? `${data.actors[e.actorId]?.name ?? 'Unknown'} shipped`
-									: e.type === 'approval' || e.type === 'authorized_approval'
-										? `Approved for ${(e as Extract<typeof e, { type: 'approval' }>).hoursAssigned}h`
-										: `${data.actors[e.actorId]?.name ?? 'Unknown'} rejected`,
+								type: (e.type === 'authorized_approval' ? 'approval' : e.type) as
+									| 'ship'
+									| 'approval'
+									| 'rejection',
+								label:
+									e.type === 'ship'
+										? `${data.actors[e.actorId]?.name ?? 'Unknown'} shipped`
+										: e.type === 'approval' || e.type === 'authorized_approval'
+											? `Approved for ${fmtHrs((e as Extract<typeof e, { type: 'approval' }>).hoursAssigned)}h`
+											: `${data.actors[e.actorId]?.name ?? 'Unknown'} rejected`,
 								date: e.timestamp
 							}))}
 						timelapses={lapse?.lapseTimelapses ?? []}
@@ -530,9 +665,12 @@
 						hackatimeProjectKeys={data.project.hackatimeProjectKeys}
 						programId={data.program.id}
 						defaultDate={data.pendingShip?.submittedAt
-							? new Date(data.pendingShip.submittedAt).toLocaleDateString('sv-SE', { timeZone: data.authorTimezone })
+							? new Date(data.pendingShip.submittedAt).toLocaleDateString('sv-SE', {
+									timeZone: data.authorTimezone
+								})
 							: undefined}
 						projectBreakdown={hackatime?.projectBreakdown ?? []}
+						markers={reviewMarkers}
 						authorTimezone={data.authorTimezone}
 					/>
 				</div>
@@ -546,22 +684,22 @@
 		display: grid;
 		grid-template-columns: 1fr;
 		grid-template-areas:
-			"user"
-			"project"
-			"checks"
-			"multi"
-			"heartbeats"
-			"timeline";
+			'user'
+			'project'
+			'checks'
+			'multi'
+			'heartbeats'
+			'timeline';
 	}
 
 	@media (min-width: 768px) {
 		.review-bento {
 			grid-template-columns: minmax(0, 380px) minmax(0, 1fr);
 			grid-template-areas:
-				"user       project"
-				"checks     multi"
-				"heartbeats heartbeats"
-				"timeline   timeline";
+				'user       project'
+				'checks     multi'
+				'heartbeats heartbeats'
+				'timeline   timeline';
 		}
 	}
 
@@ -573,9 +711,9 @@
 		.review-bento {
 			grid-template-columns: minmax(0, 380px) minmax(0, 1fr) minmax(0, 540px);
 			grid-template-areas:
-				"user       top             top"
-				"heartbeats heartbeats       multi"
-				"timeline   timeline         timeline";
+				'user       top             top'
+				'heartbeats heartbeats       multi'
+				'timeline   timeline         timeline';
 		}
 
 		.project-checks-wrapper {
