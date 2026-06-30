@@ -18,6 +18,10 @@
 	import HackatimeViewer from '$lib/components/review/HackatimeViewer.svelte';
 	import { ChevronLeft } from 'lucide-svelte';
 	import type { TimelineEvent as TEvent } from '$lib/server/protocol/types.js';
+	import {
+		PROJECT_DETAILS_EXPORT_SCHEMA_VERSION,
+		type ProjectDetailsExport
+	} from '$lib/review/projectDetailsExport.js';
 
 	interface Props {
 		data: PageData;
@@ -169,6 +173,60 @@
 		const aiRatio = totalH > 0 ? hackatime.hackatime.aiSeconds / 3600 / totalH : 0;
 		const scaledAiH = baseH * aiRatio;
 		return Math.max(0, baseH - scaledAiH - externalPreviousHours);
+	});
+
+	// Snapshot of everything the reviewer currently sees, shaped to the shared
+	// ProjectDetailsExport schema. Integration sections start null and populate
+	// as their async sources resolve, so an early copy may legitimately omit them.
+	// `exportedAt` is stamped at copy time by ProjectCard, not here.
+	const projectDetailsExport = $derived<ProjectDetailsExport>({
+		schemaVersion: PROJECT_DETAILS_EXPORT_SCHEMA_VERSION,
+		exportedAt: '',
+		program: { id: data.program.id, name: data.program.name },
+		project: {
+			id: data.project.id,
+			title: data.project.title,
+			description: data.project.description,
+			screenshotUrl: data.project.screenshotUrl ?? null,
+			demoUrl: data.project.demoUrl ?? null,
+			codeUrl: data.project.codeUrl,
+			hackatimeProjectKeys: data.project.hackatimeProjectKeys
+		},
+		author: {
+			name: data.author.name,
+			email: data.author.email ?? null,
+			avatarUrl: data.author.avatarUrl,
+			slackId: data.author.slackId ?? null,
+			hackatimeId: data.author.hackatimeId,
+			joinDate: data.author.joinDate
+		},
+		ships: data.project.ships.map((s) => ({
+			id: s.id,
+			hoursSubmitted: s.hoursSubmitted,
+			submittedAt: s.submittedAt,
+			status: s.status
+		})),
+		pendingShipId: data.pendingShip?.id ?? null,
+		timeline: data.timeline,
+		hackatime: hackatime?.hackatime
+			? {
+					totalSeconds: hackatime.hackatime.totalSeconds,
+					aiSeconds: hackatime.hackatime.aiSeconds,
+					trustLevel: hackatime.trustLevel,
+					projectBreakdown: hackatime.projectBreakdown
+				}
+			: null,
+		github: github
+			? {
+					isPublic: github.githubIsPublic,
+					readme: github.githubReadme,
+					commits: github.githubCommits
+				}
+			: null,
+		airtable: airtable
+			? { records: airtable.airtableRecords, previousHours: airtable.airtablePreviousHours }
+			: null,
+		lapse: lapse ? { timelapses: lapse.lapseTimelapses } : null
 	});
 
 	async function handleReviewSubmit(reviewData: {
@@ -384,6 +442,7 @@
 						screenshotUrl={data.project.screenshotUrl}
 						demoUrl={data.project.demoUrl ?? ''}
 						codeUrl={data.project.codeUrl}
+						details={projectDetailsExport}
 						class="h-full"
 					/>
 				</div>

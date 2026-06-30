@@ -1,6 +1,7 @@
 <script lang="ts">
 	import NamedLink from '$lib/components/ui/NamedLink.svelte';
-	import { Globe, BookMarked } from 'lucide-svelte';
+	import { Globe, BookMarked, Copy, Check } from 'lucide-svelte';
+	import type { ProjectDetailsExport } from '$lib/review/projectDetailsExport.js';
 
 	interface Props {
 		id: string;
@@ -9,21 +10,50 @@
 		screenshotUrl?: string | null;
 		demoUrl: string;
 		codeUrl: string;
+		/** Full project review payload, copied to the clipboard as JSON. */
+		details?: ProjectDetailsExport | null;
 		class?: string;
 	}
 
-	let { id, title, description, screenshotUrl = null, demoUrl, codeUrl, class: className = '' }: Props = $props();
+	let { id, title, description, screenshotUrl = null, demoUrl, codeUrl, details = null, class: className = '' }: Props = $props();
 
 	let lightboxOpen = $state(false);
+	let copied = $state(false);
+
+	async function copyDetails() {
+		if (!details) return;
+		const payload = { ...details, exportedAt: new Date().toISOString() };
+		await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+		copied = true;
+		setTimeout(() => (copied = false), 2000);
+	}
 </script>
 
 <div class="border border-border-card rounded-card shadow-card p-10 flex flex-col gap-3 {className}">
 	<div class="flex flex-col gap-4">
-		{#if screenshotUrl}
-			<button class="cursor-zoom-in" onclick={() => (lightboxOpen = true)}>
-				<img src={screenshotUrl} alt="Project screenshot" class="rounded-section w-full max-w-[243px] h-auto object-cover" />
-			</button>
-		{/if}
+		<div class="flex items-start gap-3">
+			{#if screenshotUrl}
+				<button class="cursor-zoom-in shrink-0" onclick={() => (lightboxOpen = true)}>
+					<img src={screenshotUrl} alt="Project screenshot" class="rounded-section w-full max-w-[243px] h-auto object-cover" />
+				</button>
+			{/if}
+
+			{#if details}
+				<button
+					onclick={copyDetails}
+					title="Copy all project details as JSON"
+					class="shrink-0 ml-auto border border-border-button rounded-md flex gap-1.5 h-8 items-center justify-center px-3 hover:bg-surface transition-colors cursor-pointer"
+				>
+					{#if copied}
+						<Check size={14} class="text-check-pass" />
+						<span class="font-medium text-sm text-text-subtle tracking-[-0.3px]">Copied</span>
+					{:else}
+						<Copy size={14} />
+						<span class="font-medium text-sm text-text-subtle tracking-[-0.3px]">Copy JSON</span>
+					{/if}
+				</button>
+			{/if}
+		</div>
 
 		<div class="flex flex-col gap-2">
 			<div class="flex gap-1.5 items-end text-[24px] tracking-[-0.72px]">
