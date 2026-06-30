@@ -16,19 +16,29 @@
 		data.programs?.find((p) => p.id === $page.params.programId) ?? data.programs?.[0] ?? null
 	);
 	const showShell = $derived(!!data.user && !$page.url.pathname.startsWith('/auth/'));
-	const permissions = $derived(($page.data as Record<string, unknown>).permissions as { canViewReviews: boolean; canViewFulfillments: boolean } | undefined ?? null);
+	const permissions = $derived(
+		(($page.data as Record<string, unknown>).permissions as
+			| { canViewReviews: boolean; canViewFulfillments: boolean }
+			| undefined) ?? null
+	);
+	const features = $derived(
+		(($page.data as Record<string, unknown>).features as { projects: boolean } | undefined) ?? null
+	);
 </script>
 
 <svelte:head>
 	<title>Sidekick</title>
 	<link rel="preconnect" href="https://fonts.googleapis.com" />
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
-	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet" />
+	<link
+		href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap"
+		rel="stylesheet"
+	/>
 </svelte:head>
 
 {#if showShell}
 	<div class="flex h-screen bg-page">
-		<Sidebar user={data.user!} programs={data.programs} {currentProgram} {permissions} />
+		<Sidebar user={data.user!} programs={data.programs} {currentProgram} {permissions} {features} />
 		<main class="flex-1 min-w-0 overflow-auto">
 			{@render children()}
 		</main>

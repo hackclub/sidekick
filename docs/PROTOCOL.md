@@ -335,16 +335,30 @@ Sidekick renders `"text"` changes as inline old→new values, `"url"` the same w
 
 ### `HEALTH_CHECK`
 
-Verify that your endpoint is reachable. This is called when a program is created or when a user clicks "Test" in the Sidekick UI.
+Verify that your endpoint is reachable. This is called when a program is created or when a user clicks "Test" in the Sidekick UI, and periodically to discover which optional capabilities your endpoint supports.
 
 **Input:** `{}`
 
 **Response:**
 ```json
-{ "ok": true, "version": "1.0.0" }
+{ "ok": true, "version": "1.0.0", "features": ["projects"] }
 ```
 
-`version` is optional. Return whatever helps you identify the deployed version.
+| Field      | Type       | Required | Description                                                                                          |
+| ---------- | ---------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `ok`       | `boolean`  | Yes      | `true` if the endpoint is healthy.                                                                   |
+| `version`  | `string`   | No       | Anything that helps you identify the deployed version.                                               |
+| `features` | `string[]` | No       | Optional capabilities your endpoint supports (see below). Omit or send `[]` to advertise none.       |
+
+#### Optional Capabilities
+
+`features` is how your endpoint opts into optional protocol functionality. Sidekick only surfaces a capability's UI when the connected endpoint advertises it here, so older endpoints that omit the field keep working unchanged. Each entry is one capability identifier:
+
+| Identifier   | Enables                                                                                                                                                                                                            |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"projects"` | The **Projects** tab — a browsable view of your entire project catalogue (any ship status), not just the pending review queue. Requires `FETCH_PROJECTS` to honor the `status` filter, including `"all"`. |
+
+Sidekick caches the advertised feature list briefly, so a newly added capability may take a few minutes to appear (or use "Test" in the program's manage page to re-probe).
 
 
 ### `GET_PROGRAM_STATS`
@@ -393,6 +407,8 @@ Return a paginated list of projects with their embedded ships.
 ```
 
 `totalCount` is the total number of matching projects (not just this page). `nextCursor` is present only if there are more pages.
+
+If you advertise the `"projects"` capability (see `HEALTH_CHECK`), this action must honor the `status` filter — including `"all"` — since the Projects browser pages through projects by status. Endpoints that don't advertise the capability may ignore unsupported `status` values.
 
 ### `FETCH_PROJECT_DETAIL`
 
@@ -782,7 +798,8 @@ app.post("/api/sidekick", async (req, res) => {
 
   switch (action) {
     case "HEALTH_CHECK":
-      return res.json({ ok: true, version: "1.0.0" });
+      // Advertise optional capabilities your endpoint supports.
+      return res.json({ ok: true, version: "1.0.0", features: ["projects"] });
 
     case "GET_PROGRAM_STATS":
       return res.json({

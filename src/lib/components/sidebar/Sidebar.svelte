@@ -7,11 +7,28 @@
 	import SidebarButton from './SidebarButton.svelte';
 	import ProgramSwitcher from './ProgramSwitcher.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
-	import { House, Scale, Package, PanelLeftOpen, PanelLeftClose, Plus, ChevronsUpDown, ChevronUp, ChevronDown, ShieldCheck, LogOut } from 'lucide-svelte';
+	import {
+		House,
+		Scale,
+		Package,
+		FolderGit2,
+		PanelLeftOpen,
+		PanelLeftClose,
+		Plus,
+		ChevronsUpDown,
+		ChevronUp,
+		ChevronDown,
+		ShieldCheck,
+		LogOut
+	} from 'lucide-svelte';
 
 	interface Permissions {
 		canViewReviews: boolean;
 		canViewFulfillments: boolean;
+	}
+
+	interface Features {
+		projects: boolean;
 	}
 
 	interface Props {
@@ -19,19 +36,28 @@
 		programs: ProgramSummary[];
 		currentProgram?: ProgramSummary | null;
 		permissions?: Permissions | null;
+		features?: Features | null;
 	}
 
-	let { user, programs, currentProgram = null, permissions = null }: Props = $props();
+	let {
+		user,
+		programs,
+		currentProgram = null,
+		permissions = null,
+		features = null
+	}: Props = $props();
 	const canReview = $derived(permissions?.canViewReviews ?? true);
 	const canFulfill = $derived(permissions?.canViewFulfillments ?? true);
+	// The Projects browser is an optional endpoint capability; only show it when
+	// the connected endpoint advertises support and the user can view reviews.
+	const canBrowseProjects = $derived(canReview && (features?.projects ?? false));
 	let showProgramSwitcher = $state(false);
 	let showUserMenu = $state(false);
 
 	const programBase = $derived(currentProgram ? `/program/${currentProgram.id}` : '');
 
 	function isActive(path: string): boolean {
-		if (path === programBase)
-			return $page.url.pathname === path;
+		if (path === programBase) return $page.url.pathname === path;
 		return $page.url.pathname.startsWith(path);
 	}
 
@@ -49,7 +75,9 @@
 
 <aside
 	class="bg-sidebar border-r border-sidebar-border flex flex-col justify-between shrink-0 h-screen sticky top-0 transition-all duration-200 overflow-hidden
-		{$sidebarExpanded ? 'w-[var(--sidebar-expanded-width)] px-3 py-4' : 'w-[var(--sidebar-collapsed-width)] px-1.5 py-4'}"
+		{$sidebarExpanded
+		? 'w-[var(--sidebar-expanded-width)] px-3 py-4'
+		: 'w-[var(--sidebar-collapsed-width)] px-1.5 py-4'}"
 >
 	<!-- Top section -->
 	<div class="flex flex-col gap-3 {$sidebarExpanded ? '' : 'items-center'}">
@@ -62,13 +90,21 @@
 				>
 					{#if currentProgram}
 						{#if currentProgram.iconUrl}
-							<img src={currentProgram.iconUrl} alt={currentProgram.name} class="size-7 object-cover rounded shrink-0" />
+							<img
+								src={currentProgram.iconUrl}
+								alt={currentProgram.name}
+								class="size-7 object-cover rounded shrink-0"
+							/>
 						{:else}
-							<div class="size-7 bg-accent rounded flex items-center justify-center text-white font-bold text-xs shrink-0">
+							<div
+								class="size-7 bg-accent rounded flex items-center justify-center text-white font-bold text-xs shrink-0"
+							>
 								{currentProgram.name.charAt(0)}
 							</div>
 						{/if}
-						<span class="text-sm font-semibold text-text-primary truncate">{currentProgram.name}</span>
+						<span class="text-sm font-semibold text-text-primary truncate"
+							>{currentProgram.name}</span
+						>
 						<ChevronsUpDown size={14} class="text-text-tertiary shrink-0" />
 					{:else}
 						<div class="size-7 bg-border-card rounded flex items-center justify-center shrink-0">
@@ -87,15 +123,18 @@
 			</div>
 		{:else}
 			<div class="flex flex-col items-center gap-3">
-				<button
-					class="cursor-pointer"
-					onclick={() => (showProgramSwitcher = !showProgramSwitcher)}
-				>
+				<button class="cursor-pointer" onclick={() => (showProgramSwitcher = !showProgramSwitcher)}>
 					{#if currentProgram}
 						{#if currentProgram.iconUrl}
-							<img src={currentProgram.iconUrl} alt={currentProgram.name} class="size-8 object-cover rounded" />
+							<img
+								src={currentProgram.iconUrl}
+								alt={currentProgram.name}
+								class="size-8 object-cover rounded"
+							/>
 						{:else}
-							<div class="size-8 bg-accent rounded flex items-center justify-center text-white font-bold text-xs">
+							<div
+								class="size-8 bg-accent rounded flex items-center justify-center text-white font-bold text-xs"
+							>
 								{currentProgram.name.charAt(0)}
 							</div>
 						{/if}
@@ -121,7 +160,22 @@
 					{@const items = [
 						{ path: programBase, icon: House, label: 'Home', enabled: true },
 						{ path: `${programBase}/review`, icon: Scale, label: 'Review', enabled: canReview },
-						{ path: `${programBase}/fulfillment`, icon: Package, label: 'Fulfillment', enabled: canFulfill },
+						...(canBrowseProjects
+							? [
+									{
+										path: `${programBase}/projects`,
+										icon: FolderGit2,
+										label: 'Projects',
+										enabled: true
+									}
+								]
+							: []),
+						{
+							path: `${programBase}/fulfillment`,
+							icon: Package,
+							label: 'Fulfillment',
+							enabled: canFulfill
+						}
 					]}
 					{#each items as item (item.path)}
 						<button
@@ -147,7 +201,10 @@
 							: 'font-normal text-[14px] text-text-secondary hover:bg-white/50'}"
 						onclick={() => navigateTo('/admin')}
 					>
-						<ShieldCheck size={18} strokeWidth={$page.url.pathname.startsWith('/admin') ? 2.2 : 1.8} />
+						<ShieldCheck
+							size={18}
+							strokeWidth={$page.url.pathname.startsWith('/admin') ? 2.2 : 1.8}
+						/>
 						<span>Admin</span>
 					</button>
 				{/if}
@@ -156,15 +213,34 @@
 					<SidebarButton active={isActive(programBase)} onclick={() => navigateTo(programBase)}>
 						<House size={18} />
 					</SidebarButton>
-					<SidebarButton active={isActive(`${programBase}/review`)} onclick={() => canReview && navigateTo(`${programBase}/review`)} disabled={!canReview}>
+					<SidebarButton
+						active={isActive(`${programBase}/review`)}
+						onclick={() => canReview && navigateTo(`${programBase}/review`)}
+						disabled={!canReview}
+					>
 						<Scale size={18} />
 					</SidebarButton>
-					<SidebarButton active={isActive(`${programBase}/fulfillment`)} onclick={() => canFulfill && navigateTo(`${programBase}/fulfillment`)} disabled={!canFulfill}>
+					{#if canBrowseProjects}
+						<SidebarButton
+							active={isActive(`${programBase}/projects`)}
+							onclick={() => navigateTo(`${programBase}/projects`)}
+						>
+							<FolderGit2 size={18} />
+						</SidebarButton>
+					{/if}
+					<SidebarButton
+						active={isActive(`${programBase}/fulfillment`)}
+						onclick={() => canFulfill && navigateTo(`${programBase}/fulfillment`)}
+						disabled={!canFulfill}
+					>
 						<Package size={18} />
 					</SidebarButton>
 				{/if}
 				{#if user.isSuperAdmin}
-					<SidebarButton active={$page.url.pathname.startsWith('/admin')} onclick={() => navigateTo('/admin')}>
+					<SidebarButton
+						active={$page.url.pathname.startsWith('/admin')}
+						onclick={() => navigateTo('/admin')}
+					>
 						<ShieldCheck size={18} />
 					</SidebarButton>
 				{/if}
@@ -175,7 +251,9 @@
 	<!-- User pill -->
 	<div class="relative {$sidebarExpanded ? '' : 'flex justify-center'}">
 		{#if showUserMenu}
-			<div class="absolute bottom-full left-0 right-0 mb-1.5 bg-white border border-border-card rounded-sidebar-btn shadow-lg overflow-hidden z-50">
+			<div
+				class="absolute bottom-full left-0 right-0 mb-1.5 bg-white border border-border-card rounded-sidebar-btn shadow-lg overflow-hidden z-50"
+			>
 				<div class="px-3 py-2.5 border-b border-border-card">
 					<p class="text-sm font-medium text-text-primary truncate">{user.name}</p>
 					<p class="text-[11px] text-text-tertiary truncate">{user.email}</p>
@@ -189,7 +267,11 @@
 				</a>
 			</div>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="fixed inset-0 z-40" onclick={() => (showUserMenu = false)} onkeydown={() => {}}></div>
+			<div
+				class="fixed inset-0 z-40"
+				onclick={() => (showUserMenu = false)}
+				onkeydown={() => {}}
+			></div>
 		{/if}
 
 		{#if $sidebarExpanded}
@@ -198,7 +280,9 @@
 				onclick={() => (showUserMenu = !showUserMenu)}
 			>
 				<Avatar name={user.name} url={user.avatarUrl} size="md" />
-				<span class="text-sm font-medium text-text-primary truncate flex-1 text-left">{user.name}</span>
+				<span class="text-sm font-medium text-text-primary truncate flex-1 text-left"
+					>{user.name}</span
+				>
 				{#if showUserMenu}
 					<ChevronDown size={14} class="text-text-tertiary shrink-0" />
 				{:else}
@@ -206,7 +290,13 @@
 				{/if}
 			</button>
 		{:else}
-			<button class="relative z-50 cursor-pointer" onclick={() => { sidebarExpanded.set(true); showUserMenu = true; }}>
+			<button
+				class="relative z-50 cursor-pointer"
+				onclick={() => {
+					sidebarExpanded.set(true);
+					showUserMenu = true;
+				}}
+			>
 				<Avatar name={user.name} url={user.avatarUrl} size="lg" />
 			</button>
 		{/if}
@@ -219,7 +309,15 @@
 		currentProgramId={currentProgram?.id}
 		onselect={handleProgramSelect}
 		onclose={() => (showProgramSwitcher = false)}
-		onmanage={currentProgram ? () => { showProgramSwitcher = false; navigateTo(`${programBase}/manage`); } : undefined}
-		oncreate={() => { showProgramSwitcher = false; navigateTo('/program/new'); }}
+		onmanage={currentProgram
+			? () => {
+					showProgramSwitcher = false;
+					navigateTo(`${programBase}/manage`);
+				}
+			: undefined}
+		oncreate={() => {
+			showProgramSwitcher = false;
+			navigateTo('/program/new');
+		}}
 	/>
 {/if}
