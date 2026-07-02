@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { PageData } from './$types.js';
 	import { afterNavigate, goto, invalidateAll } from '$app/navigation';
+	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import OrderTableRow from '$lib/components/fulfillment/OrderTableRow.svelte';
@@ -362,18 +363,49 @@
 		return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 	}
 
+	type ExportFormat = 'theseus' | 'generic';
+
+	interface ExportOrder {
+		id: string;
+		row: string;
+		// theseus
+		firstName?: string;
+		lastName?: string;
+		city?: string;
+		stateProvince?: string;
+		country?: string;
+		// generic
+		userName?: string;
+		userEmail?: string;
+		itemName?: string;
+		quantity?: number;
+		status?: string;
+	}
+
 	interface ExportData {
+		format: ExportFormat;
 		csvHeader: string;
-		orders: { id: string; firstName: string; lastName: string; city: string; stateProvince: string; country: string; row: string }[];
+		orders: ExportOrder[];
 		skippedOrders: { id: string; userName: string }[];
 		totalOrders: number;
 		programName: string;
 		itemName: string | null;
 	}
 
+	const CSV_FORMAT_STORAGE_KEY = 'sidekick_csv_export_format';
+
+	const exportFormats: { value: ExportFormat; label: string; description: string }[] = [
+		{ value: 'theseus', label: 'Theseus', description: 'Shipping addresses' },
+		{ value: 'generic', label: 'Generic', description: 'Full order data' },
+	];
+
 	let csvDropdownOpen = $state(false);
+	let formatDropdownOpen = $state(false);
 	let exporting = $state(false);
 	let exportMode = $state<'download' | 'dinobox'>('download');
+	let exportFormat = $state<ExportFormat>(
+		browser && localStorage.getItem(CSV_FORMAT_STORAGE_KEY) === 'generic' ? 'generic' : 'theseus'
+	);
 	let exportResult = $state<ExportData | null>(null);
 	let excludedOrderIds = $state(new Set<string>());
 	let dinoboxSending = $state(false);
@@ -383,6 +415,16 @@
 		exportResult?.orders.filter(o => !excludedOrderIds.has(o.id)) ?? []
 	);
 
+	async function fetchExport(): Promise<ExportData> {
+		const url = new URL($page.url);
+		url.pathname = url.pathname.replace(/\/?$/, '/export-csv');
+		url.searchParams.delete('cursor');
+		url.searchParams.set('format', exportFormat);
+		const res = await fetch(url.toString(), { method: 'POST' });
+		if (!res.ok) throw new Error('Export failed');
+		return await res.json();
+	}
+
 	async function startExport(mode: 'download' | 'dinobox') {
 		csvDropdownOpen = false;
 		exportMode = mode;
@@ -391,12 +433,24 @@
 		excludedOrderIds = new Set();
 		dinoboxSent = false;
 		try {
-			const url = new URL($page.url);
-			url.pathname = url.pathname.replace(/\/?$/, '/export-csv');
-			url.searchParams.delete('cursor');
-			const res = await fetch(url.toString(), { method: 'POST' });
-			if (!res.ok) throw new Error('Export failed');
-			exportResult = await res.json();
+			exportResult = await fetchExport();
+		} catch {
+			alert('Failed to export CSV. Please try again.');
+		} finally {
+			exporting = false;
+		}
+	}
+
+	async function setExportFormat(format: ExportFormat) {
+		formatDropdownOpen = false;
+		if (format === exportFormat || exporting) return;
+		exportFormat = format;
+		if (browser) localStorage.setItem(CSV_FORMAT_STORAGE_KEY, format);
+		if (!exportResult) return;
+		exporting = true;
+		try {
+			exportResult = await fetchExport();
+			excludedOrderIds = new Set();
 		} catch {
 			alert('Failed to export CSV. Please try again.');
 		} finally {
@@ -412,11 +466,11 @@
 		return rows.join('\r\n') + '\r\n';
 	}
 
-	function buildFilename(result: { programName: string; itemName: string | null }): string {
+	function buildFilename(result: { programName: string; itemName: string | null; format: ExportFormat }): string {
 		const date = new Date().toISOString().slice(0, 10);
 		let name = slugify(result.programName);
 		if (result.itemName) name += `-${slugify(result.itemName)}`;
-		return `${name}-${date}-sidekick-theseus.csv`;
+		return `${name}-${date}-sidekick-${result.format}.csv`;
 	}
 
 	function executeExport() {
@@ -491,6 +545,18 @@
 		if (csvDropdownOpen) {
 			window.addEventListener('click', handleCsvDropdownWindowClick, true);
 			return () => window.removeEventListener('click', handleCsvDropdownWindowClick, true);
+		}
+	});
+
+	function handleFormatDropdownWindowClick(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		if (!target.closest('[data-format-dropdown]')) formatDropdownOpen = false;
+	}
+
+	$effect(() => {
+		if (formatDropdownOpen) {
+			window.addEventListener('click', handleFormatDropdownWindowClick, true);
+			return () => window.removeEventListener('click', handleFormatDropdownWindowClick, true);
 		}
 	});
 
@@ -1096,10 +1162,46 @@
 		mode={exportMode}
 		totalCount={exportResult.orders.length}
 		selectedCount={includedOrders.length}
+		loading={exporting}
 		onclose={() => (exportResult = null)}
 		onexport={executeExport}
 		class="w-[600px] xl:w-[800px]"
 	>
+		{#snippet toolbar()}
+			<div class="relative" data-format-dropdown>
+				<button
+					class="border border-border-input rounded-tag flex gap-2 items-center px-3 py-1.5 cursor-pointer hover:bg-surface"
+					onclick={() => (formatDropdownOpen = !formatDropdownOpen)}
+					disabled={exporting}
+				>
+					{#if exporting}
+						<RefreshCw size={13} class="text-text-dim shrink-0 animate-spin" />
+					{/if}
+					<span class="font-medium text-sm text-text-dim">
+						Format: {exportFormats.find(f => f.value === exportFormat)?.label}
+					</span>
+					<ChevronDown size={12} class="text-text-dim shrink-0" />
+				</button>
+				{#if formatDropdownOpen}
+					<div class="absolute bottom-full left-0 mb-1 bg-page border border-border-card rounded-input shadow-lg z-30 min-w-[210px] py-1">
+						{#each exportFormats as opt (opt.value)}
+							<button
+								class="w-full text-left px-3 py-1.5 text-sm hover:bg-surface cursor-pointer flex items-center justify-between gap-2"
+								onclick={() => setExportFormat(opt.value)}
+							>
+								<span class="flex flex-col">
+									{opt.label}
+									<span class="text-xs text-text-tertiary">{opt.description}</span>
+								</span>
+								{#if exportFormat === opt.value}
+									<Check size={14} class="text-accent shrink-0" />
+								{/if}
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/snippet}
 		{#snippet header()}
 			<div class="w-8 px-2 py-1.5 flex items-center justify-center">
 				<input
@@ -1110,11 +1212,19 @@
 					class="cursor-pointer accent-accent"
 				/>
 			</div>
-			<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">First</div>
-			<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Last</div>
-			<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">City</div>
-			<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">State</div>
-			<div class="flex-[1] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Country</div>
+			{#if exportResult!.format === 'generic'}
+				<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">User</div>
+				<div class="flex-[3] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Email</div>
+				<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Item</div>
+				<div class="flex-[1] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Qty</div>
+				<div class="flex-[1] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Status</div>
+			{:else}
+				<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">First</div>
+				<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Last</div>
+				<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">City</div>
+				<div class="flex-[2] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">State</div>
+				<div class="flex-[1] text-left text-text-tertiary font-medium tracking-[-0.3px] px-2 py-1.5">Country</div>
+			{/if}
 		{/snippet}
 		{#each exportResult!.orders as order (order.id)}
 			<button
@@ -1130,11 +1240,19 @@
 						class="cursor-pointer accent-accent"
 					/>
 				</div>
-				<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.firstName}</div>
-				<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.lastName}</div>
-				<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.city}</div>
-				<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.stateProvince}</div>
-				<div class="flex-[1] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.country}</div>
+				{#if exportResult!.format === 'generic'}
+					<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.userName}</div>
+					<div class="flex-[3] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.userEmail}</div>
+					<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.itemName}</div>
+					<div class="flex-[1] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.quantity}</div>
+					<div class="flex-[1] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate capitalize">{order.status}</div>
+				{:else}
+					<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.firstName}</div>
+					<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.lastName}</div>
+					<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.city}</div>
+					<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.stateProvince}</div>
+					<div class="flex-[1] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{order.country}</div>
+				{/if}
 			</button>
 		{/each}
 		{#snippet extra()}

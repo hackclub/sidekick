@@ -11,10 +11,12 @@
 		header: Snippet;
 		children: Snippet;
 		extra?: Snippet;
+		toolbar?: Snippet;
+		loading?: boolean;
 		class?: string;
 	}
 
-	let { mode, totalCount, selectedCount, onclose, onexport, header, children, extra, class: className = '' }: Props = $props();
+	let { mode, totalCount, selectedCount, onclose, onexport, header, children, extra, toolbar, loading = false, class: className = '' }: Props = $props();
 
 	const modeLabels: Record<string, { icon: typeof Download; title: string; action: string }> = {
 		download: { icon: Download, title: 'Export CSV', action: 'Download' },
@@ -43,7 +45,7 @@
 				<X size={16} />
 			</button>
 		</div>
-		<div class="px-5 py-4 flex flex-col gap-3 overflow-y-auto">
+		<div class="px-5 py-4 flex flex-col gap-3 overflow-y-auto {loading ? 'opacity-60 pointer-events-none' : ''}">
 			<div class="border border-border-card rounded-input overflow-hidden flex flex-col max-h-[300px]">
 				<div class="flex items-center border-b border-border-card bg-surface text-sm shrink-0">
 					{@render header()}
@@ -57,9 +59,14 @@
 			{/if}
 		</div>
 		<div class="flex items-center justify-between px-5 py-4 border-t border-border-card">
-			<span class="text-sm text-text-dim tracking-[-0.3px]">
-				{selectedCount} of {totalCount} selected
-			</span>
+			<div class="flex items-center gap-3">
+				{#if toolbar}
+					{@render toolbar()}
+				{/if}
+				<span class="text-sm text-text-dim tracking-[-0.3px]">
+					{selectedCount} of {totalCount} selected
+				</span>
+			</div>
 			<div class="flex items-center gap-2">
 				<button
 					class="px-3 py-1.5 text-sm font-medium text-text-dim hover:bg-surface rounded-tag cursor-pointer"
@@ -69,7 +76,7 @@
 				</button>
 				<button
 					class="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-tag cursor-pointer hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-					disabled={selectedCount === 0}
+					disabled={selectedCount === 0 || loading}
 					onclick={onexport}
 				>
 					{config.action} ({selectedCount})
