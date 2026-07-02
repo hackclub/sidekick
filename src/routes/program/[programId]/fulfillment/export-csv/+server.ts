@@ -26,6 +26,7 @@ async function loadExportData(params: { programId: string }, locals: App.Locals,
 
 	const client = new ProtocolClient(program.masterEndpoint, program.secretKey);
 
+	const format: 'theseus' | 'generic' = url.searchParams.get('format') === 'generic' ? 'generic' : 'theseus';
 	const statusFilter = (url.searchParams.get('status') as 'pending' | 'fulfilled' | 'cancelled' | 'all') || 'pending';
 	const itemFilter = url.searchParams.get('item') || undefined;
 	const searchUser = url.searchParams.get('search') || undefined;
@@ -48,14 +49,53 @@ async function loadExportData(params: { programId: string }, locals: App.Locals,
 		cursor = result.nextCursor;
 	} while (cursor);
 
-	const csvHeader = 'First Name,Last Name,Line 1,Line 2,City,State / Province,Zip / Postal Code,Country,Email';
-	const skippedOrders: { id: string; userName: string }[] = [];
-
-	let itemNameMap: Record<string, string> = {};
+	const itemMap: Record<string, { name: string; unitPrice?: number }> = {};
 	try {
 		const shopResult = await client.fetchShopItems({});
-		for (const item of shopResult.items) itemNameMap[item.id] = item.name;
+		for (const item of shopResult.items) itemMap[item.id] = { name: item.name, unitPrice: item.unitPrice };
 	} catch { /* ignore */ }
+
+	const itemName = itemFilter ? (itemMap[itemFilter]?.name ?? null) : null;
+
+	if (format === 'generic') {
+		const csvHeader = 'id,user_id,username,user_email,item_id,item_name,item_cost,qty,created_on,status';
+		const exportOrders = allOrders.map((order) => {
+			const item = itemMap[order.itemId];
+			return {
+				id: order.id,
+				userName: order.userName,
+				userEmail: order.userEmail,
+				itemName: item?.name ?? order.itemId,
+				quantity: order.quantity,
+				status: order.status,
+				row: [
+					csvField(order.id),
+					csvField(order.userId),
+					csvField(order.userName),
+					csvField(order.userEmail),
+					csvField(order.itemId),
+					csvField(item?.name ?? order.itemId),
+					item?.unitPrice != null ? String(item.unitPrice) : '',
+					String(order.quantity),
+					csvField(order.createdAt),
+					csvField(order.status),
+				].join(',')
+			};
+		});
+
+		return {
+			format,
+			csvHeader,
+			orders: exportOrders,
+			skippedOrders: [],
+			totalOrders: allOrders.length,
+			programName: program.name,
+			itemName
+		};
+	}
+
+	const csvHeader = 'First Name,Last Name,Line 1,Line 2,City,State / Province,Zip / Postal Code,Country,Email';
+	const skippedOrders: { id: string; userName: string }[] = [];
 
 	const exportOrders: { id: string; firstName: string; lastName: string; city: string; stateProvince: string; country: string; row: string }[] = [];
 
@@ -99,9 +139,8 @@ async function loadExportData(params: { programId: string }, locals: App.Locals,
 		});
 	}
 
-	const itemName = itemFilter ? (itemNameMap[itemFilter] ?? null) : null;
-
 	return {
+		format,
 		csvHeader,
 		orders: exportOrders,
 		skippedOrders,
@@ -112,7 +151,7 @@ async function loadExportData(params: { programId: string }, locals: App.Locals,
 }
 
 export const POST: RequestHandler = async ({ params, locals, url }) => {
-	logger.info('POST CSV export', { programId: params.programId, status: url.searchParams.get('status'), item: url.searchParams.get('item') });
+	logger.info('POST CSV export', { programId: params.programId, format: url.searchParams.get('format'), status: url.searchParams.get('status'), item: url.searchParams.get('item') });
 	const result = await loadExportData(params, locals, url);
 	logger.info('CSV export completed', { programId: params.programId, totalOrders: result.totalOrders, exported: result.orders.length, skipped: result.skippedOrders.length });
 	return json(result);
