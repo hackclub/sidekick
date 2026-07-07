@@ -10,6 +10,7 @@
 	import { UserSearch, Funnel, Package, Search, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, RefreshCw, Check, Download, TriangleAlert, X, Send, ListChecks, ClipboardList, Loader2, Pencil, Unlink } from 'lucide-svelte';
 	import type { Order, ShopItem } from '$lib/server/protocol/types.js';
 	import CsvExportModal from '$lib/components/ui/CsvExportModal.svelte';
+	import { isUuid, shortenId } from '$lib/utils/id';
 
 	interface Props {
 		data: PageData;
@@ -1070,11 +1071,11 @@
 						{#each data.orders as order (order.id)}
 							{@const item = data.items[order.itemId]}
 							<OrderTableRow
-								id="#{order.id}"
+								id={order.id}
 								userName={order.userName}
 								userEmail={order.userEmail}
 								userAvatarUrl={order.userAvatarUrl}
-								itemName={item?.name ?? order.itemId}
+								itemName={item?.name ?? shortenId(order.itemId)}
 								itemPrice={item?.unitPrice}
 								itemThumbnailUrl={item?.thumbnailUrl}
 								quantity={order.quantity}
@@ -1266,7 +1267,7 @@
 						<div class="flex flex-wrap gap-x-2 gap-y-0.5">
 							{#each exportResult!.skippedOrders as order (order.id)}
 								<span class="text-xs text-text-dim tracking-[-0.2px]">
-									<span class="text-text-tertiary">#{order.id}</span> {order.userName}
+									<span class="text-text-tertiary" title={isUuid(order.id) ? order.id : undefined}>#{shortenId(order.id)}</span> {order.userName}
 								</span>
 							{/each}
 						</div>
