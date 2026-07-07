@@ -1,6 +1,7 @@
 <script lang="ts">
 	import NamedLink from '$lib/components/ui/NamedLink.svelte';
 	import { Globe, BookMarked, Copy, Check } from 'lucide-svelte';
+	import { isUuid, shortenId } from '$lib/utils/id';
 	import type { ProjectDetailsExport } from '$lib/review/projectDetailsExport.js';
 
 	interface Props {
@@ -57,7 +58,7 @@
 
 		<div class="flex flex-col gap-2">
 			<div class="flex gap-1.5 items-end text-[24px] tracking-[-0.72px]">
-				<span class="text-text-secondary">#{id}</span>
+				<span class="text-text-secondary" title={isUuid(id) ? id : undefined}>#{shortenId(id)}</span>
 				<span class="font-bold text-text-primary">{title}</span>
 			</div>
 			<p class="text-sm text-text-primary tracking-[-0.3px] leading-[1.3] whitespace-pre-line">

@@ -5,6 +5,7 @@
 	import UserCard from '$lib/components/ui/UserCard.svelte';
 	import ShippingAddress from './ShippingAddress.svelte';
 	import { marked, Renderer } from 'marked';
+	import { isUuid, shortenId } from '$lib/utils/id';
 
 	const log = createLogger('OrderDetailPane');
 
@@ -966,7 +967,7 @@
 								<div class="flex flex-col gap-0.5">
 									{#each batchOrders as bo}
 										<div class="flex items-center justify-between text-[11px] text-text-dim font-mono">
-											<span class={bo.id === order.id ? 'font-bold' : ''}>#{bo.id}</span>
+											<span class={bo.id === order.id ? 'font-bold' : ''} title={isUuid(bo.id) ? bo.id : undefined}>#{shortenId(bo.id)}</span>
 											<span>&times; {bo.quantity}</span>
 										</div>
 									{/each}

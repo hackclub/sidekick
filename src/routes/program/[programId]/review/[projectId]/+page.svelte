@@ -18,6 +18,7 @@
 	import HackatimeViewer from '$lib/components/review/HackatimeViewer.svelte';
 	import { ChevronLeft } from 'lucide-svelte';
 	import type { TimelineEvent as TEvent } from '$lib/server/protocol/types.js';
+	import { isUuid, shortenId } from '$lib/utils/id';
 	import {
 		PROJECT_DETAILS_EXPORT_SCHEMA_VERSION,
 		type ProjectDetailsExport
@@ -500,7 +501,7 @@
 			</a>
 
 			<div class="flex gap-1.5 items-center text-sm tracking-[-0.4px] min-w-0 truncate">
-				<span class="text-text-secondary shrink-0">#{data.project.id}</span>
+				<span class="text-text-secondary shrink-0" title={isUuid(data.project.id) ? data.project.id : undefined}>#{shortenId(data.project.id)}</span>
 				<span class="font-bold truncate">{data.project.title}</span>
 				<span class="shrink-0">by</span>
 				<div class="flex gap-1 items-center shrink-0">

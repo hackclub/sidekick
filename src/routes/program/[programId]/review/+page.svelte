@@ -6,6 +6,7 @@
 	import BentoLeaderboard from '$lib/components/ui/BentoLeaderboard.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import CsvExportModal from '$lib/components/ui/CsvExportModal.svelte';
+	import { isUuid, shortenId } from '$lib/utils/id';
 
 	interface Props {
 		data: PageData;
@@ -249,13 +250,13 @@
 					{/if}
 					<div class="flex-1 min-w-0">
 						<div class="flex items-center gap-1.5 mb-0.5">
-							<span class="text-text-tertiary text-xs font-mono">#{pa.projectId}</span>
-							<span class="font-bold text-sm tracking-[-0.3px] truncate">{project?.title ?? pa.projectId}</span>
+							<span class="text-text-tertiary text-xs font-mono" title={isUuid(pa.projectId) ? pa.projectId : undefined}>#{shortenId(pa.projectId)}</span>
+							<span class="font-bold text-sm tracking-[-0.3px] truncate">{project?.title ?? shortenId(pa.projectId)}</span>
 						</div>
 						<div class="flex items-center gap-1.5 text-xs text-text-secondary tracking-[-0.24px]">
 							<Avatar name={reviewer?.name ?? pa.reviewerId} url={reviewer?.avatarUrl} size="xs" />
 							<span class="truncate">
-								{reviewer?.name ?? pa.reviewerId} approved for {formatHours(pa.hoursAssigned)}
+								{reviewer?.name ?? shortenId(pa.reviewerId)} approved for {formatHours(pa.hoursAssigned)}
 								<span class="text-text-tertiary">&middot; {new Date(pa.createdAt).toLocaleDateString()}</span>
 							</span>
 						</div>
@@ -289,13 +290,13 @@
 					{/if}
 					<div class="flex-1 min-w-0">
 						<div class="flex items-center gap-1.5 mb-0.5">
-							<span class="text-text-tertiary text-xs font-mono">#{project.id}</span>
+							<span class="text-text-tertiary text-xs font-mono" title={isUuid(project.id) ? project.id : undefined}>#{shortenId(project.id)}</span>
 							<span class="font-bold text-sm tracking-[-0.3px] truncate">{project.title}</span>
 						</div>
 						<div class="flex items-center gap-1.5 text-xs text-text-secondary tracking-[-0.24px]">
 							<Avatar name={actor?.name ?? project.authorId} url={actor?.avatarUrl} size="xs" />
 							<span class="truncate">
-								{actor?.name ?? project.authorId}
+								{actor?.name ?? shortenId(project.authorId)}
 								{#if hqShip}
 									<span class="text-text-tertiary">&middot; {new Date(hqShip.submittedAt).toLocaleDateString()}</span>
 								{/if}
@@ -347,13 +348,13 @@
 					{/if}
 					<div class="flex-1 min-w-0">
 						<div class="flex items-center gap-1.5 mb-0.5">
-							<span class="text-text-tertiary text-xs font-mono">#{project.id}</span>
+							<span class="text-text-tertiary text-xs font-mono" title={isUuid(project.id) ? project.id : undefined}>#{shortenId(project.id)}</span>
 							<span class="font-bold text-sm tracking-[-0.3px] truncate">{project.title}</span>
 						</div>
 						<div class="flex items-center gap-1.5 text-xs text-text-secondary tracking-[-0.24px]">
 							<Avatar name={actor?.name ?? project.authorId} url={actor?.avatarUrl} size="xs" />
 							<span class="truncate">
-								{actor?.name ?? project.authorId}
+								{actor?.name ?? shortenId(project.authorId)}
 								{#if pendingShip}
 									<span class="text-text-tertiary">&middot; {new Date(pendingShip.submittedAt).toLocaleDateString()}</span>
 								{/if}
@@ -425,7 +426,7 @@
 					/>
 				</div>
 				<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{project.title}</div>
-				<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate">{actor?.name ?? project.authorId}</div>
+				<div class="flex-[2] text-text-primary tracking-[-0.3px] px-2 py-1.5 truncate" title={!actor?.name && isUuid(project.authorId) ? project.authorId : undefined}>{actor?.name ?? shortenId(project.authorId)}</div>
 				<div class="flex-[3] text-text-secondary tracking-[-0.3px] px-2 py-1.5 truncate font-mono text-xs">{project.demoUrl ?? ''}</div>
 				<div class="flex-[3] text-text-secondary tracking-[-0.3px] px-2 py-1.5 truncate font-mono text-xs">{project.codeUrl}</div>
 				<div class="flex-[1] text-text-secondary tracking-[-0.3px] px-2 py-1.5 text-right">{pendingShip ? formatHours(pendingShip.hoursSubmitted) : ''}</div>

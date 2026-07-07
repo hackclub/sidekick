@@ -2,6 +2,7 @@
 	import StatusLight from '$lib/components/ui/StatusLight.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import { Banknote } from 'lucide-svelte';
+	import { isUuid, shortenId } from '$lib/utils/id';
 
 	interface Props {
 		id: string;
@@ -58,7 +59,7 @@
 	onclick={onclick}
 	tabindex="0"
 >
-	<td class="px-3 py-2.5 border-b border-r border-border-table text-sm {selected ? 'font-bold' : ''}">{id}</td>
+	<td class="px-3 py-2.5 border-b border-r border-border-table text-sm {selected ? 'font-bold' : ''}" title={isUuid(id) ? id : undefined}>#{shortenId(id)}</td>
 	<td class="px-3 py-2.5 border-b border-r border-border-table">
 		<div class="flex gap-2 items-center min-w-0">
 			<Avatar name={userName} url={userAvatarUrl} size="md" />

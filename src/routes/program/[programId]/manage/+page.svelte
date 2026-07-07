@@ -43,6 +43,7 @@
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import Checkbox from '$lib/components/ui/Checkbox.svelte';
 	import { SPENDING_CATEGORIES } from '$lib/data/spending-categories.js';
+	import { isUuid, shortenId } from '$lib/utils/id';
 	import type { PageData } from './$types.js';
 
 	interface Props {
@@ -1424,7 +1425,7 @@
 									<span class="font-semibold">{log.actor.name}</span>
 									{describeAction(log.action, log.entityType)}
 									{#if log.entityId}
-										<span class="font-mono text-text-muted text-xs">{log.entityId}</span>
+										<span class="font-mono text-text-muted text-xs" title={isUuid(log.entityId) ? log.entityId : undefined}>{shortenId(log.entityId)}</span>
 									{/if}
 								</span>
 							</div>
