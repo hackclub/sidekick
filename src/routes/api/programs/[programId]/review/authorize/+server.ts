@@ -7,6 +7,12 @@ import type { RequestHandler } from './$types.js';
 
 const logger = createLogger('api:review:authorize');
 
+// Some endpoints (e.g. Beest's audit approve) require these fields, so we
+// always send something meaningful even when the authorizer typed nothing.
+const DEFAULT_AUTHORIZE_JUSTIFICATION = 'Approved via Sidekick HQ authorization.';
+const DEFAULT_DEAUTHORIZE_MESSAGE =
+	'Your approval was sent back by HQ for another look. Please re-review this ship.';
+
 function parseProtocolError(e: ProtocolError): { status: number; body: { error: string; message: string } } {
 	try {
 		const parsed = JSON.parse(e.body);
@@ -24,8 +30,10 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		isSuperAdmin: user.isSuperAdmin
 	});
 
-	const { pendingApprovalId } = await request.json();
+	const { pendingApprovalId, justification: rawJustification } = await request.json();
 	if (!pendingApprovalId) throw error(400, 'pendingApprovalId is required');
+	const justification =
+		(typeof rawJustification === 'string' && rawJustification.trim()) || DEFAULT_AUTHORIZE_JUSTIFICATION;
 
 	logger.info('POST authorize', { programId: params.programId, pendingApprovalId });
 
@@ -42,7 +50,8 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			const result = await client.submitReviewAction({
 				shipId,
 				reviewerId,
-				action: 'authorize'
+				action: 'authorize',
+				justification
 			});
 
 			await db.auditLog.create({
@@ -75,6 +84,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 				hoursAssigned: pending.hoursAssigned,
 				feedbackMessage: pending.feedbackMessage,
 				justification: pending.justification,
+				isHq: false,
 				fields: (pending.fields as Record<string, string | number | boolean>) ?? undefined
 			});
 		} catch (e) {
@@ -86,7 +96,8 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			shipId: pending.shipId,
 			reviewerId,
 			action: 'authorize',
-			hoursAssigned: pending.hoursAssigned
+			hoursAssigned: pending.hoursAssigned,
+			justification
 		});
 
 		await db.pendingApproval.delete({ where: { id: pendingApprovalId } });
@@ -127,8 +138,9 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 		isSuperAdmin: user.isSuperAdmin
 	});
 
-	const { pendingApprovalId } = await request.json();
+	const { pendingApprovalId, message: rawMessage } = await request.json();
 	if (!pendingApprovalId) throw error(400, 'pendingApprovalId is required');
+	const message = (typeof rawMessage === 'string' && rawMessage.trim()) || DEFAULT_DEAUTHORIZE_MESSAGE;
 
 	logger.info('DELETE discard pending', { programId: params.programId, pendingApprovalId });
 
@@ -144,7 +156,8 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 			const result = await client.submitReviewAction({
 				shipId,
 				reviewerId,
-				action: 'deauthorize'
+				action: 'deauthorize',
+				message
 			});
 
 			await db.auditLog.create({

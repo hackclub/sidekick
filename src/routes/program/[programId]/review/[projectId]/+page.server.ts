@@ -538,12 +538,14 @@ export const actions: Actions = {
 
 		switch (action) {
 			case 'approve':
+				// Only reachable for HQ users — non-HQ approvals were queued above.
 				input = {
 					...base,
 					action: 'approve',
 					hoursAssigned: parseFloat(formData.get('hoursAssigned') as string),
 					feedbackMessage: formData.get('feedbackMessage') as string,
 					justification: formData.get('justification') as string,
+					isHq: membership.canAuthorizeReviews,
 					fields
 				};
 				break;
@@ -553,6 +555,7 @@ export const actions: Actions = {
 					action: 'reject',
 					feedbackMessage: formData.get('feedbackMessage') as string,
 					internalMessage: (formData.get('internalMessage') as string) || undefined,
+					isHq: membership.canAuthorizeReviews,
 					fields
 				};
 				break;
