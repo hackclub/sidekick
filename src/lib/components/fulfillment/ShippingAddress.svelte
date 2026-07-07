@@ -29,12 +29,14 @@
 	let loading = $state(false);
 	let address = $state<AddressData | null>(null);
 	let noAddress = $state(false);
+	let unavailable = $state(false);
 	let fetchError = $state<string | null>(null);
 
 	async function revealAddress() {
 		loading = true;
 		fetchError = null;
 		noAddress = false;
+		unavailable = false;
 		log.info('Revealing shipping address', { orderId, programId });
 		const t = log.time('revealAddress');
 
@@ -49,6 +51,13 @@
 				log.debug('No shipping address on file (404)', { orderId });
 				noAddress = true;
 				revealed = true;
+				return;
+			}
+			if (res.status === 503) {
+				// Upstream can't retrieve the address right now (e.g. expired HCA
+				// tokens) — leave the reveal button visible so the user can retry.
+				log.warn('Shipping address temporarily unavailable (503)', { orderId });
+				unavailable = true;
 				return;
 			}
 			if (!res.ok) {
@@ -108,6 +117,9 @@
 				Click to reveal shipping address
 			{/if}
 		</button>
+		{#if unavailable}
+			<p class="text-amber-600 text-xs">The shipping address is temporarily unavailable upstream. Try again in a moment.</p>
+		{/if}
 		{#if fetchError}
 			<p class="text-check-fail text-xs">{fetchError}</p>
 		{/if}
