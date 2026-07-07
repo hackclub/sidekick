@@ -29,6 +29,23 @@ export class ProtocolError extends Error {
     this.status = status;
     this.body = body;
   }
+
+  // The machine-readable `error` code from the endpoint's JSON error body, if any.
+  get errorCode(): string | null {
+    try {
+      const parsed = JSON.parse(this.body);
+      return typeof parsed.error === "string" ? parsed.error : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+// An address exists (or may exist) but the endpoint can't retrieve it right now —
+// e.g. Beest returns 503 when its HCA tokens are expired. Distinct from 404 (no
+// address on file).
+export function isAddressUnavailable(e: ProtocolError): boolean {
+  return e.status === 503 || e.errorCode === "ADDRESS_UNAVAILABLE";
 }
 
 export class ProtocolClient {

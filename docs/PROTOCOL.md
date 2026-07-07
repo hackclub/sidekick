@@ -698,6 +698,20 @@ Return the shipping address for an order. **This action is audited** - Sidekick 
 
 All fields are strings. `line2`, `stateProvince`, and `phoneNumber` are optional.
 
+**Error semantics.** Sidekick distinguishes two failure modes:
+
+- **No address on file** - the user never provided one. Return HTTP **404** (e.g. `{ "error": "NOT_FOUND", "message": "No address on file." }`). Sidekick shows "No shipping address on file".
+- **Address temporarily unavailable** - an address exists (or may exist) but you can't retrieve it right now, e.g. your HCA tokens are expired. Return HTTP **503**, or any status with the error code `ADDRESS_UNAVAILABLE`:
+
+```json
+{
+  "error": "ADDRESS_UNAVAILABLE",
+  "message": "HCA tokens expired; address vault unreachable."
+}
+```
+
+Sidekick treats this as transient - it tells the fulfiller to retry later instead of reporting the order as having no address.
+
 ### `UPDATE_ORDER_STATUS`
 
 Change an order's status (e.g. mark as fulfilled).

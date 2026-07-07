@@ -1,7 +1,11 @@
 import { json, error } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
-import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
+import {
+	ProtocolClient,
+	ProtocolError,
+	isAddressUnavailable
+} from '$lib/server/protocol/client.js';
 import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
 
@@ -28,6 +32,13 @@ export const POST: RequestHandler = async ({ params, locals, getClientAddress })
 		address = await client.revealOrderAddress({ orderId: params.orderId });
 	} catch (e) {
 		if (e instanceof ProtocolError) {
+			if (isAddressUnavailable(e)) {
+				logger.warn('Address temporarily unavailable upstream', {
+					orderId: params.orderId,
+					status: e.status
+				});
+				return json({ addressUnavailable: true }, { status: 503 });
+			}
 			logger.debug('No address on file', { orderId: params.orderId });
 			return json({ noAddress: true }, { status: 404 });
 		}

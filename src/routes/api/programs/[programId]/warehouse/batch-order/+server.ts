@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
-import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
+import { ProtocolClient, ProtocolError, isAddressUnavailable } from '$lib/server/protocol/client.js';
 import { decrypt } from '$lib/server/crypto.js';
 import { createWarehouseOrder } from '$lib/server/integrations/theseus.js';
 import { getValidHcbToken, createHcbTransfer } from '$lib/server/integrations/hcb.js';
@@ -168,6 +168,10 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		address = await client.revealOrderAddress({ orderId: firstOrderId });
 	} catch (e) {
 		if (e instanceof ProtocolError) {
+			if (isAddressUnavailable(e)) {
+				logger.warn('Shipping address temporarily unavailable', { orderId: firstOrderId, status: e.status });
+				throw error(503, 'Shipping address is temporarily unavailable upstream. Try again later.');
+			}
 			logger.warn('No shipping address for first order', { orderId: firstOrderId });
 			throw error(400, 'No shipping address on file for this order');
 		}
