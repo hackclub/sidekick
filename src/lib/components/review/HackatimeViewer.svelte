@@ -8,6 +8,7 @@
 		Check,
 		ChartLine,
 		PieChart,
+		FileCode,
 		Code,
 		Ship,
 		MessageSquare,
@@ -17,6 +18,7 @@
 	import HeartbeatScatter from './HeartbeatScatter.svelte';
 	import HeartbeatTable from './HeartbeatTable.svelte';
 	import HackatimeBreakdown from './HackatimeBreakdown.svelte';
+	import HackatimeFiles from './HackatimeFiles.svelte';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
 
 	const log = createLogger('HackatimeViewer');
@@ -137,7 +139,8 @@
 
 	const detailTabs = [
 		{ id: 'graph', label: 'Graph', icon: ChartLine },
-		{ id: 'breakdown', label: 'Breakdown', icon: PieChart }
+		{ id: 'breakdown', label: 'Breakdown', icon: PieChart },
+		{ id: 'files', label: 'Files', icon: FileCode }
 	];
 
 	const effectiveProjectKeys = $derived(selectedProject ? [selectedProject] : hackatimeProjectKeys);
@@ -903,7 +906,7 @@
 					onrangechange={(range) => (visibleRange = range)}
 				/>
 			</div>
-		{:else if activeTab === 'breakdown'}
+		{:else if activeTab === 'breakdown' || activeTab === 'files'}
 			<div class="flex items-center gap-1 px-6 pt-4">
 				<button
 					class="text-[12px] font-medium rounded-tag px-2.5 py-1 cursor-pointer transition-colors
@@ -930,7 +933,11 @@
 					<span class="text-[12px]">Loading all heartbeats...</span>
 				</div>
 			{:else if breakdownHeartbeats && breakdownHeartbeats.length > 0}
-				<HackatimeBreakdown heartbeats={breakdownHeartbeats} />
+				{#if activeTab === 'breakdown'}
+					<HackatimeBreakdown heartbeats={breakdownHeartbeats} />
+				{:else}
+					<HackatimeFiles heartbeats={breakdownHeartbeats} />
+				{/if}
 			{:else}
 				<div class="flex items-center justify-center py-16 text-sm text-text-tertiary">
 					No heartbeat data available.
