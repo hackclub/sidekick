@@ -457,11 +457,14 @@ The `action` field determines which other fields are present:
   "hoursAssigned": 7.5,
   "feedbackMessage": "Looks good! Nice use of WebSockets.",
   "justification": "Hackatime logs verified, 8h claimed, 0.5h AI-generated code deducted.",
+  "isHq": true,
   "fields": { "grant_amount": 75 }
 }
 ```
 
 The `fields` object is optional. If the ship declared `approveFields`, the values submitted by the reviewer are included here. Keys match the `name` from each `ReviewFieldDefinition`. Omit `fields` entirely if there are no custom fields or none were filled.
+
+`isHq` indicates whether the reviewer has HQ authorization powers. If your program uses the two-stage review flow, an approval with `"isHq": true` should **bypass the `pending_hq` stage** and finalize the ship as `"approved"` immediately; `"isHq": false` should move it to `"pending_hq"` to await authorization. Programs without a two-stage flow can ignore this field.
 
 **Reject:**
 ```json
@@ -471,11 +474,12 @@ The `fields` object is optional. If the ship declared `approveFields`, the value
   "action": "reject",
   "feedbackMessage": "The demo link returns a 404. Please deploy and resubmit.",
   "internalMessage": "Suspicious commit pattern - might want a closer look next time.",
+  "isHq": false,
   "fields": { "ban_user": false }
 }
 ```
 
-As with approvals, `fields` is optional and carries values from the ship's `rejectFields` definitions.
+As with approvals, `fields` is optional and carries values from the ship's `rejectFields` definitions. `isHq` is informational for rejections (they take effect immediately either way) - use it for auditing if you care who rejected with HQ powers.
 
 **Comment (visible to participant):**
 ```json
@@ -503,22 +507,28 @@ As with approvals, `fields` is optional and carries values from the ship's `reje
   "shipId": "ship_002",
   "reviewerId": "ident!hqreviewer789",
   "action": "authorize",
-  "hoursAssigned": 7.0
+  "hoursAssigned": 7.0,
+  "justification": "Spot-checked commits and Hackatime logs; hours look right."
 }
 ```
 
 Finalizes a ship in `"pending_hq"` status, transitioning it to `"approved"`. If `hoursAssigned` is present, the program should use that value instead of the original reviewer's hours. If omitted, the program should use the hours from the original reviewer approval. Only valid for ships with status `"pending_hq"`.
+
+`justification` is the authorizer's internal reasoning. Sidekick always sends it - if the authorizer didn't write one, a canned default is substituted - so programs that require a justification on their audit-approval records (e.g. Beest) can rely on it being present.
 
 **Deauthorize (revert a `pending_hq` ship back to pending):**
 ```json
 {
   "shipId": "ship_002",
   "reviewerId": "ident!hqreviewer789",
-  "action": "deauthorize"
+  "action": "deauthorize",
+  "message": "Hours look inflated relative to the commit history - please take another look."
 }
 ```
 
 Reverts a ship from `"pending_hq"` back to `"pending"` so it can be re-reviewed. Only valid for ships with status `"pending_hq"`.
+
+`message` is feedback for the original reviewer explaining why their approval was sent back. Sidekick always sends it, substituting a canned default if the authorizer didn't write one.
 
 **Response** (all variants):
 ```json

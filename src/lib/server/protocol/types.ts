@@ -196,20 +196,24 @@ export type SubmitReviewActionInput = SubmitReviewActionBase &
         hoursAssigned: number;
         feedbackMessage: string;
         justification: string;
+        isHq: boolean; // HQ approvals skip the pending_hq stage and finalize immediately
         fields?: ReviewFieldValues;
       }
     | {
         action: "reject";
         feedbackMessage: string;
         internalMessage?: string;
+        isHq: boolean;
         fields?: ReviewFieldValues;
       }
     | {
         action: "authorize";
         hoursAssigned?: number;
+        justification?: string; // Sidekick sends a canned default if the authorizer gave none
       }
     | {
         action: "deauthorize";
+        message?: string; // feedback to the original reviewer; canned default if absent
       }
     | {
         action: "comment";
