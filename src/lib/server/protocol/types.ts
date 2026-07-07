@@ -55,6 +55,15 @@ export interface ProjectChange {
   diffType: "text" | "url" | "image";
 }
 
+// Arbitrary program-defined data displayed on a ship event, e.g. a change
+// description (public) or a reviewer note (internal). Internal fields are
+// only ever shown to reviewers, never the participant.
+export interface ShipDisplayField {
+  label: string;
+  value: string;
+  isInternal?: boolean;
+}
+
 export type TimelineEvent =
   | {
       type: "ship";
@@ -62,6 +71,7 @@ export type TimelineEvent =
       actorId: string;
       hoursSubmitted: number;
       changes?: ProjectChange[];
+      displayFields?: ShipDisplayField[];
       timestamp: string;
     }
   | {

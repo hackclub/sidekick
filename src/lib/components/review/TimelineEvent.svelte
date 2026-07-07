@@ -342,6 +342,22 @@
 			</div>
 		{/if}
 
+		{#if event.type === 'ship' && event.displayFields && event.displayFields.length > 0}
+			<div class="flex flex-col gap-1.5 w-full">
+				{#each event.displayFields as field, i (i)}
+					<div class="{field.isInternal ? 'bg-accent-bg-warm border border-dashed border-accent' : 'bg-surface'} rounded-tag p-3 flex flex-col gap-1.5 min-w-0">
+						<p class="font-bold text-sm tracking-[-0.3px] flex items-center gap-1.5">
+							{field.label}
+							{#if field.isInternal}
+								<Eye size={12} class="text-accent" />
+							{/if}
+						</p>
+						<p class="text-sm tracking-[-0.3px] break-words">{@render linkedText(field.value)}</p>
+					</div>
+				{/each}
+			</div>
+		{/if}
+
 		{#if event.type === 'rejection'}
 			<div class="flex gap-1.5 w-full">
 				<div class="bg-surface rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">

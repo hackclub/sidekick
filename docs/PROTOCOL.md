@@ -246,6 +246,17 @@ All events carry an `actorId` (the person who performed the action) and a `times
       "diffType": "url"
     }
   ],
+  "displayFields": [
+    {
+      "label": "Change description",
+      "value": "Added Redis-backed presence and fixed reconnect handling."
+    },
+    {
+      "label": "Reviewer note",
+      "value": "Second submission after the demo URL fix - compare against ship_001.",
+      "isInternal": true
+    }
+  ],
   "timestamp": "2026-05-28T10:00:00Z"
 }
 ```
@@ -258,6 +269,10 @@ All events carry an `actorId` (the person who performed the action) and a `times
 | `changes[].oldValue` | `string` | Yes      | Previous value. Use `""` for empty/null.                                                   |
 | `changes[].newValue` | `string` | Yes      | New value. Use `""` for empty/null.                                                        |
 | `changes[].diffType` | `string` | Yes      | Rendering hint: `"text"`, `"url"`, or `"image"`.                                           |
+| `displayFields`      | `array`  | No       | Arbitrary label/value pairs to display on the ship event, e.g. a change description written by the participant or a note for reviewers. |
+| `displayFields[].label` | `string` | Yes    | Human-readable label for the field.                                                        |
+| `displayFields[].value` | `string` | Yes    | The field's content. Plain text; URLs are auto-linked.                                     |
+| `displayFields[].isInternal` | `boolean` | No | If `true`, the field is reviewer-only and rendered with internal styling. Default `false` (public - the participant may see it in your program's own UI). |
 
 Recognized fields and their `diffType`:
 
