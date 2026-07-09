@@ -97,7 +97,10 @@
 			</div>
 		{:else}
 			<div class="flex flex-col px-8 py-3">
-				{#each displayedRecords as record (record.url)}
+				<!-- The index in the key guards against duplicate URLs: a key collision
+				     throws mid-flush and silently freezes this whole section (records
+				     stop rendering and the fuzzy checkbox stops reflecting its state). -->
+				{#each displayedRecords as record, i (`${record.url}#${i}`)}
 					<!-- eslint-disable svelte/no-navigation-without-resolve -->
 					<a
 						href={record.url}
