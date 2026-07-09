@@ -275,6 +275,10 @@ export type UpdateReviewActionInput = {
       type: "approval";
       feedbackMessage: string;
       justification: string;
+      // Only sent when editing an approval that is still awaiting HQ
+      // authorization (pending_hq). Programs must apply it so a later
+      // `authorize` without hours finalizes the edited value; hour edits on
+      // finalized approvals are invalid.
       hoursAssigned?: number;
       fields?: ReviewFieldValues;
     }
