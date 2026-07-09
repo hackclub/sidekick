@@ -101,6 +101,7 @@ A **project** is the primary entity - the thing a participant is building. It ha
 | `authorId`             | `string`   | Yes      | Slack ID (`U...`) or HCA ID (`ident!...`) of the author.                                                                                    |
 | `hackatimeId`          | `string`   | No       | Hackatime user identifier - Slack ID, HCA ID, or Hackatime numeric ID. If omitted, Sidekick falls back to `authorId` for Hackatime lookups. |
 | `hackatimeProjectKeys` | `string[]` | Yes      | Hackatime project keys to aggregate. Empty array if not using Hackatime.                                                                    |
+| `hackatimeStartDate`   | `string`   | No       | ISO date (`YYYY-MM-DD`). When set, Sidekick only counts Hackatime activity on or after this date when aggregating hours - send your event's start date so pre-event time on reused Hackatime projects doesn't inflate totals. Omit to count all-time. |
 | `ships`                | `Ship[]`   | Yes      | All submissions for this project, ordered chronologically.                                                                                  |
 | `metadata`             | `object`   | No       | Any program-specific extra data. Sidekick preserves but doesn't interpret it.                                                               |
 
