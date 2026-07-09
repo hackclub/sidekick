@@ -1,6 +1,6 @@
 <script lang="ts">
 	import TimelineEvent from './TimelineEvent.svelte';
-	import type { TimelineEvent as TEvent } from '$lib/server/protocol/types.js';
+	import type { TimelineEvent as TEvent, ReviewFieldDefinition } from '$lib/server/protocol/types.js';
 
 	interface EditData {
 		event: TEvent;
@@ -15,15 +15,16 @@
 		shipHours?: Record<string, number>;
 		approvedShipHours?: Record<string, number>;
 		canAuthorize?: boolean;
-		onsave?: (data: EditData) => void;
+		onsave?: (data: EditData) => Promise<string | null>;
 		onauthorize?: (id: string) => void;
 		ondelete?: (id: string) => void;
-		oneditpending?: (id: string, reviewerId: string, feedbackMessage: string, justification: string, hoursAssigned: number) => void;
+		oneditpending?: (id: string, reviewerId: string, feedbackMessage: string, justification: string, hoursAssigned: number) => Promise<string | null>;
 		authorizing?: string | null;
+		fieldDefs?: Record<string, ReviewFieldDefinition>;
 		class?: string;
 	}
 
-	let { events, actors, shipHours = {}, approvedShipHours = {}, canAuthorize = false, onsave, onauthorize, ondelete, oneditpending, authorizing = null, class: className = '' }: Props = $props();
+	let { events, actors, shipHours = {}, approvedShipHours = {}, canAuthorize = false, onsave, onauthorize, ondelete, oneditpending, authorizing = null, fieldDefs = {}, class: className = '' }: Props = $props();
 
 	const shipsWithApproval = $derived(new Set(
 		events

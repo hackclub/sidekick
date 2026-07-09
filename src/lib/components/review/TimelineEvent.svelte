@@ -1,8 +1,13 @@
 <script lang="ts">
-	import { Ship, CircleX, CircleCheck, MessageSquare, Eye, Pencil, X, Check, Clock, ShieldCheck, Loader2, Type, Link, Image } from 'lucide-svelte';
-	import type { TimelineEvent as TEvent } from '$lib/server/protocol/types.js';
+	import { Ship, CircleX, CircleCheck, MessageSquare, Eye, Pencil, X, Check, Clock, ShieldCheck, Loader2, Type, Link, Image, Gift, AlertTriangle } from 'lucide-svelte';
+	import type { TimelineEvent as TEvent, ReviewFieldDefinition } from '$lib/server/protocol/types.js';
 	import { wordDiff } from '$lib/utils/diff.js';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
+	import { marked, Renderer } from 'marked';
+
+	const mdRenderer = new Renderer();
+	mdRenderer.link = ({ href, text }) =>
+		`<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`;
 
 	interface EditData {
 		event: TEvent;
@@ -17,18 +22,25 @@
 		shipHourInfo?: Record<string, { delta: number; cumulative: number }>;
 		approvalHourInfo?: Record<string, { cumulative: number }>;
 		canAuthorize?: boolean;
-		onsave?: (data: EditData) => void;
+		// Save handlers resolve to null on success, or an error message to show
+		// the reviewer. Edits are only committed to the display on success.
+		onsave?: (data: EditData) => Promise<string | null>;
 		onauthorize?: (id: string) => void;
 		ondelete?: (id: string) => void;
-		oneditpending?: (id: string, reviewerId: string, feedbackMessage: string, justification: string, hoursAssigned: number) => void;
+		oneditpending?: (id: string, reviewerId: string, feedbackMessage: string, justification: string, hoursAssigned: number) => Promise<string | null>;
 		authorizing?: string | null;
+		// Field definitions by name (from the ships' approveFields/rejectFields),
+		// used to label custom field values and render markdown fields as boxes.
+		fieldDefs?: Record<string, ReviewFieldDefinition>;
 	}
 
-	let { event, actors, shipHourInfo = {}, approvalHourInfo = {}, canAuthorize = false, onsave, onauthorize, ondelete, oneditpending, authorizing = null }: Props = $props();
+	let { event, actors, shipHourInfo = {}, approvalHourInfo = {}, canAuthorize = false, onsave, onauthorize, ondelete, oneditpending, authorizing = null, fieldDefs = {} }: Props = $props();
 
 	const actor = $derived(actors[event.actorId] ?? { name: event.actorId, avatarUrl: null });
 
 	let editing = $state(false);
+	let saving = $state(false);
+	let editError = $state<string | null>(null);
 	let editFeedback = $state('');
 	let editInternal = $state('');
 	let editHours = $state(0);
@@ -47,37 +59,58 @@
 		savedHours ?? (event.type === 'pending_approval' ? event.hoursAssigned : 0)
 	);
 
+	// Kept as its own derived: inlining `(a === x || a === y) && b` in the template
+	// gets miscompiled by Svelte 5.55's strict_equals dev transform, which drops
+	// the parentheses and changes the operator precedence.
+	const isEditableReview = $derived(event.type === 'rejection' || event.type === 'approval');
+
 	function startEditing() {
 		editFeedback = displayFeedback;
 		editInternal = displayInternal;
 		editHours = displayHours;
+		editError = null;
 		editing = true;
 	}
 
 	function cancelEditing() {
 		editing = false;
+		editError = null;
 	}
 
-	function saveEditing() {
-		savedFeedback = editFeedback;
-		savedInternal = editInternal;
+	async function saveEditing() {
+		if (saving) return;
+		saving = true;
+		editError = null;
 
+		// Commit-on-success: the displayed values only change once the master
+		// endpoint accepted the edit. On failure the editor stays open with the
+		// draft and the upstream error, and the display keeps the old values.
+		let error: string | null = null;
 		if (event.type === 'approval') {
-			onsave?.({
+			error = (await onsave?.({
 				event,
 				feedbackMessage: editFeedback,
 				justification: editInternal
-			});
+			})) ?? null;
 		} else if (event.type === 'rejection') {
-			onsave?.({
+			error = (await onsave?.({
 				event,
 				feedbackMessage: editFeedback,
 				internalMessage: editInternal
-			});
+			})) ?? null;
 		} else if (event.type === 'pending_approval') {
-			savedHours = editHours;
-			oneditpending?.(event.id, event.actorId, editFeedback, editInternal, editHours);
+			error = (await oneditpending?.(event.id, event.actorId, editFeedback, editInternal, editHours)) ?? null;
 		}
+		saving = false;
+
+		if (error) {
+			editError = error;
+			return;
+		}
+
+		savedFeedback = editFeedback;
+		savedInternal = editInternal;
+		if (event.type === 'pending_approval') savedHours = editHours;
 		editing = false;
 	}
 
@@ -290,7 +323,7 @@
 						Discard
 					</button>
 				</div>
-			{:else if (event.type === 'rejection' || event.type === 'approval') && onsave && !editing}
+			{:else if isEditableReview && onsave && !editing}
 				<button
 					class="bg-white border border-border-active rounded-tag p-2 flex items-center justify-center hover:bg-surface transition-colors cursor-pointer"
 					onclick={startEditing}
@@ -487,20 +520,32 @@
 		{/if}
 
 		{#if editing}
+			{#if editError}
+				<div class="flex items-center gap-1.5 text-check-fail">
+					<AlertTriangle size={14} class="shrink-0" />
+					<span class="text-sm font-medium">{editError}</span>
+				</div>
+			{/if}
 			<div class="flex items-center justify-end gap-1.5">
 				<button
 					class="flex items-center gap-1.5 px-3 py-1.5 rounded-tag text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-surface transition-colors cursor-pointer"
 					onclick={cancelEditing}
+					disabled={saving}
 				>
 					<X size={12} />
 					Cancel
 				</button>
 				<button
-					class="flex items-center gap-1.5 px-3 py-1.5 rounded-tag text-xs font-medium bg-accent text-white hover:opacity-90 transition-colors cursor-pointer"
+					class="flex items-center gap-1.5 px-3 py-1.5 rounded-tag text-xs font-medium bg-accent text-white hover:opacity-90 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
 					onclick={saveEditing}
+					disabled={saving}
 				>
-					<Check size={12} />
-					Save
+					{#if saving}
+						<Loader2 size={12} class="animate-spin" />
+					{:else}
+						<Check size={12} />
+					{/if}
+					{saving ? 'Saving...' : 'Save'}
 				</button>
 			</div>
 		{/if}

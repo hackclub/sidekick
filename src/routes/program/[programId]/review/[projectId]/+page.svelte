@@ -435,35 +435,45 @@
 		submitting = false;
 	}
 
+	// Save handlers resolve to null on success or an error message to display —
+	// TimelineEvent only commits the edit to its display on success.
 	async function handleSaveReview(editData: {
 		event: TEvent;
 		feedbackMessage: string;
 		internalMessage?: string;
 		justification?: string;
-	}) {
+	}): Promise<string | null> {
 		const event = editData.event;
-		if (event.type !== 'approval' && event.type !== 'rejection') return;
+		if (event.type !== 'approval' && event.type !== 'rejection') return null;
 
 		log.info('Saving review edit', { shipId: event.shipId, type: event.type });
 		const t = log.time('handleSaveReview');
-		const res = await fetch(`/api/programs/${data.program.id}/review/${event.shipId}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				type: event.type,
-				reviewerId: event.actorId,
-				feedbackMessage: editData.feedbackMessage,
-				justification: editData.justification,
-				internalMessage: editData.internalMessage
-			})
-		});
+		try {
+			const res = await fetch(`/api/programs/${data.program.id}/review/${event.shipId}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					type: event.type,
+					reviewerId: event.actorId,
+					feedbackMessage: editData.feedbackMessage,
+					justification: editData.justification,
+					internalMessage: editData.internalMessage
+				})
+			});
 
-		t.end('status', res.status);
-		if (res.ok) {
+			t.end('status', res.status);
+			if (!res.ok) {
+				const body = await res.json().catch(() => null);
+				const message = body?.message ?? `Failed to save (HTTP ${res.status})`;
+				log.error('Failed to save review edit', { status: res.status, message });
+				return message;
+			}
 			log.debug('Review edit saved successfully');
 			await invalidateAll();
-		} else {
-			log.error('Failed to save review edit', { status: res.status });
+			return null;
+		} catch (e) {
+			log.error('Failed to save review edit', { error: e });
+			return 'Failed to save — check your connection and try again.';
 		}
 	}
 
@@ -527,26 +537,34 @@
 		feedbackMessage: string,
 		justification: string,
 		hoursAssigned: number
-	) {
+	): Promise<string | null> {
 		log.info('Editing pending approval', { pendingApprovalId, hoursAssigned });
 		const t = log.time('handleEditPending');
-		const res = await fetch(`/api/programs/${data.program.id}/review/authorize`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				pendingApprovalId,
-				reviewerId,
-				feedbackMessage,
-				justification,
-				hoursAssigned
-			})
-		});
-		t.end('status', res.status);
-		if (!res.ok) {
-			log.error('Failed to edit pending approval', { pendingApprovalId, status: res.status });
-		} else {
+		try {
+			const res = await fetch(`/api/programs/${data.program.id}/review/authorize`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					pendingApprovalId,
+					reviewerId,
+					feedbackMessage,
+					justification,
+					hoursAssigned
+				})
+			});
+			t.end('status', res.status);
+			if (!res.ok) {
+				const body = await res.json().catch(() => null);
+				const message = body?.message ?? `Failed to save (HTTP ${res.status})`;
+				log.error('Failed to edit pending approval', { pendingApprovalId, status: res.status, message });
+				return message;
+			}
 			log.debug('Pending approval edited successfully');
 			await invalidateAll();
+			return null;
+		} catch (e) {
+			log.error('Failed to edit pending approval', { pendingApprovalId, error: e });
+			return 'Failed to save — check your connection and try again.';
 		}
 	}
 </script>
