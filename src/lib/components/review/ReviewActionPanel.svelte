@@ -404,8 +404,12 @@
 
 	// A restored draft (or a just-queued approval) may leave a verdict tab
 	// selected that no longer exists — snap to the first available one.
+	// Structured as early returns rather than `a && (b || c)` — Svelte 5.55's
+	// transform drops the parentheses when reprinting such expressions, which
+	// silently changes the operator precedence (see isExternalPreviousRecord).
 	$effect(() => {
-		if (hasPendingApproval && (selectedAction === 'approve' || selectedAction === 'reject')) {
+		if (!hasPendingApproval) return;
+		if (selectedAction === 'approve' || selectedAction === 'reject') {
 			selectedAction = 'comment';
 		}
 	});
