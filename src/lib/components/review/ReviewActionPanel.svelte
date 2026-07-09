@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createLogger } from '$lib/logger.js';
-	import { CircleCheck, CircleX, MessageSquare, Eye, AlertTriangle, Loader2, X, Copy, Sparkles } from 'lucide-svelte';
+	import { CircleCheck, CircleX, MessageSquare, Eye, AlertTriangle, Loader2, X, Copy, Sparkles, CircleHelp, Zap, ChevronDown } from 'lucide-svelte';
 	import MarkdownTextarea from '$lib/components/ui/MarkdownTextarea.svelte';
 	import Checkbox from '$lib/components/ui/Checkbox.svelte';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
@@ -37,6 +37,7 @@
 		onsubmit: (data: {
 			action: ActionType;
 			hoursAssigned?: number;
+			rewardedHoursOverride?: number;
 			feedbackMessage?: string;
 			justification?: string;
 			internalMessage?: string;
@@ -50,12 +51,25 @@
 		draftKey?: string;
 		approveFields?: ReviewFieldDefinition[];
 		rejectFields?: ReviewFieldDefinition[];
+		rejectionTemplates?: RejectionTemplate[];
+		supportsRewardedOverride?: boolean;
 	}
 
-	let { remainingHours, onsubmit, submitting = false, prefill = null, changelog = null, overview = null, draftKey = '', approveFields = [], rejectFields = [] }: Props = $props();
+	let { remainingHours, onsubmit, submitting = false, prefill = null, changelog = null, overview = null, draftKey = '', approveFields = [], rejectFields = [], rejectionTemplates = [], supportsRewardedOverride = false }: Props = $props();
 
 	let selectedAction: ActionType = $state('approve');
 	let hoursAssigned = $state(0);
+	// Kept as a string so an empty input means "no override" — 0 is a valid override.
+	let rewardedOverrideRaw = $state('');
+	let showOverrideHelp = $state(false);
+
+	// ±1h quick adjust. An empty (or unparseable) box starts from the assigned
+	// hours, so the first click reads as "assigned hours, one more/less".
+	function bumpOverride(delta: number) {
+		const parsed = parseFloat(rewardedOverrideRaw);
+		const base = Number.isFinite(parsed) ? parsed : Number(hoursAssigned) || 0;
+		rewardedOverrideRaw = String(Math.max(0, Math.round((base + delta) * 100) / 100));
+	}
 	let userEditedHours = false;
 	$effect(() => {
 		if (!userEditedHours) {
@@ -177,12 +191,25 @@
 
 	const exceedsRemaining = $derived(hoursAssigned > remainingHours + 0.005);
 
+	const rewardedOverride = $derived.by(() => {
+		const trimmed = rewardedOverrideRaw.trim();
+		if (!trimmed) return undefined;
+		const parsed = parseFloat(trimmed);
+		return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+	});
+	const rewardedOverrideInvalid = $derived(rewardedOverrideRaw.trim() !== '' && rewardedOverride === undefined);
+	// Warning only — rewarding more than the assigned hours is legitimate, but
+	// unusual enough that it's worth flagging as a possible typo.
+	const overrideExceedsAssigned = $derived(
+		rewardedOverride !== undefined && rewardedOverride > (Number(hoursAssigned) || 0)
+	);
+
 	function requiredCustomFieldsFilled(): boolean {
 		for (const def of activeFieldDefs) {
 			if (!def.required) continue;
 			const val = customFields[def.name];
 			if (val === undefined || val === null) return false;
-			if (def.type === 'string' && typeof val === 'string' && !val.trim()) return false;
+			if ((def.type === 'string' || def.type === 'markdown') && typeof val === 'string' && !val.trim()) return false;
 		}
 		return true;
 	}
@@ -192,7 +219,7 @@
 			return false;
 		switch (selectedAction) {
 			case 'approve':
-				return hoursAssigned > 0 && feedbackMessage.trim() && justification.trim() && requiredCustomFieldsFilled();
+				return hoursAssigned > 0 && feedbackMessage.trim() && justification.trim() && requiredCustomFieldsFilled() && !rewardedOverrideInvalid;
 			case 'reject':
 				return feedbackMessage.trim().length > 0 && requiredCustomFieldsFilled();
 			case 'comment':
@@ -223,6 +250,9 @@
 		const payload: Parameters<typeof onsubmit>[0] = { action: selectedAction };
 		if (selectedAction === 'approve') {
 			payload.hoursAssigned = hoursAssigned;
+			if (supportsRewardedOverride && rewardedOverride !== undefined) {
+				payload.rewardedHoursOverride = rewardedOverride;
+			}
 			payload.feedbackMessage = feedbackMessage;
 			payload.justification = justification;
 			payload.fields = buildFieldValues();
@@ -235,6 +265,7 @@
 		}
 		onsubmit(payload);
 		clearAllDrafts();
+		rewardedOverrideRaw = '';
 		log.debug('Drafts cleared after submit');
 	}
 
@@ -352,11 +383,11 @@
 
 	<div class="p-5 flex flex-col gap-4">
 		{#if selectedAction === 'approve'}
-			<div class="flex flex-col gap-1.5">
-				<label class="font-bold text-sm tracking-[-0.3px]" for="hours">
-					Hours to assign
-				</label>
-				<div class="flex items-center gap-3">
+			<div class="flex gap-3 items-start">
+				<div class="flex flex-col gap-1.5 flex-1 min-w-0">
+					<label class="font-bold text-sm tracking-[-0.3px]" for="hours">
+						Hours to assign
+					</label>
 					<input
 						id="hours"
 						type="number"
@@ -366,11 +397,72 @@
 						oninput={() => { userEditedHours = true; }}
 						class="border border-border-input rounded-section px-3.5 py-2.5 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
 					/>
+					{#if exceedsRemaining}
+						<div class="flex items-center gap-1.5 text-accent">
+							<AlertTriangle size={14} />
+							<span class="text-sm font-medium">Exceeds remaining hours ({Math.round(remainingHours * 100) / 100}h)</span>
+						</div>
+					{/if}
 				</div>
-				{#if exceedsRemaining}
-					<div class="flex items-center gap-1.5 text-accent">
-						<AlertTriangle size={14} />
-						<span class="text-sm font-medium">Exceeds remaining hours ({Math.round(remainingHours * 100) / 100}h)</span>
+
+				{#if supportsRewardedOverride}
+					<div class="flex flex-col gap-1.5 flex-1 min-w-0">
+						<label class="font-bold text-sm tracking-[-0.3px] flex items-center gap-1.5" for="rewarded-override">
+							Rewarded hours override
+							<span class="font-normal text-text-secondary">(optional)</span>
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<span
+								class="relative inline-flex"
+								onmouseenter={() => (showOverrideHelp = true)}
+								onmouseleave={() => (showOverrideHelp = false)}
+							>
+								<CircleHelp size={14} class="text-text-tertiary cursor-help" />
+								{#if showOverrideHelp}
+									<div class="override-help-tooltip">
+										Rewards the author for a different number of hours than what lands in the Unified YSWS DB. Leave empty to reward the assigned hours.
+									</div>
+								{/if}
+							</span>
+						</label>
+						<div class="flex w-full">
+							<input
+								id="rewarded-override"
+								type="number"
+								step="0.01"
+								min="0"
+								value={rewardedOverrideRaw}
+								oninput={(e) => (rewardedOverrideRaw = e.currentTarget.value)}
+								placeholder="Same as assigned hours"
+								class="border border-border-input rounded-l-section px-3.5 py-2.5 text-sm w-full min-w-0 bg-white outline-none focus:border-accent transition-colors"
+							/>
+							<button
+								type="button"
+								class="bg-white border-y border-r border-border-input px-3 text-sm font-medium shrink-0 hover:bg-surface transition-colors cursor-pointer"
+								onclick={() => bumpOverride(-1)}
+								title="Reward one hour less"
+							>
+								-1
+							</button>
+							<button
+								type="button"
+								class="bg-white border-y border-r border-border-input rounded-r-section px-3 text-sm font-medium shrink-0 hover:bg-surface transition-colors cursor-pointer"
+								onclick={() => bumpOverride(1)}
+								title="Reward one hour more"
+							>
+								+1
+							</button>
+						</div>
+						{#if rewardedOverrideInvalid}
+							<div class="flex items-center gap-1.5 text-check-fail">
+								<AlertTriangle size={14} />
+								<span class="text-sm font-medium">Override must be a non-negative number</span>
+							</div>
+						{:else if overrideExceedsAssigned}
+							<div class="flex items-center gap-1.5 text-accent">
+								<AlertTriangle size={14} />
+								<span class="text-sm font-medium">Exceeds assigned hours ({Math.round((Number(hoursAssigned) || 0) * 100) / 100}h)</span>
+							</div>
+						{/if}
 					</div>
 				{/if}
 			</div>
@@ -696,3 +788,25 @@
 		</div>
 	</div>
 </div>
+
+<style>
+	/* Matches UserCard's trust tooltip. Anchored to the help icon's right edge
+	   and opening downward so it stays inside the panel's overflow-hidden card. */
+	.override-help-tooltip {
+		position: absolute;
+		right: 0;
+		top: calc(100% + 8px);
+		background: var(--color-page, #fff);
+		border: 1px solid var(--color-border-card);
+		border-radius: 8px;
+		padding: 10px 12px;
+		width: 300px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+		z-index: 50;
+		font-weight: 400;
+		font-size: 12px;
+		letter-spacing: -0.24px;
+		line-height: 1.4;
+		color: var(--color-text-secondary, #737373);
+	}
+</style>

@@ -396,6 +396,7 @@
 	async function handleReviewSubmit(reviewData: {
 		action: string;
 		hoursAssigned?: number;
+		rewardedHoursOverride?: number;
 		feedbackMessage?: string;
 		justification?: string;
 		internalMessage?: string;
