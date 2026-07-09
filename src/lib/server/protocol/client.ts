@@ -5,6 +5,9 @@ import type {
   FetchProjectsInput,
   FetchProjectDetailInput,
   FetchProjectTimelineInput,
+  FetchAuthorProjectsInput,
+  FetchUserNoteInput,
+  UpdateUserNoteInput,
   SubmitReviewActionInput,
   UpdateReviewActionInput,
   FetchShopItemsInput,
@@ -115,6 +118,18 @@ export class ProtocolClient {
 
   fetchProjectTimeline(input: FetchProjectTimelineInput) {
     return this.call("FETCH_PROJECT_TIMELINE", input);
+  }
+
+  fetchAuthorProjects(input: FetchAuthorProjectsInput) {
+    return this.call("FETCH_AUTHOR_PROJECTS", input);
+  }
+
+  fetchUserNote(input: FetchUserNoteInput) {
+    return this.call("FETCH_USER_NOTE", input);
+  }
+
+  updateUserNote(input: UpdateUserNoteInput) {
+    return this.call("UPDATE_USER_NOTE", input);
   }
 
   submitReviewAction(input: SubmitReviewActionInput) {
