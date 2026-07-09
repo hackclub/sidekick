@@ -3,6 +3,7 @@
 	import type { TimelineEvent as TEvent, ReviewFieldDefinition } from '$lib/server/protocol/types.js';
 	import { wordDiff } from '$lib/utils/diff.js';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
+	import MarkdownTextarea from '$lib/components/ui/MarkdownTextarea.svelte';
 	import { marked, Renderer } from 'marked';
 
 	const mdRenderer = new Renderer();
@@ -27,14 +28,18 @@
 		onsave?: (data: EditData) => Promise<string | null>;
 		onauthorize?: (id: string) => void;
 		ondelete?: (id: string) => void;
-		oneditpending?: (id: string, reviewerId: string, feedbackMessage: string, justification: string, hoursAssigned: number) => Promise<string | null>;
+		// rewardedHoursOverride: undefined = leave untouched, null = clear, number = set.
+		oneditpending?: (id: string, reviewerId: string, feedbackMessage: string, justification: string, hoursAssigned: number, rewardedHoursOverride: number | null | undefined) => Promise<string | null>;
 		authorizing?: string | null;
 		// Field definitions by name (from the ships' approveFields/rejectFields),
 		// used to label custom field values and render markdown fields as boxes.
 		fieldDefs?: Record<string, ReviewFieldDefinition>;
+		// Ship IDs whose program accepts `rewardedHoursOverride` on approvals —
+		// gates the override input on the pending approval editor.
+		supportsOverride?: Record<string, boolean>;
 	}
 
-	let { event, actors, shipHourInfo = {}, approvalHourInfo = {}, canAuthorize = false, onsave, onauthorize, ondelete, oneditpending, authorizing = null, fieldDefs = {} }: Props = $props();
+	let { event, actors, shipHourInfo = {}, approvalHourInfo = {}, canAuthorize = false, onsave, onauthorize, ondelete, oneditpending, authorizing = null, fieldDefs = {}, supportsOverride = {} }: Props = $props();
 
 	const actor = $derived(actors[event.actorId] ?? { name: event.actorId, avatarUrl: null });
 
@@ -44,9 +49,13 @@
 	let editFeedback = $state('');
 	let editInternal = $state('');
 	let editHours = $state(0);
+	// Kept as a string so an empty input means "no override" — 0 is a valid override.
+	let editOverrideRaw = $state('');
 	let savedFeedback: string | null = $state(null);
 	let savedInternal: string | null = $state(null);
 	let savedHours: number | null = $state(null);
+	// undefined = no local save yet; null = override explicitly cleared.
+	let savedOverride = $state<number | null | undefined>(undefined);
 
 	const displayFeedback = $derived(
 		savedFeedback ?? (event.type === 'approval' || event.type === 'authorized_approval' || event.type === 'rejection' || event.type === 'pending_approval' ? event.feedbackMessage : '')
@@ -58,6 +67,58 @@
 	const displayHours = $derived(
 		savedHours ?? (event.type === 'pending_approval' ? event.hoursAssigned : 0)
 	);
+
+	const displayOverride = $derived(
+		savedOverride !== undefined
+			? (savedOverride ?? undefined)
+			: event.type === 'pending_approval'
+				? event.rewardedHoursOverride
+				: undefined
+	);
+
+	// Approvals awaiting HQ authorization are always in edit mode for authorizers —
+	// the editor doubles as the authorize/deny form.
+	const alwaysEditing = $derived(event.type === 'pending_approval' && canAuthorize);
+	const isEditing = $derived(editing || alwaysEditing);
+
+	// Populate the always-open editor from the event. Keyed on the pending
+	// approval's id so a data refresh after our own save doesn't clobber the
+	// authorizer's in-progress draft.
+	let draftFor = $state<string | null>(null);
+	$effect(() => {
+		if (event.type !== 'pending_approval' || !canAuthorize || draftFor === event.id) return;
+		draftFor = event.id;
+		editFeedback = event.feedbackMessage;
+		editInternal = event.justification;
+		editHours = event.hoursAssigned;
+		editOverrideRaw = event.rewardedHoursOverride !== undefined ? String(event.rewardedHoursOverride) : '';
+		savedFeedback = null;
+		savedInternal = null;
+		savedHours = null;
+		savedOverride = undefined;
+		editError = null;
+	});
+
+	const editOverride = $derived.by(() => {
+		const trimmed = editOverrideRaw.trim();
+		if (!trimmed) return undefined;
+		const parsed = parseFloat(trimmed);
+		return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+	});
+	const editOverrideInvalid = $derived(editOverrideRaw.trim() !== '' && editOverride === undefined);
+
+	// ±1h quick adjust. An empty (or unparseable) box starts from the assigned
+	// hours, so the first click reads as "assigned hours, one more/less".
+	function bumpOverride(delta: number) {
+		const parsed = parseFloat(editOverrideRaw);
+		const base = Number.isFinite(parsed) ? parsed : Number(editHours) || 0;
+		editOverrideRaw = String(Math.max(0, Math.round((base + delta) * 100) / 100));
+	}
+	const overrideChanged = $derived((editOverride ?? null) !== (displayOverride ?? null));
+	// Only send the override when the authorizer actually changed it — an
+	// unconditional `null` would instruct programs without override support to
+	// "clear" a field they never had.
+	const overridePatch = $derived(overrideChanged ? (editOverride ?? null) : undefined);
 
 	// Kept as its own derived: inlining `(a === x || a === y) && b` in the template
 	// gets miscompiled by Svelte 5.55's strict_equals dev transform, which drops
@@ -99,7 +160,7 @@
 				internalMessage: editInternal
 			})) ?? null;
 		} else if (event.type === 'pending_approval') {
-			error = (await oneditpending?.(event.id, event.actorId, editFeedback, editInternal, editHours)) ?? null;
+			error = (await oneditpending?.(event.id, event.actorId, editFeedback, editInternal, editHours, overridePatch)) ?? null;
 		}
 		saving = false;
 
@@ -110,8 +171,43 @@
 
 		savedFeedback = editFeedback;
 		savedInternal = editInternal;
-		if (event.type === 'pending_approval') savedHours = editHours;
+		if (event.type === 'pending_approval') {
+			savedHours = editHours;
+			savedOverride = editOverride ?? null;
+		}
 		editing = false;
+	}
+
+	// Authorize = "authorize with the values above": any edits the authorizer
+	// made in the always-open editor are saved first, and the authorization only
+	// proceeds once the master endpoint accepted them.
+	async function authorizePending() {
+		if (event.type !== 'pending_approval' || saving || authorizing === event.id) return;
+		if (editOverrideInvalid) {
+			editError = 'Rewarded hours override must be a non-negative number.';
+			return;
+		}
+		editError = null;
+
+		const dirty =
+			editFeedback !== displayFeedback ||
+			editInternal !== displayInternal ||
+			editHours !== displayHours ||
+			overrideChanged;
+		if (dirty) {
+			saving = true;
+			const error = (await oneditpending?.(event.id, event.actorId, editFeedback, editInternal, editHours, overridePatch)) ?? null;
+			saving = false;
+			if (error) {
+				editError = error;
+				return;
+			}
+			savedFeedback = editFeedback;
+			savedInternal = editInternal;
+			savedHours = editHours;
+			savedOverride = editOverride ?? null;
+		}
+		onauthorize?.(event.id);
 	}
 
 	function timeAgo(timestamp: string): string {
@@ -304,7 +400,7 @@
 						{#if displayHours !== event.hoursAssigned}
 							<span class="text-text-tertiary line-through">{fmtHours(event.hoursAssigned)}</span>
 						{/if}
-						{@render rewardedOverrideTag(event.rewardedHoursOverride)}
+						{@render rewardedOverrideTag(displayOverride)}
 						<span class="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded-tag bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-medium">
 							<Clock size={10} />
 							Pending authorization
@@ -332,39 +428,7 @@
 				<p class="text-xs text-text-primary tracking-[-0.24px]">{timeAgo(event.timestamp)}</p>
 			</div>
 
-			{#if event.type === 'pending_approval' && canAuthorize && !editing}
-				<div class="flex items-center gap-1.5">
-					<button
-						class="bg-white border border-border-active rounded-tag p-2 flex items-center justify-center hover:bg-surface transition-colors cursor-pointer"
-						onclick={startEditing}
-						title="Edit pending approval"
-					>
-						<Pencil size={14} />
-					</button>
-					<button
-						class="flex items-center gap-1.5 px-3 py-1.5 rounded-tag text-xs font-medium bg-check-pass text-white hover:opacity-90 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-						onclick={() => onauthorize?.(event.id)}
-						disabled={authorizing === event.id}
-						title="Authorize this approval"
-					>
-						{#if authorizing === event.id}
-							<Loader2 size={12} class="animate-spin" />
-						{:else}
-							<ShieldCheck size={12} />
-						{/if}
-						Authorize
-					</button>
-					<button
-						class="flex items-center gap-1.5 px-3 py-1.5 rounded-tag text-xs font-medium text-check-fail hover:bg-check-fail/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-						onclick={() => ondelete?.(event.id)}
-						disabled={authorizing === event.id}
-						title="Discard this pending approval"
-					>
-						<CircleX size={12} />
-						Discard
-					</button>
-				</div>
-			{:else if isEditableReview && onsave && !editing}
+			{#if isEditableReview && onsave && !editing}
 				<button
 					class="bg-white border border-border-active rounded-tag p-2 flex items-center justify-center hover:bg-surface transition-colors cursor-pointer"
 					onclick={startEditing}
@@ -503,44 +567,84 @@
 			</div>
 			{@render fieldValues(event.fields)}
 		{:else if event.type === 'pending_approval'}
-			{#if editing}
-				<div class="flex flex-col gap-1 w-full">
-					<label class="font-bold text-sm tracking-[-0.3px]">Hours to assign</label>
-					<input
-						type="number"
-						step="0.01"
-						min="0"
-						bind:value={editHours}
-						class="border border-amber-300 rounded-tag px-2.5 py-2 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
-					/>
+			{#if isEditing}
+				<div class="flex gap-3 w-full mt-2">
+					<div class="flex flex-col gap-1 flex-1 min-w-0">
+						<label class="font-bold text-sm tracking-[-0.3px]" for="pending-hours-{event.id}">Hours to assign</label>
+						<input
+							id="pending-hours-{event.id}"
+							type="number"
+							step="0.01"
+							min="0"
+							bind:value={editHours}
+							class="border border-border-input rounded-tag px-2.5 py-2 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
+						/>
+					</div>
+					{#if supportsOverride[event.shipId] || displayOverride !== undefined}
+						<div class="flex flex-col gap-1 flex-1 min-w-0">
+							<label class="font-bold text-sm tracking-[-0.3px]" for="pending-override-{event.id}">
+								Rewarded hours override
+								<span class="font-normal text-text-secondary">(optional)</span>
+							</label>
+							<div class="flex w-full">
+								<input
+									id="pending-override-{event.id}"
+									type="number"
+									step="0.01"
+									min="0"
+									value={editOverrideRaw}
+									oninput={(e) => (editOverrideRaw = e.currentTarget.value)}
+									placeholder="Same as assigned hours"
+									class="border border-border-input rounded-l-tag px-2.5 py-2 text-sm w-full min-w-0 bg-white outline-none focus:border-accent transition-colors"
+								/>
+								<button
+									type="button"
+									class="bg-white border-y border-r border-border-input px-3 text-sm font-medium shrink-0 hover:bg-surface transition-colors cursor-pointer"
+									onclick={() => bumpOverride(-1)}
+									title="Reward one hour less"
+								>
+									-1
+								</button>
+								<button
+									type="button"
+									class="bg-white border-y border-r border-border-input rounded-r-tag px-3 text-sm font-medium shrink-0 hover:bg-surface transition-colors cursor-pointer"
+									onclick={() => bumpOverride(1)}
+									title="Reward one hour more"
+								>
+									+1
+								</button>
+							</div>
+						</div>
+					{/if}
 				</div>
 			{/if}
-			<div class="flex gap-1.5 w-full">
-				<div class="border border-dashed border-amber-300 bg-amber-50/50 rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
-					<p class="font-bold text-sm tracking-[-0.3px]">Reviewer message</p>
-					{#if editing}
-						<textarea
-							bind:value={editFeedback}
-							rows="3"
-							class="text-sm tracking-[-0.3px] bg-white border border-amber-300 rounded-tag px-2.5 py-2 resize-y outline-none focus:border-accent transition-colors"
-						></textarea>
-					{:else}
+			{#if isEditing}
+				<div class="flex flex-col gap-1 w-full mt-2">
+					<label class="font-bold text-sm tracking-[-0.3px]" for="pending-feedback-{event.id}">
+						Reviewer message
+						<span class="font-normal text-text-secondary">(visible to author)</span>
+					</label>
+					<MarkdownTextarea id="pending-feedback-{event.id}" value={editFeedback} onchange={(v) => (editFeedback = v)} rows={6} />
+				</div>
+				<div class="flex flex-col gap-1 w-full mt-2">
+					<label class="font-bold text-sm tracking-[-0.3px]" for="pending-justification-{event.id}">
+						Justification
+						<span class="font-normal text-text-secondary">(staff only)</span>
+					</label>
+					<MarkdownTextarea id="pending-justification-{event.id}" value={editInternal} onchange={(v) => (editInternal = v)} rows={6} />
+				</div>
+			{:else}
+				<div class="flex flex-col gap-1.5 w-full">
+					<div class="border border-dashed border-amber-300 bg-amber-50/50 rounded-tag p-3 flex flex-col gap-1.5 min-w-0">
+						<p class="font-bold text-sm tracking-[-0.3px]">Reviewer message</p>
 						{@render markdownText(displayFeedback)}
-					{/if}
-				</div>
-				<div class="border border-dashed border-amber-300 bg-amber-50/50 rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
-					<p class="font-bold text-sm tracking-[-0.3px]">Justification</p>
-					{#if editing}
-						<textarea
-							bind:value={editInternal}
-							rows="3"
-							class="text-sm tracking-[-0.3px] bg-white border border-amber-300 rounded-tag px-2.5 py-2 resize-y outline-none focus:border-accent transition-colors"
-						></textarea>
-					{:else}
+					</div>
+					<div class="border border-dashed border-amber-300 bg-amber-50/50 rounded-tag p-3 flex flex-col gap-1.5 min-w-0">
+						<p class="font-bold text-sm tracking-[-0.3px]">Justification</p>
 						{@render markdownText(displayInternal)}
-					{/if}
+					</div>
 				</div>
-			</div>
+			{/if}
 			{@render fieldValues(event.fields)}
 		{:else if event.type === 'discarded_approval'}
 			<div class="flex gap-1.5 w-full opacity-50">
@@ -560,7 +664,38 @@
 			</div>
 		{/if}
 
-		{#if editing}
+		{#if alwaysEditing && event.type === 'pending_approval'}
+			{#if editError}
+				<div class="flex items-center gap-1.5 text-check-fail">
+					<AlertTriangle size={14} class="shrink-0" />
+					<span class="text-sm font-medium">{editError}</span>
+				</div>
+			{/if}
+			<div class="flex items-center justify-end gap-2 mt-1">
+				<button
+					class="flex items-center gap-2 px-5 py-2.5 rounded-section text-sm font-bold border border-check-fail text-check-fail hover:bg-check-fail/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+					onclick={() => ondelete?.(event.id)}
+					disabled={saving || authorizing === event.id}
+					title="Deny this approval"
+				>
+					<CircleX size={16} />
+					Deny
+				</button>
+				<button
+					class="flex items-center gap-2 px-5 py-2.5 rounded-section text-sm font-bold bg-check-pass text-white hover:opacity-90 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+					onclick={authorizePending}
+					disabled={saving || authorizing === event.id || editOverrideInvalid}
+					title="Authorize this approval with the values above"
+				>
+					{#if saving || authorizing === event.id}
+						<Loader2 size={16} class="animate-spin" />
+					{:else}
+						<ShieldCheck size={16} />
+					{/if}
+					Authorize
+				</button>
+			</div>
+		{:else if editing}
 			{#if editError}
 				<div class="flex items-center gap-1.5 text-check-fail">
 					<AlertTriangle size={14} class="shrink-0" />

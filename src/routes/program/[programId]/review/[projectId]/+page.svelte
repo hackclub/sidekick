@@ -284,6 +284,14 @@
 		};
 	});
 
+	// An approval already awaiting HQ authorization on the pending ship blocks new
+	// verdicts — authorizers act on the timeline instead, and we must not stack a
+	// second approval on top of the queued one.
+	const hasPendingApproval = $derived(
+		data.pendingShip?.status === 'pending_hq' ||
+			data.timeline.some((e) => e.type === 'pending_approval' && e.shipId === data.pendingShip?.id)
+	);
+
 	// Map shipId → approved hours from timeline events (accounts for reviewer deflation)
 	const approvedHoursMap = $derived.by(() => {
 		const map: Record<string, number> = {};
@@ -537,7 +545,9 @@
 		reviewerId: string,
 		feedbackMessage: string,
 		justification: string,
-		hoursAssigned: number
+		hoursAssigned: number,
+		// undefined = leave untouched (dropped by JSON.stringify), null = clear.
+		rewardedHoursOverride: number | null | undefined
 	): Promise<string | null> {
 		log.info('Editing pending approval', { pendingApprovalId, hoursAssigned });
 		const t = log.time('handleEditPending');
@@ -550,7 +560,8 @@
 					reviewerId,
 					feedbackMessage,
 					justification,
-					hoursAssigned
+					hoursAssigned,
+					rewardedHoursOverride
 				})
 			});
 			t.end('status', res.status);
@@ -684,6 +695,9 @@
 					canAuthorize={data.canAuthorize}
 					onsave={handleSaveReview}
 					fieldDefs={reviewFieldDefs}
+					supportsOverride={Object.fromEntries(
+						data.project.ships.map((s) => [s.id, s.supportsRewardedOverride ?? false])
+					)}
 					onauthorize={handleAuthorize}
 					ondelete={handleDeletePending}
 					oneditpending={handleEditPending}
@@ -703,6 +717,7 @@
 							rejectFields={data.pendingShip.rejectFields}
 							rejectionTemplates={data.rejectionTemplates}
 							supportsRewardedOverride={data.pendingShip.supportsRewardedOverride ?? false}
+							{hasPendingApproval}
 						/>
 					</div>
 				{/if}
