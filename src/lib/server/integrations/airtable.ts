@@ -133,8 +133,13 @@ export async function findRecordsByUrl(
 		offset = data.offset;
 	} while (offset);
 
+	// Airtable pagination can return the same row on two pages when the table
+	// changes between page fetches — dedupe by record id so a duplicate can't
+	// double-count previous hours or collide as a render key downstream.
+	const dedupedRecords = [...new Map(records.map((r) => [r.id, r])).values()];
+
 	const inputUrls = [playableUrl, codeUrl].filter(Boolean);
-	const filtered = records.filter((r) => {
+	const filtered = dedupedRecords.filter((r) => {
 		const recPlayable = r.fields['Playable URL'] ?? '';
 		const recCode = r.fields['Code URL'] ?? '';
 		return inputUrls.some(
