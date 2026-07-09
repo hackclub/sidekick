@@ -284,6 +284,12 @@
 			? data.shopItems.filter((item) => item.name.toLowerCase().includes(shopItemFilter.toLowerCase()))
 			: data.shopItems
 	);
+	// Kept as its own derived: inlining `(a || b) && c` in the template gets
+	// miscompiled by Svelte 5.55's dev transform, which drops the parentheses.
+	const canConfigureShopItems = $derived.by(() => {
+		const hasIntegration = !!data.program.hcbOrganizationId || data.hasTheseusApiKey;
+		return hasIntegration && data.shopItems.length > 0;
+	});
 
 	interface TemplateForm {
 		amountDollars: string;
@@ -651,6 +657,84 @@
 		merchantSearchOpen = null;
 	}
 
+	interface RejectionTemplateForm {
+		name: string;
+		feedbackMessage: string;
+		internalMessage: string;
+	}
+
+	let rejectionForms: Record<string, RejectionTemplateForm> = $state({});
+	let expandedRejections: Record<string, boolean> = $state({});
+	let showNewRejection = $state(false);
+	let savingRejection = $state<string | null>(null);
+	let deletingRejection = $state<string | null>(null);
+
+	function initRejectionForm(id: string) {
+		if (!rejectionForms[id]) {
+			const existing = data.rejectionTemplates.find((t: { id: string }) => t.id === id);
+			rejectionForms[id] = {
+				name: existing?.name ?? '',
+				feedbackMessage: existing?.feedbackMessage ?? '',
+				internalMessage: existing?.internalMessage ?? ''
+			};
+		}
+	}
+
+	function toggleRejection(id: string) {
+		expandedRejections[id] = !expandedRejections[id];
+		if (expandedRejections[id]) {
+			initRejectionForm(id);
+		}
+	}
+
+	// "new" is a sentinel form key for a template that hasn't been created yet.
+	async function saveRejectionTemplate(id: string) {
+		const form = rejectionForms[id];
+		if (!form || !form.name.trim() || !form.feedbackMessage.trim())
+			return;
+		savingRejection = id;
+		try {
+			const res = await fetch(`/api/programs/${data.program.id}/rejection-templates`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					id: id === 'new' ? undefined : id,
+					name: form.name,
+					feedbackMessage: form.feedbackMessage,
+					internalMessage: form.internalMessage
+				})
+			});
+			if (!res.ok)
+				return;
+			await invalidateAll();
+			delete rejectionForms[id];
+			if (id === 'new') {
+				showNewRejection = false;
+			} else {
+				expandedRejections[id] = false;
+			}
+		} finally {
+			savingRejection = null;
+		}
+	}
+
+	async function deleteRejectionTemplate(id: string) {
+		deletingRejection = id;
+		try {
+			const res = await fetch(`/api/programs/${data.program.id}/rejection-templates`, {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ id })
+			});
+			if (!res.ok)
+				return;
+			await invalidateAll();
+			delete rejectionForms[id];
+		} finally {
+			deletingRejection = null;
+		}
+	}
+
 	let cancellingInvite = $state<string | null>(null);
 
 	async function cancelInvite(inviteId: string) {
@@ -942,6 +1026,133 @@
 				</div>
 			</ManageSection>
 
+			{#snippet rejectionTemplateFields(id: string)}
+				{@const form = rejectionForms[id]}
+				<div class="flex flex-col gap-1">
+					<label for="rej-name-{id}" class="text-xs font-semibold text-text-secondary">Name</label>
+					<input
+						id="rej-name-{id}"
+						type="text"
+						maxlength="80"
+						bind:value={form.name}
+						placeholder="e.g. Demo link broken"
+						class="w-full h-9 px-3 rounded-input border border-border-input text-sm text-text-input focus:outline-none focus:border-border-active"
+					/>
+				</div>
+				<div class="flex flex-col gap-1">
+					<label for="rej-feedback-{id}" class="text-xs font-semibold text-text-secondary">Rejection message <span class="font-normal text-text-tertiary">(visible to author)</span></label>
+					<textarea
+						id="rej-feedback-{id}"
+						bind:value={form.feedbackMessage}
+						rows="4"
+						placeholder="Please fix the following issues..."
+						class="w-full px-3 py-2 rounded-input border border-border-input text-sm text-text-input resize-y focus:outline-none focus:border-border-active"
+					></textarea>
+				</div>
+				<div class="flex flex-col gap-1">
+					<label for="rej-internal-{id}" class="text-xs font-semibold text-text-secondary">Internal note <span class="font-normal text-text-tertiary">(optional, staff only)</span></label>
+					<textarea
+						id="rej-internal-{id}"
+						bind:value={form.internalMessage}
+						rows="3"
+						placeholder="Optional internal context..."
+						class="w-full px-3 py-2 rounded-input border border-border-input text-sm text-text-input resize-y focus:outline-none focus:border-border-active"
+					></textarea>
+				</div>
+			{/snippet}
+
+			<ManageSection title="Quick Rejections" description="Pre-filled rejection message templates.">
+				{#snippet icon()}<CircleX size={16} class="text-text-secondary" />{/snippet}
+				<div class="border border-dashed border-border-card rounded-section p-6 flex flex-col gap-2">
+					{#each data.rejectionTemplates as tpl (tpl.id)}
+						<div class="border border-border-card rounded-section bg-page overflow-hidden">
+							<button
+								class="w-full flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-surface/50 transition-colors"
+								onclick={() => toggleRejection(tpl.id)}
+							>
+								<CircleX size={16} class="text-check-fail shrink-0" />
+								<div class="flex flex-col items-start min-w-0 flex-1">
+									<span class="font-semibold text-sm text-text-primary truncate">{tpl.name}</span>
+									<span class="text-xs text-text-tertiary truncate w-full text-left">{tpl.feedbackMessage}</span>
+								</div>
+								<div class="shrink-0 text-text-tertiary">
+									{#if expandedRejections[tpl.id]}
+										<ChevronUp size={16} />
+									{:else}
+										<ChevronDown size={16} />
+									{/if}
+								</div>
+							</button>
+
+							{#if expandedRejections[tpl.id] && rejectionForms[tpl.id]}
+								<div class="px-4 pb-4 flex flex-col gap-3 border-t border-border-card pt-4">
+									{@render rejectionTemplateFields(tpl.id)}
+									<div class="flex gap-2 justify-end pt-1">
+										<button
+											class="px-3 py-1.5 rounded-tag text-check-fail border border-check-fail/30 hover:bg-check-fail/5 text-xs font-medium cursor-pointer disabled:opacity-50"
+											onclick={() => deleteRejectionTemplate(tpl.id)}
+											disabled={deletingRejection === tpl.id}
+										>
+											{#if deletingRejection === tpl.id}
+												<Loader2 size={12} class="animate-spin inline mr-1" />
+											{/if}
+											Delete
+										</button>
+										<button
+											class="px-3 py-1.5 rounded-tag bg-accent text-white text-xs font-medium hover:opacity-90 cursor-pointer disabled:opacity-50"
+											onclick={() => saveRejectionTemplate(tpl.id)}
+											disabled={savingRejection === tpl.id || !rejectionForms[tpl.id].name.trim() || !rejectionForms[tpl.id].feedbackMessage.trim()}
+										>
+											{#if savingRejection === tpl.id}
+												<Loader2 size={12} class="animate-spin inline mr-1" />
+											{/if}
+											Save
+										</button>
+									</div>
+								</div>
+							{/if}
+						</div>
+					{:else}
+						{#if !showNewRejection}
+							<p class="text-sm text-text-tertiary py-2">No quick rejections yet. Add one to speed up common rejection reasons.</p>
+						{/if}
+					{/each}
+
+					{#if showNewRejection && rejectionForms['new']}
+						<div class="border border-dashed border-border-card rounded-section bg-page px-4 py-4 flex flex-col gap-3">
+							{@render rejectionTemplateFields('new')}
+							<div class="flex gap-2 justify-end pt-1">
+								<button
+									class="px-3 py-1.5 rounded-tag text-text-dim hover:bg-surface text-xs font-medium cursor-pointer disabled:opacity-50"
+									onclick={() => { showNewRejection = false; delete rejectionForms['new']; }}
+									disabled={savingRejection === 'new'}
+								>
+									Cancel
+								</button>
+								<button
+									class="px-3 py-1.5 rounded-tag bg-accent text-white text-xs font-medium hover:opacity-90 cursor-pointer disabled:opacity-50"
+									onclick={() => saveRejectionTemplate('new')}
+									disabled={savingRejection === 'new' || !rejectionForms['new'].name.trim() || !rejectionForms['new'].feedbackMessage.trim()}
+								>
+									{#if savingRejection === 'new'}
+										<Loader2 size={12} class="animate-spin inline mr-1" />
+									{/if}
+									Create
+								</button>
+							</div>
+						</div>
+					{:else}
+						<button
+							class="flex items-center gap-1.5 w-fit px-3 py-2 rounded-tag border border-border-input text-xs font-medium text-text-subtle hover:bg-surface transition-colors cursor-pointer"
+							onclick={() => { initRejectionForm('new'); showNewRejection = true; }}
+						>
+							<Plus size={13} />
+							Add quick rejection
+						</button>
+					{/if}
+				</div>
+			</ManageSection>
+
 			{#if data.currentMembership.isRoot}
 			<ManageSection title="Shop Items" description="Configure fulfillment templates for shop items — either HCB card grants or Theseus warehouse orders.">
 				{#snippet icon()}<Store size={16} class="text-text-secondary" />{/snippet}
@@ -1062,7 +1273,7 @@
 						</LabeledField>
 					</div>
 
-					{#if (data.program.hcbOrganizationId || data.hasTheseusApiKey) && data.shopItems.length > 0}
+					{#if canConfigureShopItems}
 						<input
 							type="search"
 							placeholder="Filter shop items…"

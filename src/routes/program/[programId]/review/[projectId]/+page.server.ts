@@ -474,9 +474,16 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		}
 	}
 
+	const rejectionTemplates = await db.rejectionTemplate.findMany({
+		where: { programId: params.programId },
+		orderBy: { createdAt: 'asc' },
+		select: { id: true, name: true, feedbackMessage: true, internalMessage: true }
+	});
+
 	return {
 		project,
 		pendingShip: pendingShip ?? null,
+		rejectionTemplates,
 		author: {
 			name: author.name,
 			email: author.email,

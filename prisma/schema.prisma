@@ -66,6 +66,7 @@ model Program {
   pendingInvites         PendingInvite[]
   cardGrantTemplates     CardGrantTemplate[]
   warehouseTemplates     WarehouseTemplate[]
+  rejectionTemplates     RejectionTemplate[]
 }
 
 model ProgramMembership {
@@ -164,6 +165,20 @@ model PendingApproval {
   program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
 
   @@unique([programId, shipId, reviewerId])
+  @@index([programId])
+}
+
+model RejectionTemplate {
+  id              String   @id @default(cuid())
+  programId       String
+  name            String
+  feedbackMessage String
+  internalMessage String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+
   @@index([programId])
 }
 
