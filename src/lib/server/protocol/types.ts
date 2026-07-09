@@ -280,6 +280,9 @@ export type UpdateReviewActionInput = {
       // `authorize` without hours finalizes the edited value; hour edits on
       // finalized approvals are invalid.
       hoursAssigned?: number;
+      // Same pending_hq-only semantics as hoursAssigned. `null` clears a
+      // previously-set override (the author is rewarded the assigned hours).
+      rewardedHoursOverride?: number | null;
       fields?: ReviewFieldValues;
     }
   | {

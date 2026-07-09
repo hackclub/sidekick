@@ -225,8 +225,12 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		isSuperAdmin: user.isSuperAdmin
 	});
 
-	const { pendingApprovalId, reviewerId, feedbackMessage, justification, hoursAssigned } = await request.json();
+	const { pendingApprovalId, reviewerId, feedbackMessage, justification, hoursAssigned, rewardedHoursOverride } = await request.json();
 	if (!pendingApprovalId) throw error(400, 'pendingApprovalId is required');
+	// undefined = leave untouched, null = clear the override, number = set it.
+	if (rewardedHoursOverride !== undefined && rewardedHoursOverride !== null && (typeof rewardedHoursOverride !== 'number' || !Number.isFinite(rewardedHoursOverride) || rewardedHoursOverride < 0)) {
+		throw error(400, 'rewardedHoursOverride must be a non-negative number or null');
+	}
 
 	logger.debug('PATCH pending approval', { programId: params.programId, pendingApprovalId });
 
@@ -246,7 +250,8 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 				type: 'approval',
 				feedbackMessage: feedbackMessage ?? '',
 				justification: justification ?? '',
-				hoursAssigned: hoursAssigned != null ? hoursAssigned : undefined
+				hoursAssigned: hoursAssigned != null ? hoursAssigned : undefined,
+				rewardedHoursOverride
 			});
 		} catch (e) {
 			if (e instanceof ProtocolError) {
@@ -273,7 +278,8 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		data: {
 			feedbackMessage: feedbackMessage ?? pending.feedbackMessage,
 			justification: justification ?? pending.justification,
-			hoursAssigned: hoursAssigned != null ? hoursAssigned : pending.hoursAssigned
+			hoursAssigned: hoursAssigned != null ? hoursAssigned : pending.hoursAssigned,
+			rewardedHoursOverride: rewardedHoursOverride === undefined ? pending.rewardedHoursOverride : rewardedHoursOverride
 		}
 	});
 
