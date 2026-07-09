@@ -701,6 +701,8 @@
 							draftKey={data.project.id}
 							approveFields={data.pendingShip.approveFields}
 							rejectFields={data.pendingShip.rejectFields}
+							rejectionTemplates={data.rejectionTemplates}
+							supportsRewardedOverride={data.pendingShip.supportsRewardedOverride ?? false}
 						/>
 					</div>
 				{/if}

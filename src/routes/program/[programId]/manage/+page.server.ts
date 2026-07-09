@@ -91,6 +91,11 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		where: { programId: params.programId }
 	});
 
+	const rejectionTemplates = await db.rejectionTemplate.findMany({
+		where: { programId: params.programId },
+		orderBy: { createdAt: 'asc' }
+	});
+
 	const hcbUser = await db.user.findUnique({
 		where: { id: user.id },
 		select: { hcbTokenExpiresAt: true }
@@ -205,6 +210,12 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			userFacingTitle: t.userFacingTitle,
 			metadata: t.metadata,
 			contents: t.contents as Array<{ sku: string; quantity: number }>
+		})),
+		rejectionTemplates: rejectionTemplates.map((t) => ({
+			id: t.id,
+			name: t.name,
+			feedbackMessage: t.feedbackMessage,
+			internalMessage: t.internalMessage
 		})),
 		hasTheseusApiKey: !!program.theseusApiKey,
 		theseusUser: program.theseusApiKey ? {

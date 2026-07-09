@@ -25,6 +25,13 @@
 		currentShipDate: string;
 	}
 
+	interface RejectionTemplate {
+		id: string;
+		name: string;
+		feedbackMessage: string;
+		internalMessage: string;
+	}
+
 	interface OverviewContext {
 		programId: string;
 		repoUrl: string;
@@ -151,6 +158,18 @@
 
 	function setDraft(field: keyof DraftFields, value: string) {
 		drafts[selectedAction] = { ...drafts[selectedAction], [field]: value };
+	}
+
+	let prefillOpen = $state(false);
+
+	// Prefill only — the reviewer still has to press Reject themselves.
+	function applyRejectionTemplate(tpl: RejectionTemplate) {
+		drafts.reject = {
+			...drafts.reject,
+			feedbackMessage: tpl.feedbackMessage,
+			internalMessage: tpl.internalMessage
+		};
+		prefillOpen = false;
 	}
 
 	function clearAllDrafts() {
@@ -609,10 +628,43 @@
 
 		{:else if selectedAction === 'reject'}
 			<div class="flex flex-col gap-1.5">
-				<label class="font-bold text-sm tracking-[-0.3px]" for="reject-feedback">
-					Rejection message
-					<span class="font-normal text-text-secondary">(visible to author)</span>
-				</label>
+				<div class="flex items-center justify-between">
+					<label class="font-bold text-sm tracking-[-0.3px]" for="reject-feedback">
+						Rejection message
+						<span class="font-normal text-text-secondary">(visible to author)</span>
+					</label>
+					{#if (rejectionTemplates ?? []).length > 0}
+						<div class="relative">
+							<button
+								type="button"
+								class="flex items-center gap-1.5 px-2.5 py-1 rounded-tag border border-border-input text-xs font-medium text-text-subtle hover:bg-surface transition-colors cursor-pointer"
+								title="Fill the rejection form with a quick rejection template"
+								onclick={() => (prefillOpen = !prefillOpen)}
+							>
+								<Zap size={12} />
+								Pre-fill
+								<ChevronDown size={12} class="transition-transform {prefillOpen ? 'rotate-180' : ''}" />
+							</button>
+							{#if prefillOpen}
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
+								<!-- svelte-ignore a11y_click_events_have_key_events -->
+								<div class="fixed inset-0 z-40" onclick={() => (prefillOpen = false)}></div>
+								<div class="absolute right-0 top-[calc(100%+4px)] z-50 w-[280px] bg-white border border-border-card rounded-input shadow-lg overflow-hidden">
+									{#each rejectionTemplates ?? [] as tpl (tpl.id)}
+										<button
+											type="button"
+											class="w-full flex flex-col items-start px-3 py-2 text-left hover:bg-surface/50 transition-colors cursor-pointer"
+											onclick={() => applyRejectionTemplate(tpl)}
+										>
+											<span class="text-sm font-medium text-text-primary truncate w-full">{tpl.name}</span>
+											<span class="text-[11px] text-text-tertiary truncate w-full">{tpl.feedbackMessage}</span>
+										</button>
+									{/each}
+								</div>
+							{/if}
+						</div>
+					{/if}
+				</div>
 				<MarkdownTextarea
 					id="reject-feedback"
 					value={feedbackMessage}
