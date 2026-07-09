@@ -96,6 +96,27 @@
 				]
 			: []
 	);
+
+	let fieldsEl = $state<HTMLElement | null>(null);
+
+	// Rewrite the clipboard payload so a manual selection copies as
+	// "Label: value" lines. The visible layout uses separate flex items for
+	// each label/value, which browsers otherwise serialize onto their own
+	// lines with no separator.
+	function handleCopy(e: ClipboardEvent) {
+		const selection = window.getSelection();
+		if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
+		if (!fieldsEl || !e.clipboardData) return;
+
+		const rows = [...fieldsEl.querySelectorAll<HTMLElement>('[data-field]')].filter((row) =>
+			selection.containsNode(row, true)
+		);
+		if (rows.length === 0) return;
+
+		const text = rows.map((row) => `${row.dataset.label}: ${row.dataset.value}`).join('\n');
+		e.clipboardData.setData('text/plain', text);
+		e.preventDefault();
+	}
 </script>
 
 <div class="@container border border-border-card rounded-card p-8 flex flex-col gap-4 {className}">
@@ -126,9 +147,18 @@
 	{:else if noAddress}
 		<p class="text-sm text-text-tertiary tracking-[-0.3px]">No shipping address on file for this order.</p>
 	{:else if address}
-		<div class="flex flex-col gap-2 w-full text-sm tracking-[-0.3px]">
+		<div
+			bind:this={fieldsEl}
+			oncopy={handleCopy}
+			class="flex flex-col gap-2 w-full text-sm tracking-[-0.3px]"
+		>
 			{#each fields as field (field.label)}
-				<div class="flex flex-col @xs:flex-row @xs:items-center @xs:justify-between w-full gap-0.5 @xs:gap-2">
+				<div
+					data-field
+					data-label={field.label}
+					data-value={field.value}
+					class="flex flex-col @xs:flex-row @xs:items-center @xs:justify-between w-full gap-0.5 @xs:gap-2"
+				>
 					<span class="shrink-0">{field.label}</span>
 					<span class="truncate min-w-0">{field.value}</span>
 				</div>
