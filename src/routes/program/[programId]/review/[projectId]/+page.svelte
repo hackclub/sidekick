@@ -195,16 +195,24 @@
 		};
 	});
 
-	const changelogContext = $derived.by(() => {
+	// The changelog baseline is the last *reviewed* ship before the pending one.
+	// Re-ship sequences can put several never-reviewed pending ships in between —
+	// diffing against those would hide work the reviewer hasn't seen yet.
+	const previousReviewedShip = $derived.by(() => {
+		if (!data.pendingShip) return null;
 		const ships = data.project.ships;
-		if (ships.length < 2 || !data.pendingShip || !data.project.codeUrl) return null;
 		const pendingIdx = ships.findIndex((s) => s.id === data.pendingShip!.id);
-		const prevShip =
-			pendingIdx > 0 ? ships[pendingIdx - 1] : ships.length >= 2 ? ships[ships.length - 2] : null;
-		if (!prevShip) return null;
+		const before = pendingIdx >= 0 ? ships.slice(0, pendingIdx) : ships;
+		return before.findLast((s) => s.status === 'approved' || s.status === 'rejected') ?? null;
+	});
+
+	const changelogContext = $derived.by(() => {
+		if (!previousReviewedShip || !data.pendingShip || !data.project.codeUrl) return null;
 
 		const dayMs = 86400000;
-		const sinceDate = new Date(new Date(prevShip.submittedAt).getTime() - dayMs).toISOString();
+		const sinceDate = new Date(
+			new Date(previousReviewedShip.submittedAt).getTime() - dayMs
+		).toISOString();
 		const untilRaw = new Date(new Date(data.pendingShip.submittedAt).getTime() + dayMs);
 		const today = new Date();
 		const untilDate = (untilRaw > today ? today : untilRaw).toISOString();
@@ -218,8 +226,7 @@
 	});
 
 	const overviewContext = $derived.by(() => {
-		const ships = data.project.ships;
-		if (ships.length >= 2 || !data.pendingShip || !data.project.codeUrl) return null;
+		if (previousReviewedShip || !data.pendingShip || !data.project.codeUrl) return null;
 		return {
 			programId: data.program.id,
 			repoUrl: data.project.codeUrl,
@@ -245,19 +252,31 @@
 		const lastApprovedCumulative = ships
 			.filter((s) => s.id !== data.pendingShip!.id && s.status === 'approved')
 			.reduce((max, s) => Math.max(max, s.hoursSubmitted), 0);
+		// Some programs (e.g. Beest) don't report claimed hours on pending ships
+		// and send 0 — treat the claim as unknown rather than "0 new hours", and
+		// estimate from Hackatime time minus what approved ships already covered.
+		if (data.pendingShip.hoursSubmitted <= 0) {
+			if (lastApprovedCumulative <= 0 || !hackatime?.hackatime) return undefined;
+			return Math.max(0, hackatime.hackatime.totalSeconds / 3600 - lastApprovedCumulative);
+		}
 		return Math.max(0, data.pendingShip.hoursSubmitted - lastApprovedCumulative);
 	});
 
+	// Records from *other* programs that already credited hours to this project.
+	// Structured as early returns rather than `(a || b) && c && d` — Svelte 5.55's
+	// dev transform drops the parentheses when reprinting such expressions, which
+	// silently changes the operator precedence.
+	function isExternalPreviousRecord(r: { isExact: boolean; hours: number; id: string }): boolean {
+		if (!showFuzzyAirtable && !r.isExact) return false;
+		if (r.hours <= 0) return false;
+		const recProgram = normalizeForCompare(r.id.split('–')[0]?.trim() || r.id);
+		return recProgram !== normalizeForCompare(data.programYswsName);
+	}
+
 	const externalPreviousHours = $derived.by(() => {
 		if (!airtable?.airtableRecords) return 0;
-		const normYsws = normalizeForCompare(data.programYswsName);
 		return airtable.airtableRecords
-			.filter(
-				(r) =>
-					(showFuzzyAirtable || r.isExact) &&
-					r.hours > 0 &&
-					normalizeForCompare(r.id.split('–')[0]?.trim() || r.id) !== normYsws
-			)
+			.filter((r) => isExternalPreviousRecord(r))
 			.reduce((sum, r) => sum + r.hours, 0);
 	});
 

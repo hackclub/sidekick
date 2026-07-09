@@ -31,6 +31,10 @@
 			.map((e) => e.shipId)
 	));
 
+	// hoursSubmitted is cumulative per project, so each ship's delta is measured
+	// against the last *approved* ship's cumulative hours. Re-ship sequences
+	// (several consecutive ships with no review in between) all share that same
+	// baseline — only an approval moves it forward.
 	const shipHourInfo = $derived.by(() => {
 		const info: Record<string, { delta: number; cumulative: number }> = {};
 		const approvalInfo: Record<string, { cumulative: number }> = {};
@@ -40,35 +44,27 @@
 		let creditedSum = 0;
 		let lastApprovedShipHours = 0;
 		const shipEvents = events.filter((e) => e.type === 'ship') as Array<Extract<typeof events[number], { type: 'ship' }>>;
-		const lastShipId = shipEvents.length > 0 ? shipEvents[shipEvents.length - 1].shipId : null;
 
 		for (const event of shipEvents) {
 			const hours = shipHours[event.shipId] || event.hoursSubmitted || 0;
 			const approved = approvedShipHours[event.shipId] ?? hours;
 			const hasApproval = shipsWithApproval.has(event.shipId);
-			const isLast = event.shipId === lastShipId;
 
 			if (rejectedShipIds.has(event.shipId)) {
 				info[event.shipId] = { delta: hours, cumulative: hours };
 				continue;
 			}
 
-			if (isLast && lastApprovedShipHours > 0 && hours > lastApprovedShipHours) {
-				const delta = Math.max(0, hours - lastApprovedShipHours);
-				info[event.shipId] = { delta, cumulative: hasApproval ? delta : hours };
-				if (hasApproval) {
-					creditedSum += approved;
-					approvalInfo[event.shipId] = { cumulative: creditedSum };
-				}
-			} else {
-				if (hasApproval) {
-					lastApprovedShipHours = hours;
-					creditedSum += approved;
-				}
-				info[event.shipId] = { delta: hours, cumulative: hasApproval ? hours : hours };
-				if (hasApproval) {
-					approvalInfo[event.shipId] = { cumulative: creditedSum };
-				}
+			const delta =
+				lastApprovedShipHours > 0 && hours > lastApprovedShipHours
+					? hours - lastApprovedShipHours
+					: hours;
+			info[event.shipId] = { delta, cumulative: hours };
+
+			if (hasApproval) {
+				lastApprovedShipHours = hours;
+				creditedSum += approved;
+				approvalInfo[event.shipId] = { cumulative: creditedSum };
 			}
 		}
 		return { ships: info, approvals: approvalInfo };
