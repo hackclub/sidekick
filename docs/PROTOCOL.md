@@ -324,6 +324,35 @@ Sidekick renders `"text"` changes as inline old→new values, `"url"` the same w
 | `justification`   | `string` | Yes      | Internal reasoning (visible to other reviewers, not the participant). |
 | `fields`          | `object` | No       | Custom field values from the review. Keys match `ReviewFieldDefinition.name`. |
 
+**`"discarded_approval"` (optional) - an approval that was discarded before finalizing**
+
+Programs with a two-stage review flow can emit this for a first-pass approval that was sent back (deauthorized) before it finalized, so the timeline keeps the record and attributes the discard to the right person. Programs that don't emit it get a synthesized fallback: Sidekick renders an `approval` event whose ship is no longer `approved`/`pending_hq` as discarded, but can then only guess who discarded it.
+
+```json
+{
+  "type": "discarded_approval",
+  "id": "ret:review_789",
+  "shipId": "ship_002",
+  "actorId": "ident!reviewer456",
+  "discardedByActorId": "U05HQMEMBER",
+  "hoursAssigned": 10.0,
+  "feedbackMessage": "Great work on the WebSocket implementation!",
+  "justification": "Verified commits, Hackatime logs match claimed hours.",
+  "timestamp": "2026-05-30T09:00:00Z"
+}
+```
+
+| Field                 | Type     | Required | Description                                                           |
+| --------------------- | -------- | -------- | --------------------------------------------------------------------- |
+| `id`                  | `string` | Yes      | Stable identifier for the discarded approval.                         |
+| `actorId`             | `string` | Yes      | The reviewer who made the original approval.                          |
+| `discardedByActorId`  | `string` | Yes      | Who discarded/deauthorized the approval.                              |
+| `hoursAssigned`       | `number` | Yes      | Hours the original approval assigned.                                 |
+| `rewardedHoursOverride` | `number` | No     | Rewarded hours override from the original approval, if any.           |
+| `feedbackMessage`     | `string` | Yes      | Feedback from the original approval.                                  |
+| `justification`       | `string` | Yes      | Internal justification from the original approval.                    |
+| `fields`              | `object` | No       | Custom field values from the original approval.                       |
+
 **`"rejection"` - a reviewer rejected a ship**
 
 ```json
@@ -641,6 +670,8 @@ Edit the messages on an existing approval or rejection. Sidekick calls this when
 
 Assigned hours are editable in exactly one situation: an approval whose ship is still `pending_hq`. When an HQ reviewer edits such a pending approval, Sidekick includes `hoursAssigned`, and your program must persist it so a later `authorize` sent *without* hours finalizes the edited value. Hour edits on finalized approvals are invalid - reject them with a 400 rather than silently ignoring the field, since payouts derived from the original hours may already have happened.
 
+`rewardedHoursOverride` follows the same `pending_hq`-only rule: it is only sent while the ship is `pending_hq`, and a `null` value clears a previously-set override (the author is rewarded the assigned hours). Persist it so a later `authorize` finalizes the edited override.
+
 The `type` field determines which fields are present:
 
 **Edit an approval:**
@@ -675,6 +706,7 @@ The `type` field determines which fields are present:
 | `feedbackMessage` | `string` | Yes           | Updated feedback (visible to participant). |
 | `justification`   | `string` | Approval only | Updated internal justification.            |
 | `hoursAssigned`   | `number` | No            | Updated assigned hours (approval only). Only sent while the ship is `pending_hq`; must be persisted so a later `authorize` without hours uses it. Reject hour edits on finalized approvals. |
+| `rewardedHoursOverride` | `number \| null` | No | Updated rewarded hours override (approval only). Same `pending_hq`-only semantics as `hoursAssigned`; `null` clears the override. |
 | `internalMessage` | `string` | No            | Updated internal note (rejection only).    |
 | `fields`          | `object` | No            | Updated custom field values. Keys match `ReviewFieldDefinition.name`. |
 
