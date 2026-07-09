@@ -81,6 +81,16 @@
 
 	let showTooltip = $state(false);
 	let pillEl: HTMLDivElement | undefined = $state();
+	// The tooltip is right-anchored to the pill and up to 420px wide, so on a
+	// card near the viewport's left edge it would run off-screen. Flip it to a
+	// left anchor (growing rightwards) when there isn't room on the left.
+	let tooltipAlignLeft = $state(false);
+
+	function openTrustTooltip() {
+		if (trustLogs.length === 0) return;
+		tooltipAlignLeft = (pillEl?.getBoundingClientRect().right ?? Infinity) < 436;
+		showTooltip = true;
+	}
 </script>
 
 <div
@@ -134,9 +144,7 @@
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div
 					class="relative"
-					onmouseenter={() => {
-						if (trustLogs.length > 0) showTooltip = true;
-					}}
+					onmouseenter={openTrustTooltip}
 					onmouseleave={() => (showTooltip = false)}
 				>
 					<div
@@ -150,7 +158,7 @@
 
 					{#if showTooltip && trustLogs.length > 0}
 						<div class="trust-tooltip-bridge"></div>
-						<div class="trust-tooltip">
+						<div class="trust-tooltip" class:trust-tooltip-left={tooltipAlignLeft}>
 							<div class="flex flex-col gap-3">
 								{#each trustLogs.slice(0, 10) as log}
 									<div class="flex flex-col gap-2">
@@ -254,9 +262,14 @@
 		border: 1px solid var(--color-border-card);
 		border-radius: 8px;
 		padding: 16px;
-		min-width: 320px;
-		max-width: 420px;
+		min-width: min(320px, calc(100vw - 32px));
+		max-width: min(420px, calc(100vw - 32px));
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 		z-index: 50;
+	}
+
+	.trust-tooltip-left {
+		right: auto;
+		left: 0;
 	}
 </style>
