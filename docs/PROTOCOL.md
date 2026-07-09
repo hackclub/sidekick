@@ -139,12 +139,12 @@ Ships can declare custom fields that reviewers must fill in when approving or re
 | -------------- | --------------------------- | -------- | --------------------------------------------------------------------------- |
 | `name`         | `string`                    | Yes      | Machine-readable key. Used in the submitted `fields` object.                |
 | `label`        | `string`                    | Yes      | Human-readable label shown to the reviewer.                                 |
-| `type`         | `string`                    | Yes      | `"string"`, `"integer"`, or `"boolean"`.                                    |
+| `type`         | `string`                    | Yes      | `"string"`, `"integer"`, `"boolean"`, or `"markdown"`. `"markdown"` behaves exactly like `"string"` but is rendered as a textarea with Markdown support. |
 | `required`     | `boolean`                   | No       | If `true`, the reviewer must fill this field before submitting. Default `false`. |
 | `placeholder`  | `string`                    | No       | Placeholder text for string/integer inputs, or description text for boolean checkboxes. |
 | `defaultValue` | `string \| number \| boolean` | No     | Initial value pre-filled in the input. Type should match the field's `type`. |
 
-Field values submitted by reviewers are sent as part of the `fields` object in `SUBMIT_REVIEW_ACTION` and `UPDATE_REVIEW_ACTION` (see below). Values are typed according to the field definition: strings for `"string"`, numbers for `"integer"`, and booleans for `"boolean"`.
+Field values submitted by reviewers are sent as part of the `fields` object in `SUBMIT_REVIEW_ACTION` and `UPDATE_REVIEW_ACTION` (see below). Values are typed according to the field definition: strings for `"string"` and `"markdown"`, numbers for `"integer"`, and booleans for `"boolean"`.
 
 ### Shop Items
 

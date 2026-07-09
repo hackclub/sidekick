@@ -79,6 +79,6 @@
 	{/if}
 
 	{#each events as event, i (i)}
-		<TimelineEvent {event} {actors} shipHourInfo={shipHourInfo.ships} approvalHourInfo={shipHourInfo.approvals} {canAuthorize} {onsave} {onauthorize} {ondelete} {oneditpending} {authorizing} />
+		<TimelineEvent {event} {actors} shipHourInfo={shipHourInfo.ships} approvalHourInfo={shipHourInfo.approvals} {canAuthorize} {onsave} {onauthorize} {ondelete} {oneditpending} {authorizing} {fieldDefs} />
 	{/each}
 </div>

@@ -411,7 +411,23 @@
 			{#if (approveFields ?? []).length > 0}
 				<div class="flex flex-col gap-4 py-1">
 					{#each approveFields ?? [] as fieldDef (fieldDef.name)}
-						{#if fieldDef.type === 'boolean'}
+						{#if fieldDef.type === 'markdown'}
+							<div class="flex flex-col gap-1.5">
+								<label class="font-bold text-sm tracking-[-0.3px]" for="field-{fieldDef.name}">
+									{fieldDef.label}
+									{#if !fieldDef.required}
+										<span class="font-normal text-text-secondary">(optional)</span>
+									{/if}
+								</label>
+								<MarkdownTextarea
+									id="field-{fieldDef.name}"
+									value={String(customFields[fieldDef.name] ?? '')}
+									onchange={(v) => setCustomField(fieldDef.name, v)}
+									placeholder={fieldDef.placeholder ?? ''}
+									rows={3}
+								/>
+							</div>
+						{:else if fieldDef.type === 'boolean'}
 							<Checkbox
 								checked={!!customFields[fieldDef.name]}
 								onchange={() => setCustomField(fieldDef.name, !customFields[fieldDef.name])}
@@ -532,7 +548,23 @@
 			{#if (rejectFields ?? []).length > 0}
 				<div class="flex flex-col gap-4 py-1">
 					{#each rejectFields ?? [] as fieldDef (fieldDef.name)}
-						{#if fieldDef.type === 'boolean'}
+						{#if fieldDef.type === 'markdown'}
+							<div class="flex flex-col gap-1.5">
+								<label class="font-bold text-sm tracking-[-0.3px]" for="field-{fieldDef.name}">
+									{fieldDef.label}
+									{#if !fieldDef.required}
+										<span class="font-normal text-text-secondary">(optional)</span>
+									{/if}
+								</label>
+								<MarkdownTextarea
+									id="field-{fieldDef.name}"
+									value={String(customFields[fieldDef.name] ?? '')}
+									onchange={(v) => setCustomField(fieldDef.name, v)}
+									placeholder={fieldDef.placeholder ?? ''}
+									rows={3}
+								/>
+							</div>
+						{:else if fieldDef.type === 'boolean'}
 							<Checkbox
 								checked={!!customFields[fieldDef.name]}
 								onchange={() => setCustomField(fieldDef.name, !customFields[fieldDef.name])}

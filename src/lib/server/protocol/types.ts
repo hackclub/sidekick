@@ -34,7 +34,9 @@ export interface Project {
 export interface ReviewFieldDefinition {
   name: string;
   label: string;
-  type: "string" | "integer" | "boolean";
+  // "markdown" behaves exactly like "string" (string values on the wire) but
+  // renders as a textarea with Markdown support in the review form.
+  type: "string" | "integer" | "boolean" | "markdown";
   required?: boolean;
   placeholder?: string;
   defaultValue?: string | number | boolean;
