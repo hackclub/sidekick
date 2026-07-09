@@ -682,6 +682,7 @@
 					approvedShipHours={approvedHoursMap}
 					canAuthorize={data.canAuthorize}
 					onsave={handleSaveReview}
+					fieldDefs={reviewFieldDefs}
 					onauthorize={handleAuthorize}
 					ondelete={handleDeletePending}
 					oneditpending={handleEditPending}

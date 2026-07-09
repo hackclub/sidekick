@@ -170,20 +170,57 @@
 	{/each}
 {/snippet}
 
+{#snippet markdownText(text: string)}
+	<div class="prose prose-sm max-w-none text-sm tracking-[-0.3px] break-words">
+		<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+		{@html marked(text, { renderer: mdRenderer, breaks: true })}
+	</div>
+{/snippet}
+
+{#snippet rewardedOverrideTag(hours: number | undefined)}
+	{#if hours !== undefined}
+		<span
+			class="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded-tag bg-violet-50 border border-violet-200 text-violet-700 text-[11px] font-medium"
+			title="Rewarded hours override — the author is rewarded for this many hours instead of the assigned hours"
+		>
+			<Gift size={10} />
+			rewards {fmtHours(hours)}
+		</span>
+	{/if}
+{/snippet}
+
 {#snippet fieldValues(fields: Record<string, string | number | boolean> | undefined)}
 	{#if fields && Object.keys(fields).length > 0}
-		<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-secondary mt-0.5">
-			{#each Object.entries(fields) as [key, value] (key)}
-				<span>
-					<span class="font-medium">{key}:</span>
-					{#if typeof value === 'boolean'}
-						<span class={value ? 'text-check-pass' : 'text-check-fail'}>{value ? 'Yes' : 'No'}</span>
-					{:else}
-						<span>{value}</span>
-					{/if}
-				</span>
-			{/each}
-		</div>
+		{@const entries = Object.entries(fields)}
+		{@const mdKeys = new Set(
+			entries
+				.filter(([k, v]) => fieldDefs[k]?.type === 'markdown' && typeof v === 'string' && v.trim())
+				.map(([k]) => k)
+		)}
+		{#if mdKeys.size > 0}
+			<div class="flex flex-col gap-1.5 w-full">
+				{#each entries.filter(([k]) => mdKeys.has(k)) as [key, value] (key)}
+					<div class="bg-surface rounded-tag p-3 flex flex-col gap-1.5 min-w-0">
+						<p class="font-bold text-sm tracking-[-0.3px]">{fieldDefs[key]?.label ?? key}</p>
+						{@render markdownText(String(value))}
+					</div>
+				{/each}
+			</div>
+		{/if}
+		{#if entries.some(([k]) => !mdKeys.has(k))}
+			<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-secondary mt-0.5">
+				{#each entries.filter(([k]) => !mdKeys.has(k)) as [key, value] (key)}
+					<span>
+						<span class="font-medium">{fieldDefs[key]?.label ?? key}:</span>
+						{#if typeof value === 'boolean'}
+							<span class={value ? 'text-check-pass' : 'text-check-fail'}>{value ? 'Yes' : 'No'}</span>
+						{:else}
+							<span>{value}</span>
+						{/if}
+					</span>
+				{/each}
+			</div>
+		{/if}
 	{/if}
 {/snippet}
 
@@ -402,7 +439,7 @@
 							class="text-sm tracking-[-0.3px] bg-white border border-border-input rounded-tag px-2.5 py-2 resize-y outline-none focus:border-accent transition-colors"
 						></textarea>
 					{:else}
-						<p class="text-sm tracking-[-0.3px] break-words">{@render linkedText(displayFeedback)}</p>
+						{@render markdownText(displayFeedback)}
 					{/if}
 				</div>
 				{#if displayInternal || editing}
@@ -415,7 +452,7 @@
 								class="text-sm tracking-[-0.3px] bg-white border border-dashed border-accent rounded-tag px-2.5 py-2 resize-y outline-none focus:border-accent transition-colors"
 							></textarea>
 						{:else}
-							<p class="text-sm tracking-[-0.3px] break-words">{@render linkedText(displayInternal)}</p>
+							{@render markdownText(displayInternal)}
 						{/if}
 					</div>
 				{/if}
@@ -425,11 +462,11 @@
 			<div class="flex gap-1.5 w-full">
 				<div class="bg-surface rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
 					<p class="font-bold text-sm tracking-[-0.3px]">Reviewer message</p>
-					<p class="text-sm tracking-[-0.3px] break-words">{@render linkedText(displayFeedback)}</p>
+					{@render markdownText(displayFeedback)}
 				</div>
 				<div class="bg-accent-bg-warm border border-dashed border-accent rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
 					<p class="font-bold text-sm tracking-[-0.3px]">Justification</p>
-					<p class="text-sm tracking-[-0.3px] break-words">{@render linkedText(displayInternal)}</p>
+					{@render markdownText(displayInternal)}
 				</div>
 			</div>
 			{@render fieldValues(event.fields)}
@@ -444,7 +481,7 @@
 							class="text-sm tracking-[-0.3px] bg-white border border-border-input rounded-tag px-2.5 py-2 resize-y outline-none focus:border-accent transition-colors"
 						></textarea>
 					{:else}
-						<p class="text-sm tracking-[-0.3px] break-words">{@render linkedText(displayFeedback)}</p>
+						{@render markdownText(displayFeedback)}
 					{/if}
 				</div>
 				<div class="bg-accent-bg-warm border border-dashed border-accent rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
@@ -456,7 +493,7 @@
 							class="text-sm tracking-[-0.3px] bg-white border border-dashed border-accent rounded-tag px-2.5 py-2 resize-y outline-none focus:border-accent transition-colors"
 						></textarea>
 					{:else}
-						<p class="text-sm tracking-[-0.3px] break-words">{@render linkedText(displayInternal)}</p>
+						{@render markdownText(displayInternal)}
 					{/if}
 				</div>
 			</div>
@@ -484,7 +521,7 @@
 							class="text-sm tracking-[-0.3px] bg-white border border-amber-300 rounded-tag px-2.5 py-2 resize-y outline-none focus:border-accent transition-colors"
 						></textarea>
 					{:else}
-						<p class="text-sm tracking-[-0.3px] break-words">{@render linkedText(displayFeedback)}</p>
+						{@render markdownText(displayFeedback)}
 					{/if}
 				</div>
 				<div class="border border-dashed border-amber-300 bg-amber-50/50 rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
@@ -496,7 +533,7 @@
 							class="text-sm tracking-[-0.3px] bg-white border border-amber-300 rounded-tag px-2.5 py-2 resize-y outline-none focus:border-accent transition-colors"
 						></textarea>
 					{:else}
-						<p class="text-sm tracking-[-0.3px] break-words">{@render linkedText(displayInternal)}</p>
+						{@render markdownText(displayInternal)}
 					{/if}
 				</div>
 			</div>
