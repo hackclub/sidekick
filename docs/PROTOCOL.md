@@ -637,7 +637,9 @@ When a ship is approved or rejected, your program must update that ship's `statu
 
 ### `UPDATE_REVIEW_ACTION`
 
-Edit the messages on an existing approval or rejection. Sidekick calls this when a reviewer edits the feedback or internal notes on a past review decision inline from the timeline. This does **not** change the ship's status or assigned hours - only the text fields.
+Edit the messages on an existing approval or rejection. Sidekick calls this when a reviewer edits the feedback or internal notes on a past review decision inline from the timeline. This does **not** change the ship's status.
+
+Assigned hours are editable in exactly one situation: an approval whose ship is still `pending_hq`. When an HQ reviewer edits such a pending approval, Sidekick includes `hoursAssigned`, and your program must persist it so a later `authorize` sent *without* hours finalizes the edited value. Hour edits on finalized approvals are invalid - reject them with a 400 rather than silently ignoring the field, since payouts derived from the original hours may already have happened.
 
 The `type` field determines which fields are present:
 
@@ -672,6 +674,7 @@ The `type` field determines which fields are present:
 | `type`            | `string` | Yes           | `"approval"` or `"rejection"`.             |
 | `feedbackMessage` | `string` | Yes           | Updated feedback (visible to participant). |
 | `justification`   | `string` | Approval only | Updated internal justification.            |
+| `hoursAssigned`   | `number` | No            | Updated assigned hours (approval only). Only sent while the ship is `pending_hq`; must be persisted so a later `authorize` without hours uses it. Reject hour edits on finalized approvals. |
 | `internalMessage` | `string` | No            | Updated internal note (rejection only).    |
 | `fields`          | `object` | No            | Updated custom field values. Keys match `ReviewFieldDefinition.name`. |
 
