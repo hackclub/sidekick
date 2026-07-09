@@ -8,7 +8,6 @@ const BASE_URL = 'https://hackatime.hackclub.com';
 interface ProjectDetail {
 	name: string;
 	totalSeconds: number;
-	languages: Record<string, number>;
 }
 
 interface TrustFactor {
@@ -155,37 +154,53 @@ export async function getProjectDateRange(
 }
 
 export async function getProjectDetails(
-	username: string,
+	userId: string,
 	projectKeys: string[],
-	start?: string,
+	start?: string, // ISO dates (YYYY-MM-DD) — clamp aggregation to this window
 	end?: string
 ): Promise<{ projects: ProjectDetail[] }> {
-	log.debug('getProjectDetails called', { username, projectKeys: projectKeys.join(','), start, end });
-	const params: Record<string, string> = {
-		project: projectKeys.join(',')
-	};
-	if (start) params.start = start;
-	if (end) params.end = end;
+	log.debug('getProjectDetails called', { userId, projectKeys: projectKeys.join(','), start, end });
+	if (projectKeys.length === 0) return { projects: [] };
 
-	const response = await authFetch(
-		`/api/v1/users/${encodeURIComponent(username)}/projects/details`,
-		params
-	);
-	const data = await response.json();
+	// The public /users/{id}/projects/details endpoint honors the user's
+	// "disable public stats" flag even when queried with the admin token (such
+	// users read as 0h), and offers no reliable date window. Reconstruct
+	// durations from admin heartbeats instead — same source and session
+	// algorithm as getAiCodingSeconds, and immune to the privacy flag.
+	const range = await getProjectDateRange(userId, projectKeys);
+	if (!range) {
+		log.debug('getProjectDetails no date range found', { userId });
+		return { projects: [] };
+	}
+	if (start && range.lastDate < start) return { projects: [] };
+	if (end && range.firstDate > end) return { projects: [] };
+	const firstDate = start && start > range.firstDate ? start : range.firstDate;
+	const lastDate = end && end < range.lastDate ? end : range.lastDate;
 
-	const allProjects: ProjectDetail[] = (data.projects ?? []).map(
-		(p: { name: string; total_seconds: number; languages: Record<string, number> }) => ({
-			name: p.name,
-			totalSeconds: p.total_seconds,
-			languages: p.languages
-		})
-	);
+	const startS = Math.floor(new Date(firstDate + 'T00:00:00Z').getTime() / 1000);
+	const endS = Math.floor(new Date(lastDate + 'T23:59:59Z').getTime() / 1000);
+	const all = await getRawHeartbeatRange(userId, startS, endS);
 
-	// The API may return all projects regardless of filter — filter client-side
-	const keySet = new Set(projectKeys.map((k) => k.toLowerCase()));
-	const projects = allProjects.filter((p) => keySet.has(p.name.toLowerCase()));
+	// Match case-insensitively but report the caller's casing back.
+	const keyByLower = new Map(projectKeys.map((k) => [k.toLowerCase(), k]));
+	const byProject = new Map<string, RawHeartbeat[]>();
+	for (const hb of all) {
+		const key = keyByLower.get((hb.project ?? '').toLowerCase());
+		if (key === undefined) continue;
+		let group = byProject.get(key);
+		if (!group) {
+			group = [];
+			byProject.set(key, group);
+		}
+		group.push(hb);
+	}
 
-	log.debug('getProjectDetails result', { username, projectCount: projects.length });
+	const projects: ProjectDetail[] = [...byProject.entries()].map(([name, hbs]) => ({
+		name,
+		totalSeconds: aggregateByProject(hbs)
+	}));
+
+	log.debug('getProjectDetails result', { userId, projectCount: projects.length });
 	return { projects };
 }
 
@@ -325,16 +340,20 @@ export interface RawHeartbeat {
  */
 export async function getAiCodingSeconds(
 	userId: string,
-	projectKeys: string[]
+	projectKeys: string[],
+	start?: string // ISO date (YYYY-MM-DD) — ignore activity before it
 ): Promise<number> {
-	log.debug('getAiCodingSeconds called', { userId, projectKeys: projectKeys.join(',') });
+	log.debug('getAiCodingSeconds called', { userId, projectKeys: projectKeys.join(','), start });
 	const range = await getProjectDateRange(userId, projectKeys);
 	if (!range) {
 		log.debug('getAiCodingSeconds no date range found', { userId });
 		return 0;
 	}
+	// Clamp the span-derived range to the program's Hackatime window, if any.
+	if (start && range.lastDate < start) return 0;
+	const firstDate = start && start > range.firstDate ? start : range.firstDate;
 
-	const startS = Math.floor(new Date(range.firstDate + 'T00:00:00Z').getTime() / 1000);
+	const startS = Math.floor(new Date(firstDate + 'T00:00:00Z').getTime() / 1000);
 	const endS = Math.floor(new Date(range.lastDate + 'T23:59:59Z').getTime() / 1000);
 	const all = await getRawHeartbeatRange(userId, startS, endS);
 

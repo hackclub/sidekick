@@ -23,6 +23,10 @@ export interface Project {
   authorId: string; // Slack ID ("U...") or HCA ID ("ident!...")
   hackatimeId?: string; // Hackatime user lookup — Slack ID, HCA ID, or Hackatime numeric ID. Falls back to authorId if omitted.
   hackatimeProjectKeys: string[];
+  // ISO date (YYYY-MM-DD). When set, Sidekick only counts Hackatime activity on
+  // or after this date when aggregating hours — send your event's start date so
+  // pre-event time on reused Hackatime projects doesn't inflate the totals.
+  hackatimeStartDate?: string;
   ships: Ship[];
   metadata?: Record<string, unknown>;
 }

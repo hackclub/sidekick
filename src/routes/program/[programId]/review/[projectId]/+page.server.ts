@@ -123,9 +123,12 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			return { hackatime: null as { totalSeconds: number; aiSeconds: number } | null, trustLevel: null as string | null, trustLogs: [] as TrustLog[], projectBreakdown: [] as { name: string; totalSeconds: number }[] };
 		}
 		try {
+			// hackatimeStartDate scopes aggregation to the program's event window —
+			// without it, time logged on reused Hackatime projects before the event
+			// would inflate the totals (and the checks fed from them).
 			const [projectDetails, aiSeconds, trustLogs] = await Promise.all([
-				getProjectDetails(hackatimeUser, project.hackatimeProjectKeys),
-				getAiCodingSeconds(hackatimeUser, project.hackatimeProjectKeys),
+				getProjectDetails(hackatimeUser, project.hackatimeProjectKeys, project.hackatimeStartDate),
+				getAiCodingSeconds(hackatimeUser, project.hackatimeProjectKeys, project.hackatimeStartDate),
 				getTrustLogs(hackatimeUser).catch((e) => { log.warn('trust logs fetch failed', { error: e }); return [] as TrustLog[]; })
 			]);
 			const totalSeconds = projectDetails.projects.reduce((s, p) => s + p.totalSeconds, 0);
