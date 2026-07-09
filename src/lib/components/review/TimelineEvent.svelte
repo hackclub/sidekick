@@ -276,6 +276,7 @@
 						{/if}
 						{#if approvalCumulative > 0 && approvalCumulative !== event.hoursAssigned}{' '}<span class="text-text-tertiary">(total {fmtHours(approvalCumulative)})</span>{/if}
 						<!-- eslint-enable svelte/no-useless-mustaches -->
+						{@render rewardedOverrideTag(event.rewardedHoursOverride)}
 						<span class="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded-tag bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-medium">
 							<ShieldCheck size={10} />
 							Authorized by
@@ -295,6 +296,7 @@
 						{/if}
 						{#if approvalCumulative > 0 && approvalCumulative !== event.hoursAssigned}{' '}<span class="text-text-tertiary">(total {fmtHours(approvalCumulative)})</span>{/if}
 						<!-- eslint-enable svelte/no-useless-mustaches -->
+						{@render rewardedOverrideTag(event.rewardedHoursOverride)}
 					</p>
 				{:else if event.type === 'pending_approval'}
 					<p class="text-sm tracking-[-0.3px]">
@@ -302,6 +304,7 @@
 						{#if displayHours !== event.hoursAssigned}
 							<span class="text-text-tertiary line-through">{fmtHours(event.hoursAssigned)}</span>
 						{/if}
+						{@render rewardedOverrideTag(event.rewardedHoursOverride)}
 						<span class="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded-tag bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-medium">
 							<Clock size={10} />
 							Pending authorization
@@ -311,6 +314,7 @@
 					{@const discardedByActor = actors[event.discardedByActorId] ?? { name: event.discardedByActorId, avatarUrl: null }}
 					<p class="text-sm tracking-[-0.3px] text-text-tertiary">
 						<span class="font-bold">{actor.name}</span> approved for <span class="font-bold">{fmtHours(event.hoursAssigned)}</span>
+						{@render rewardedOverrideTag(event.rewardedHoursOverride)}
 						<span class="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded-tag bg-surface border border-border-card text-text-tertiary text-[11px] font-medium">
 							Discarded by
 							{#if discardedByActor.avatarUrl}

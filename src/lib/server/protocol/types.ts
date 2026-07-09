@@ -51,6 +51,11 @@ export interface Ship {
   status: "pending" | "pending_hq" | "approved" | "rejected";
   approveFields?: ReviewFieldDefinition[];
   rejectFields?: ReviewFieldDefinition[];
+  // Advertises that the program accepts `rewardedHoursOverride` on approvals of
+  // this ship. When true, Sidekick offers reviewers an optional override of the
+  // hours rewarded to the author (distinct from `hoursAssigned`, which is what
+  // lands in the Unified YSWS DB).
+  supportsRewardedOverride?: boolean;
 }
 
 export interface ProjectChange {
@@ -86,6 +91,7 @@ export type TimelineEvent =
       actorId: string;
       hoursAssigned: number;
       hoursDeflated?: number;
+      rewardedHoursOverride?: number;
       feedbackMessage: string;
       justification: string;
       fields?: ReviewFieldValues;
@@ -97,6 +103,7 @@ export type TimelineEvent =
       shipId: string;
       actorId: string;
       hoursAssigned: number;
+      rewardedHoursOverride?: number;
       feedbackMessage: string;
       justification: string;
       fields?: ReviewFieldValues;
@@ -109,6 +116,7 @@ export type TimelineEvent =
       authorizedByActorId: string;
       hoursAssigned: number;
       hoursDeflated?: number;
+      rewardedHoursOverride?: number;
       feedbackMessage: string;
       justification: string;
       fields?: ReviewFieldValues;
@@ -121,6 +129,7 @@ export type TimelineEvent =
       actorId: string;
       discardedByActorId: string;
       hoursAssigned: number;
+      rewardedHoursOverride?: number;
       feedbackMessage: string;
       justification: string;
       fields?: ReviewFieldValues;
@@ -222,6 +231,10 @@ export type SubmitReviewActionInput = SubmitReviewActionBase &
     | {
         action: "approve";
         hoursAssigned: number;
+        // Optional override of the hours rewarded to the author. Only sent when
+        // the ship advertises `supportsRewardedOverride` and the reviewer filled
+        // it in. How (and whether) the override is surfaced is up to the program.
+        rewardedHoursOverride?: number;
         feedbackMessage: string;
         justification: string;
         isHq: boolean; // HQ approvals skip the pending_hq stage and finalize immediately
@@ -237,6 +250,7 @@ export type SubmitReviewActionInput = SubmitReviewActionBase &
     | {
         action: "authorize";
         hoursAssigned?: number;
+        rewardedHoursOverride?: number; // carried over from the original approval, if any
         justification?: string; // Sidekick sends a canned default if the authorizer gave none
       }
     | {

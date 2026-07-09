@@ -82,6 +82,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 				reviewerId: pending.reviewerId,
 				action: 'approve',
 				hoursAssigned: pending.hoursAssigned,
+				rewardedHoursOverride: pending.rewardedHoursOverride ?? undefined,
 				feedbackMessage: pending.feedbackMessage,
 				justification: pending.justification,
 				isHq: false,
@@ -97,6 +98,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			reviewerId,
 			action: 'authorize',
 			hoursAssigned: pending.hoursAssigned,
+			rewardedHoursOverride: pending.rewardedHoursOverride ?? undefined,
 			justification
 		});
 

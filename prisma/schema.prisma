@@ -153,6 +153,7 @@ model PendingApproval {
   shipId          String
   reviewerId      String
   hoursAssigned   Float
+  rewardedHoursOverride Float?
   feedbackMessage String
   justification   String
   fields          Json?

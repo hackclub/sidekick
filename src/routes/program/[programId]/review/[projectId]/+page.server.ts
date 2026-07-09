@@ -376,6 +376,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 					shipId: event.shipId,
 					actorId: event.actorId,
 					hoursAssigned: event.hoursAssigned,
+					rewardedHoursOverride: event.rewardedHoursOverride,
 					feedbackMessage: event.feedbackMessage,
 					justification: event.justification,
 					fields: event.fields,
@@ -390,6 +391,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 					actorId: event.actorId,
 					discardedByActorId: discardedByActor[event.shipId] ?? event.actorId,
 					hoursAssigned: event.hoursAssigned,
+					rewardedHoursOverride: event.rewardedHoursOverride,
 					feedbackMessage: event.feedbackMessage,
 					justification: event.justification,
 					fields: event.fields,
@@ -404,6 +406,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 					authorizedByActorId: authorizedByActor[event.shipId],
 					hoursAssigned: event.hoursAssigned,
 					hoursDeflated: event.hoursDeflated,
+					rewardedHoursOverride: event.rewardedHoursOverride,
 					feedbackMessage: event.feedbackMessage,
 					justification: event.justification,
 					fields: event.fields,
@@ -439,6 +442,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 				actorId: pa.reviewerId,
 				discardedByActorId: pa.discardedById!,
 				hoursAssigned: pa.hoursAssigned,
+				rewardedHoursOverride: pa.rewardedHoursOverride ?? undefined,
 				feedbackMessage: pa.feedbackMessage,
 				justification: pa.justification,
 				fields: (pa.fields as Record<string, string | number | boolean>) ?? undefined,
@@ -451,6 +455,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 				shipId: pa.shipId,
 				actorId: pa.reviewerId,
 				hoursAssigned: pa.hoursAssigned,
+				rewardedHoursOverride: pa.rewardedHoursOverride ?? undefined,
 				feedbackMessage: pa.feedbackMessage,
 				justification: pa.justification,
 				fields: (pa.fields as Record<string, string | number | boolean>) ?? undefined,
@@ -524,6 +529,11 @@ export const actions: Actions = {
 		const shipId = formData.get('shipId') as string;
 		const fieldsRaw = formData.get('fields') as string | null;
 		const fields = fieldsRaw ? JSON.parse(fieldsRaw) as Record<string, string | number | boolean> : undefined;
+		const rewardedOverrideRaw = formData.get('rewardedHoursOverride') as string | null;
+		const rewardedHoursOverride =
+			rewardedOverrideRaw != null && rewardedOverrideRaw !== '' && Number.isFinite(parseFloat(rewardedOverrideRaw))
+				? parseFloat(rewardedOverrideRaw)
+				: undefined;
 
 		log.info('review action', { action, shipId, projectId: params.projectId, userId: user.id });
 
@@ -546,12 +556,14 @@ export const actions: Actions = {
 					shipId,
 					reviewerId,
 					hoursAssigned: parseFloat(formData.get('hoursAssigned') as string),
+					rewardedHoursOverride: rewardedHoursOverride ?? null,
 					feedbackMessage: formData.get('feedbackMessage') as string,
 					justification: formData.get('justification') as string,
 					fields: fields ?? undefined
 				},
 				update: {
 					hoursAssigned: parseFloat(formData.get('hoursAssigned') as string),
+					rewardedHoursOverride: rewardedHoursOverride ?? null,
 					feedbackMessage: formData.get('feedbackMessage') as string,
 					justification: formData.get('justification') as string,
 					fields: fields ?? undefined
@@ -567,7 +579,8 @@ export const actions: Actions = {
 					entityId: shipId,
 					metadata: {
 						projectId: params.projectId,
-						hoursAssigned: (formData.get('hoursAssigned') as string) || null
+						hoursAssigned: (formData.get('hoursAssigned') as string) || null,
+						rewardedHoursOverride: rewardedHoursOverride ?? null
 					}
 				}
 			});
@@ -588,6 +601,7 @@ export const actions: Actions = {
 					...base,
 					action: 'approve',
 					hoursAssigned: parseFloat(formData.get('hoursAssigned') as string),
+					rewardedHoursOverride,
 					feedbackMessage: formData.get('feedbackMessage') as string,
 					justification: formData.get('justification') as string,
 					isHq: membership.canAuthorizeReviews,
@@ -640,7 +654,8 @@ export const actions: Actions = {
 				entityId: shipId,
 				metadata: {
 					projectId: params.projectId,
-					hoursAssigned: (formData.get('hoursAssigned') as string) || null
+					hoursAssigned: (formData.get('hoursAssigned') as string) || null,
+					rewardedHoursOverride: rewardedHoursOverride ?? null
 				}
 			}
 		});

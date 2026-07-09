@@ -117,8 +117,15 @@ A **ship** is a submission event - each time a participant submits their project
 | `status`         | `string`                | Yes      | `"pending"`, `"pending_hq"`, `"approved"`, or `"rejected"`. |
 | `approveFields`  | `ReviewFieldDefinition[]` | No     | Custom fields to show when approving this ship. If omitted or empty, no extra fields are shown. |
 | `rejectFields`   | `ReviewFieldDefinition[]` | No     | Custom fields to show when rejecting this ship. If omitted or empty, no extra fields are shown. |
+| `supportsRewardedOverride` | `boolean`     | No     | Advertises that approvals of this ship accept `rewardedHoursOverride` (see below). Default `false`. |
 
 Ships are always embedded inside their parent project - they're never returned as standalone objects.
+
+A project can accumulate **consecutive pending ships** when a participant re-ships (changes something and submits again) before the previous submission was reviewed. Sidekick always reviews the *most recent* pending ship — a review decision covers all work up to it. Keep superseded ships in the `ships` array (and their `"ship"` events in the timeline) so reviewers can see the full history.
+
+#### Rewarded Hours Override
+
+Some programs reward participants for a different number of hours than what lands in the Airtable Unified YSWS DB. If a ship advertises `supportsRewardedOverride: true`, Sidekick lets the reviewer optionally fill in a **rewarded hours override** when approving. When set, it is sent as `rewardedHoursOverride` alongside `hoursAssigned` in `SUBMIT_REVIEW_ACTION` (and carried through `authorize` for two-stage flows). Where and how the override is surfaced (payouts, shop balance, etc.) is entirely up to your program; `hoursAssigned` remains the canonical value for the Unified YSWS DB. Echo the override back on the corresponding `"approval"` timeline events so Sidekick can display it.
 
 #### Review Field Definitions
 
@@ -312,6 +319,7 @@ Sidekick renders `"text"` changes as inline old→new values, `"url"` the same w
 | ----------------- | -------- | -------- | --------------------------------------------------------------------- |
 | `hoursAssigned`   | `number` | Yes      | Hours the reviewer granted (may differ from claimed).                 |
 | `hoursDeflated`   | `number` | No       | Hours reduced due to deflation, if any.                               |
+| `rewardedHoursOverride` | `number` | No | Rewarded hours override the reviewer submitted with this approval, if any. |
 | `feedbackMessage` | `string` | Yes      | Feedback shown to the participant.                                    |
 | `justification`   | `string` | Yes      | Internal reasoning (visible to other reviewers, not the participant). |
 | `fields`          | `object` | No       | Custom field values from the review. Keys match `ReviewFieldDefinition.name`. |
@@ -535,6 +543,7 @@ The `action` field determines which other fields are present:
   "reviewerId": "ident!reviewer456",
   "action": "approve",
   "hoursAssigned": 7.5,
+  "rewardedHoursOverride": 10,
   "feedbackMessage": "Looks good! Nice use of WebSockets.",
   "justification": "Hackatime logs verified, 8h claimed, 0.5h AI-generated code deducted.",
   "isHq": true,
@@ -543,6 +552,8 @@ The `action` field determines which other fields are present:
 ```
 
 The `fields` object is optional. If the ship declared `approveFields`, the values submitted by the reviewer are included here. Keys match the `name` from each `ReviewFieldDefinition`. Omit `fields` entirely if there are no custom fields or none were filled.
+
+`rewardedHoursOverride` is optional and only ever sent for ships that advertise `supportsRewardedOverride` (see the Ships section). When present, the program should reward the author for that many hours instead of `hoursAssigned`; `hoursAssigned` stays the canonical value for the Unified YSWS DB. When absent, no override was given - reward the assigned hours as usual.
 
 `isHq` indicates whether the reviewer has HQ authorization powers. If your program uses the two-stage review flow, an approval with `"isHq": true` should **bypass the `pending_hq` stage** and finalize the ship as `"approved"` immediately; `"isHq": false` should move it to `"pending_hq"` to await authorization. Programs without a two-stage flow can ignore this field.
 
@@ -593,6 +604,8 @@ As with approvals, `fields` is optional and carries values from the ship's `reje
 ```
 
 Finalizes a ship in `"pending_hq"` status, transitioning it to `"approved"`. If `hoursAssigned` is present, the program should use that value instead of the original reviewer's hours. If omitted, the program should use the hours from the original reviewer approval. Only valid for ships with status `"pending_hq"`.
+
+`rewardedHoursOverride` may also be present on `authorize` - Sidekick carries it over from the original reviewer's approval when the ship supports overrides. The same semantics as on `approve` apply.
 
 `justification` is the authorizer's internal reasoning. Sidekick always sends it - if the authorizer didn't write one, a canned default is substituted - so programs that require a justification on their audit-approval records (e.g. Beest) can rely on it being present.
 
