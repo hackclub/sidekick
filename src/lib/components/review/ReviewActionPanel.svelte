@@ -60,9 +60,12 @@
 		rejectFields?: ReviewFieldDefinition[];
 		rejectionTemplates?: RejectionTemplate[];
 		supportsRewardedOverride?: boolean;
+		// An approval on this ship is already awaiting HQ authorization — hide the
+		// Approve/Reject tabs so a second verdict can't be stacked on top of it.
+		hasPendingApproval?: boolean;
 	}
 
-	let { remainingHours, onsubmit, submitting = false, prefill = null, changelog = null, overview = null, draftKey = '', approveFields = [], rejectFields = [], rejectionTemplates = [], supportsRewardedOverride = false }: Props = $props();
+	let { remainingHours, onsubmit, submitting = false, prefill = null, changelog = null, overview = null, draftKey = '', approveFields = [], rejectFields = [], rejectionTemplates = [], supportsRewardedOverride = false, hasPendingApproval = false }: Props = $props();
 
 	let selectedAction: ActionType = $state('approve');
 	let hoursAssigned = $state(0);
@@ -389,12 +392,23 @@
 		});
 	}
 
-	const tabs = [
+	const allTabs = [
 		{ id: 'approve', label: 'Approve', icon: CircleCheck, color: 'text-check-pass' },
 		{ id: 'reject', label: 'Reject', icon: CircleX, color: 'text-check-fail' },
 		{ id: 'comment', label: 'Comment', icon: MessageSquare, color: 'text-text-primary' },
 		{ id: 'internal_comment', label: 'Internal', icon: Eye, color: 'text-accent' }
 	];
+	const tabs = $derived(
+		hasPendingApproval ? allTabs.filter((t) => t.id === 'comment' || t.id === 'internal_comment') : allTabs
+	);
+
+	// A restored draft (or a just-queued approval) may leave a verdict tab
+	// selected that no longer exists — snap to the first available one.
+	$effect(() => {
+		if (hasPendingApproval && (selectedAction === 'approve' || selectedAction === 'reject')) {
+			selectedAction = 'comment';
+		}
+	});
 </script>
 
 <div class="border border-border-card rounded-card overflow-hidden">
