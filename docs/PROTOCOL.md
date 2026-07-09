@@ -32,7 +32,7 @@ On errors, return an appropriate HTTP status code with a JSON body:
 }
 ```
 
-The rest of this document covers the 14 actions you need to implement.
+The rest of this document covers the 14 actions you need to implement, plus three optional actions (`FETCH_AUTHOR_PROJECTS`, `FETCH_USER_NOTE`, and `UPDATE_USER_NOTE`).
 
 ## Authentication
 
@@ -216,6 +216,12 @@ An **order** represents a participant earning a specific item. Orders reference 
 | `createdAt`     | `string` | Yes      | ISO 8601 timestamp.                                                                        |
 | `fulfilledAt`   | `string` | No       | ISO 8601 timestamp, if fulfilled.                                                          |
 | `metadata`      | `object` | No       | Program-specific extra data.                                                               |
+
+### User Notes
+
+A **user note** is a single free-form internal note attached to a *user* — not to a project, ship, or review. Reviewers use it to carry context about a participant across all of their projects and submissions ("Hackatime setup was broken until June, expect low logged hours before then"). Notes are only ever shown to reviewers, never the participant.
+
+User notes are an **optional feature**. A program advertises support by implementing the `FETCH_USER_NOTE` and `UPDATE_USER_NOTE` actions; if `FETCH_USER_NOTE` returns the usual `INVALID_ACTION` error, Sidekick hides the note UI entirely. Because notes are per-user, do **not** model them as a custom review field (`approveFields`/`rejectFields`) — review fields are scoped to a single approval or rejection and would silently fork the note per review.
 
 ### Timeline Events
 
@@ -442,6 +448,79 @@ Return the full chronological event history for a project.
 ```
 
 Return events in **chronological order** (oldest first). The `changes` field on ship events is optional - see the Timeline Events section for details.
+
+### `FETCH_AUTHOR_PROJECTS` (optional)
+
+Return all projects by a given author. Sidekick uses this to show reviewers the author's other projects in your program alongside the one under review.
+
+This action is **optional** - if your program doesn't implement it, return the usual `INVALID_ACTION` error and Sidekick simply hides the "Other Projects" section.
+
+**Input:**
+```json
+{
+  "authorId": "U05ABCDEF",
+  "excludeProjectId": "proj_abc123"
+}
+```
+
+| Field              | Type     | Required | Description                                                            |
+| ------------------ | -------- | -------- | ----------------------------------------------------------------------- |
+| `authorId`         | `string` | Yes      | Slack ID (`U...`) or HCA ID (`ident!...`) of the author.               |
+| `excludeProjectId` | `string` | No       | Project to omit from the results - usually the one currently under review. |
+
+**Response:**
+```json
+{
+  "projects": [ ... ]
+}
+```
+
+`projects` contains full `Project` objects (same shape as `FETCH_PROJECTS`), ships included. Return an empty array if the author has no other projects.
+
+### `FETCH_USER_NOTE` (optional)
+
+Return the internal reviewer note stored for a user. Sidekick shows it on the user card next to the project under review.
+
+This action is **optional** - if your program doesn't implement it, return the usual `INVALID_ACTION` error and Sidekick hides the user-note UI. Programs that implement it must implement `UPDATE_USER_NOTE` too.
+
+**Input:**
+```json
+{ "userId": "U05ABCDEF" }
+```
+
+| Field    | Type     | Required | Description                                          |
+| -------- | -------- | -------- | ---------------------------------------------------- |
+| `userId` | `string` | Yes      | Slack ID (`U...`) or HCA ID (`ident!...`) of the user. |
+
+**Response:**
+```json
+{ "note": "Hackatime setup was broken until June - expect low logged hours before then." }
+```
+
+`note` is `null` when no note is stored. Return `{ "note": null }` for unknown users rather than an error - Sidekick may ask about users your program hasn't stored yet.
+
+### `UPDATE_USER_NOTE` (optional)
+
+Create, replace, or clear the note on a user. Sidekick always sends the full note text - this is a whole-note replacement, not an append.
+
+**Input:**
+```json
+{
+  "userId": "U05ABCDEF",
+  "note": "Hackatime setup was broken until June - expect low logged hours before then.",
+  "editorId": "ident!reviewer456"
+}
+```
+
+| Field      | Type              | Required | Description                                                     |
+| ---------- | ----------------- | -------- | --------------------------------------------------------------- |
+| `userId`   | `string`          | Yes      | Slack ID (`U...`) or HCA ID (`ident!...`) of the user.          |
+| `note`     | `string \| null`  | Yes      | The new note. `null` (or an empty string) clears it.            |
+| `editorId` | `string`          | Yes      | Actor ID of the reviewer making the edit, for your audit trail. |
+
+**Response:** `{ "success": true }`
+
+Return HTTP 404 if the user is unknown - unlike reads, a write to a user your program has never seen cannot be satisfied.
 
 ### `SUBMIT_REVIEW_ACTION`
 

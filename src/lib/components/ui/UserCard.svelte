@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Avatar from './Avatar.svelte';
 	import SlackIcon from '../icons/SlackIcon.svelte';
-	import { ShieldAlert, Clock, Mail, ArrowRight, Eye } from 'lucide-svelte';
+	import { ShieldAlert, Clock, Mail, ArrowRight, Eye, Pencil, X, Check, StickyNote } from 'lucide-svelte';
 	import type { TrustLog } from '$lib/server/integrations/hackatime.js';
 
 	interface Props {
@@ -15,6 +15,13 @@
 		trustLogs?: TrustLog[];
 		slackDeactivated?: boolean | null;
 		loading?: boolean;
+		// Per-user reviewer note (optional protocol feature). The section is only
+		// rendered when noteSupported is true; onSaveNote resolves to whether the
+		// save succeeded.
+		noteSupported?: boolean;
+		note?: string | null;
+		canEditNote?: boolean;
+		onSaveNote?: (note: string) => Promise<boolean>;
 		class?: string;
 	}
 
@@ -29,8 +36,36 @@
 		trustLogs = [],
 		slackDeactivated = null,
 		loading = false,
+		noteSupported = false,
+		note = null,
+		canEditNote = false,
+		onSaveNote = undefined,
 		class: className = ''
 	}: Props = $props();
+
+	let editingNote = $state(false);
+	let noteDraft = $state('');
+	let savingNote = $state(false);
+	let noteError = $state<string | null>(null);
+
+	function startEditNote() {
+		noteDraft = note ?? '';
+		noteError = null;
+		editingNote = true;
+	}
+
+	async function saveNote() {
+		if (!onSaveNote || savingNote) return;
+		savingNote = true;
+		noteError = null;
+		const ok = await onSaveNote(noteDraft.trim());
+		savingNote = false;
+		if (ok) {
+			editingNote = false;
+		} else {
+			noteError = 'Failed to save note. Please try again.';
+		}
+	}
 
 	function openSlack() {
 		if (slackId) {
@@ -240,6 +275,72 @@
 				<span class="font-mono text-sm text-text-primary tracking-[-0.3px] truncate min-w-0"
 					>{email}</span
 				>
+			</div>
+		{/if}
+
+		{#if noteSupported && (note || editingNote)}
+			<div
+				class="bg-accent-bg-warm border border-dashed border-accent rounded-tag p-3 flex flex-col gap-1.5 w-full min-w-0 mt-1"
+			>
+				<p class="font-bold text-sm tracking-[-0.3px] flex items-center gap-1.5">
+					Reviewer note
+					<Eye size={12} class="text-accent" />
+					{#if canEditNote && !editingNote}
+						<button
+							class="ml-auto bg-white border border-border-active rounded-tag p-1.5 flex items-center justify-center hover:bg-surface transition-colors cursor-pointer"
+							onclick={startEditNote}
+							title="Edit reviewer note"
+						>
+							<Pencil size={12} />
+						</button>
+					{/if}
+				</p>
+				{#if editingNote}
+					<textarea
+						bind:value={noteDraft}
+						rows="3"
+						disabled={savingNote}
+						placeholder="Internal note about this user — visible to reviewers only, follows them across projects"
+						class="text-sm tracking-[-0.3px] bg-white border border-dashed border-accent rounded-tag px-2.5 py-2 resize-y outline-none focus:border-accent transition-colors"
+					></textarea>
+					{#if noteError}
+						<p class="text-sm text-check-fail tracking-[-0.3px]">{noteError}</p>
+					{/if}
+					<div class="flex items-center justify-end gap-1.5">
+						<button
+							class="flex items-center gap-1.5 px-3 py-1.5 rounded-tag text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-surface transition-colors cursor-pointer"
+							disabled={savingNote}
+							onclick={() => (editingNote = false)}
+						>
+							<X size={12} />
+							Cancel
+						</button>
+						<button
+							class="flex items-center gap-1.5 px-3 py-1.5 rounded-tag text-xs font-medium bg-accent text-white hover:opacity-90 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+							disabled={savingNote}
+							onclick={saveNote}
+						>
+							<Check size={12} />
+							{savingNote ? 'Saving...' : 'Save'}
+						</button>
+					</div>
+				{:else}
+					<p class="text-sm tracking-[-0.3px] whitespace-pre-wrap break-words">{note}</p>
+				{/if}
+			</div>
+		{:else if noteSupported && canEditNote}
+			<div class="flex items-center justify-between w-full gap-2">
+				<div class="flex gap-1.5 items-center shrink-0">
+					<StickyNote size={14} class="text-text-primary" />
+					<span class="text-sm text-text-primary tracking-[-0.3px]">Reviewer note</span>
+				</div>
+				<button
+					class="flex gap-1 items-center text-sm text-text-secondary tracking-[-0.3px] hover:text-text-primary transition-colors cursor-pointer"
+					onclick={startEditNote}
+				>
+					<Pencil size={12} />
+					Add note
+				</button>
 			</div>
 		{/if}
 	</div>

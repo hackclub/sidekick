@@ -199,6 +199,46 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		}
 	})();
 
+	// Other projects by the same author. FETCH_AUTHOR_PROJECTS is an optional
+	// protocol action — endpoints that don't implement it return INVALID_ACTION,
+	// in which case the section is hidden entirely (supported: false).
+	const authorProjectsData = (async () => {
+		try {
+			const result = await client.fetchAuthorProjects({
+				authorId: project.authorId,
+				excludeProjectId: project.id
+			});
+			// Defensive: exclude the current project even if the endpoint ignored excludeProjectId.
+			const projects = result.projects.filter((p) => p.id !== project.id);
+			log.debug('author projects loaded', { count: projects.length });
+			return { supported: true, projects };
+		} catch (e) {
+			if (e instanceof ProtocolError) {
+				log.debug('author projects unavailable', { status: e.status, code: e.errorCode });
+			} else {
+				log.warn('author projects fetch failed', { error: e });
+			}
+			return { supported: false, projects: [] };
+		}
+	})();
+
+	// The per-user reviewer note shown on the author's user card. FETCH_USER_NOTE
+	// is an optional protocol action — endpoints that don't implement it return
+	// INVALID_ACTION, in which case the note UI is hidden entirely (supported: false).
+	const userNoteData = (async () => {
+		try {
+			const result = await client.fetchUserNote({ userId: project.authorId });
+			return { supported: true, note: result.note ?? null };
+		} catch (e) {
+			if (e instanceof ProtocolError) {
+				log.debug('user note unavailable', { status: e.status, code: e.errorCode });
+			} else {
+				log.warn('user note fetch failed', { error: e });
+			}
+			return { supported: false, note: null };
+		}
+	})();
+
 	const lapseData = (async () => {
 		if (!(hackatimeUser && project.hackatimeProjectKeys.length > 0)) return { lapseTimelapses: [] as LapseEntry[] };
 		try {
@@ -447,6 +487,8 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		airtableData,
 		githubData,
 		lapseData,
+		authorProjectsData,
+		userNoteData,
 		checkShipId,
 		checks: CHECKS.map((c) => ({
 			id: c.id,

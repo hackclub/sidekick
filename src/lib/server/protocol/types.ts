@@ -188,6 +188,28 @@ export interface FetchProjectTimelineInput {
   projectId: string;
 }
 
+// Optional action — programs that don't implement it return INVALID_ACTION and
+// Sidekick hides the "Other projects" section.
+export interface FetchAuthorProjectsInput {
+  authorId: string; // Slack ID ("U...") or HCA ID ("ident!...")
+  excludeProjectId?: string; // usually the project currently under review
+}
+
+// Optional action pair — a program advertises per-user reviewer notes by
+// implementing both. INVALID_ACTION from FETCH_USER_NOTE means unsupported and
+// Sidekick hides the user-note UI entirely. Notes are per-USER (they follow
+// the participant across projects and reviews), which is why they are their
+// own actions and not a custom review field.
+export interface FetchUserNoteInput {
+  userId: string; // Slack ID ("U...") or HCA ID ("ident!...")
+}
+
+export interface UpdateUserNoteInput {
+  userId: string; // Slack ID ("U...") or HCA ID ("ident!...")
+  note: string | null; // whole-note replacement; null/empty clears it
+  editorId: string; // actor ID of the reviewer making the edit
+}
+
 type SubmitReviewActionBase = {
   shipId: string;
   reviewerId: string; // Slack ID ("U...") or HCA ID ("ident!...")
@@ -308,6 +330,18 @@ export interface FetchProjectTimelineOutput {
   events: TimelineEvent[];
 }
 
+export interface FetchAuthorProjectsOutput {
+  projects: Project[];
+}
+
+export interface FetchUserNoteOutput {
+  note: string | null;
+}
+
+export interface UpdateUserNoteOutput {
+  success: boolean;
+}
+
 export interface SubmitReviewActionOutput {
   success: boolean;
   event: TimelineEvent;
@@ -372,6 +406,9 @@ export type SidekickRequest =
   | { action: "FETCH_PROJECTS"; input: FetchProjectsInput }
   | { action: "FETCH_PROJECT_DETAIL"; input: FetchProjectDetailInput }
   | { action: "FETCH_PROJECT_TIMELINE"; input: FetchProjectTimelineInput }
+  | { action: "FETCH_AUTHOR_PROJECTS"; input: FetchAuthorProjectsInput }
+  | { action: "FETCH_USER_NOTE"; input: FetchUserNoteInput }
+  | { action: "UPDATE_USER_NOTE"; input: UpdateUserNoteInput }
   | { action: "SUBMIT_REVIEW_ACTION"; input: SubmitReviewActionInput }
   | { action: "UPDATE_REVIEW_ACTION"; input: UpdateReviewActionInput }
   | { action: "FETCH_SHOP_ITEMS"; input: FetchShopItemsInput }
@@ -392,6 +429,9 @@ type ActionOutputMap = {
   FETCH_PROJECTS: FetchProjectsOutput;
   FETCH_PROJECT_DETAIL: FetchProjectDetailOutput;
   FETCH_PROJECT_TIMELINE: FetchProjectTimelineOutput;
+  FETCH_AUTHOR_PROJECTS: FetchAuthorProjectsOutput;
+  FETCH_USER_NOTE: FetchUserNoteOutput;
+  UPDATE_USER_NOTE: UpdateUserNoteOutput;
   SUBMIT_REVIEW_ACTION: SubmitReviewActionOutput;
   UPDATE_REVIEW_ACTION: UpdateReviewActionOutput;
   FETCH_SHOP_ITEMS: FetchShopItemsOutput;

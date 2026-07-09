@@ -16,8 +16,9 @@
 	import MultiSourceDetails from '$lib/components/review/MultiSourceDetails.svelte';
 	import AirtableRecords from '$lib/components/review/AirtableRecords.svelte';
 	import HackatimeViewer from '$lib/components/review/HackatimeViewer.svelte';
+	import OtherProjects from '$lib/components/review/OtherProjects.svelte';
 	import { ChevronLeft } from 'lucide-svelte';
-	import type { TimelineEvent as TEvent } from '$lib/server/protocol/types.js';
+	import type { TimelineEvent as TEvent, ReviewFieldDefinition } from '$lib/server/protocol/types.js';
 	import { isUuid, shortenId } from '$lib/utils/id';
 	import {
 		PROJECT_DETAILS_EXPORT_SCHEMA_VERSION,
@@ -39,10 +40,26 @@
 		return s.toLowerCase().replace(/[^a-z0-9]/g, '');
 	}
 
+	// Custom review field definitions by name, merged across all ships (the
+	// program only sends them on pending ships, but the names/labels are stable
+	// program-wide) — lets the timeline label field values and render markdown
+	// fields as boxes.
+	const reviewFieldDefs = $derived.by(() => {
+		const defs: Record<string, ReviewFieldDefinition> = {};
+		for (const ship of data.project.ships) {
+			for (const def of [...(ship.approveFields ?? []), ...(ship.rejectFields ?? [])]) {
+				defs[def.name] = def;
+			}
+		}
+		return defs;
+	});
+
 	let hackatime = $state<Awaited<typeof data.hackatimeData> | null>(null);
 	let airtable = $state<Awaited<typeof data.airtableData> | null>(null);
 	let github = $state<Awaited<typeof data.githubData> | null>(null);
 	let lapse = $state<Awaited<typeof data.lapseData> | null>(null);
+	let authorProjects = $state<Awaited<typeof data.authorProjectsData> | null>(null);
+	let userNote = $state<Awaited<typeof data.userNoteData> | null>(null);
 
 	$effect(() => {
 		hackatime = null;
@@ -68,6 +85,38 @@
 			lapse = v;
 		});
 	});
+	$effect(() => {
+		authorProjects = null;
+		data.authorProjectsData.then((v) => {
+			authorProjects = v;
+		});
+	});
+	$effect(() => {
+		userNote = null;
+		data.userNoteData.then((v) => {
+			userNote = v;
+		});
+	});
+
+	async function handleSaveUserNote(note: string): Promise<boolean> {
+		log.info('Saving user note', { userId: data.project.authorId, cleared: !note });
+		try {
+			const res = await fetch(`/api/programs/${data.program.id}/user-note`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ userId: data.project.authorId, note: note || null })
+			});
+			if (!res.ok) {
+				log.error('User note save failed', { status: res.status });
+				return false;
+			}
+			if (userNote) userNote = { ...userNote, note: note || null };
+			return true;
+		} catch (e) {
+			log.error('User note save failed', { error: e });
+			return false;
+		}
+	}
 
 	// Hours come through as raw floats (e.g. 35.71222…) — show at most 2 decimals,
 	// dropping any trailing zeros so whole hours render without a decimal point.
@@ -552,19 +601,17 @@
 					trustLevel={hackatime?.trustLevel ?? null}
 					trustLogs={hackatime?.trustLogs ?? []}
 					loading={!hackatime}
+					noteSupported={userNote?.supported ?? false}
+					note={userNote?.note ?? null}
+					canEditNote={data.canReview}
+					onSaveNote={handleSaveUserNote}
 				/>
 				<HourBreakdown
 					aggregatedSeconds={hackatime?.hackatime?.totalSeconds ?? 0}
 					shippedHours={shippedDeltaHours}
 					aiSeconds={hackatime?.hackatime?.aiSeconds ?? 0}
 					previousShips={(airtable?.airtableRecords ?? [])
-						.filter(
-							(r) =>
-								(showFuzzyAirtable || r.isExact) &&
-								r.hours > 0 &&
-								normalizeForCompare(r.id.split('–')[0]?.trim() || r.id) !==
-									normalizeForCompare(data.programYswsName)
-						)
+						.filter((r) => isExternalPreviousRecord(r))
 						.map((r) => ({
 							programName: r.id.split('–')[0]?.trim() || r.id,
 							date: '',
@@ -678,6 +725,16 @@
 				</div>
 			</div>
 
+			{#if authorProjects === null || authorProjects.supported}
+				<div style="grid-area: others">
+					<OtherProjects
+						programId={data.program.id}
+						projects={authorProjects?.projects ?? []}
+						loading={authorProjects === null}
+					/>
+				</div>
+			{/if}
+
 			{#if data.hackatimeUser && data.project.hackatimeProjectKeys.length > 0}
 				<div style="grid-area: heartbeats">
 					<HackatimeViewer
@@ -709,6 +766,7 @@
 			'checks'
 			'multi'
 			'heartbeats'
+			'others'
 			'timeline';
 	}
 
@@ -719,6 +777,7 @@
 				'user       project'
 				'checks     multi'
 				'heartbeats heartbeats'
+				'others     others'
 				'timeline   timeline';
 		}
 	}
@@ -733,6 +792,7 @@
 			grid-template-areas:
 				'user       top             top'
 				'heartbeats heartbeats       multi'
+				'others     others           others'
 				'timeline   timeline         timeline';
 		}
 
