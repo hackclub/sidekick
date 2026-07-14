@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Clock, ExternalLink } from 'lucide-svelte';
+	import { BadgeQuestionMark, Clock, ExternalLink } from 'lucide-svelte';
 	import AirtableIcon from '../icons/AirtableIcon.svelte';
 	import Checkbox from '../ui/Checkbox.svelte';
 
@@ -11,20 +11,19 @@
 		playableUrl: string | null;
 		codeUrl: string | null;
 		isExact: boolean;
+		mismatches: string[];
 	}
 
 	interface Props {
 		records: AirtableMatch[];
 		loading?: boolean;
-		showFuzzy?: boolean;
+		countFuzzy?: boolean;
 		class?: string;
 	}
 
-	let { records, loading = false, showFuzzy = $bindable(false), class: className = '' }: Props = $props();
+	let { records, loading = false, countFuzzy = $bindable(false), class: className = '' }: Props = $props();
 
-	const exactRecords = $derived(records.filter((r) => r.isExact));
 	const fuzzyRecords = $derived(records.filter((r) => !r.isExact));
-	const displayedRecords = $derived(showFuzzy ? records : exactRecords);
 
 	function shortDate(iso: string): string {
 		return new Date(iso).toLocaleDateString('en-US', {
@@ -71,7 +70,7 @@
 
 			{#if !loading}
 				<span class="text-xs text-text-tertiary tracking-[-0.24px]">
-					({displayedRecords.length})
+					({records.length})
 				</span>
 			{/if}
 		</div>
@@ -91,7 +90,7 @@
 					</div>
 				{/each}
 			</div>
-		{:else if displayedRecords.length === 0}
+		{:else if records.length === 0}
 			<div class="px-8 py-6">
 				<p class="text-sm text-text-tertiary tracking-[-0.3px]">No matching records found</p>
 			</div>
@@ -100,20 +99,27 @@
 				<!-- The index in the key guards against duplicate URLs: a key collision
 				     throws mid-flush and silently freezes this whole section (records
 				     stop rendering and the fuzzy checkbox stops reflecting its state). -->
-				{#each displayedRecords as record, i (`${record.url}#${i}`)}
+				{#each records as record, i (`${record.url}#${i}`)}
 					<!-- eslint-disable svelte/no-navigation-without-resolve -->
 					<a
 						href={record.url}
 						target="_blank"
 						rel="noopener noreferrer"
-						class="flex flex-col gap-0.5 py-2.5 border-b border-border-table last:border-b-0 -mx-2 px-2 rounded-tag hover:bg-surface transition-colors group {record.isExact ? '' : 'opacity-50'}"
+						class="flex flex-col gap-0.5 py-2.5 border-b border-border-table last:border-b-0 -mx-2 px-2 rounded-tag hover:bg-surface transition-colors group {record.isExact || countFuzzy ? '' : 'opacity-50'}"
 					>
 						<div class="flex items-center justify-between gap-3">
-							<span class="text-sm tracking-[-0.3px] truncate {record.isExact ? 'text-text-primary' : 'text-text-tertiary'}">{programFromId(record.id)}</span>
+							<div class="flex items-center gap-1.5 min-w-0">
+								<span class="text-sm tracking-[-0.3px] truncate text-text-primary">{programFromId(record.id)}</span>
+								{#if !record.isExact}
+									<span class="flex shrink-0" title="Fuzzy match — didn't match: {record.mismatches.join(', ')}">
+										<BadgeQuestionMark size={13} class="text-check-fail" />
+									</span>
+								{/if}
+							</div>
 							<div class="flex items-center gap-3 shrink-0">
 								<div class="flex items-center gap-1">
-									<Clock size={11} class={record.isExact ? 'text-text-tertiary' : 'text-text-faint'} />
-									<span class="text-sm font-medium tracking-[-0.3px] {record.isExact ? 'text-text-primary' : 'text-text-tertiary'}">{fmtHours(record.hours)}</span>
+									<Clock size={11} class="text-text-tertiary" />
+									<span class="text-sm font-medium tracking-[-0.3px] text-text-primary">{fmtHours(record.hours)}</span>
 								</div>
 
 								{#if record.approvedAt}
@@ -140,9 +146,9 @@
 
 	{#if !loading && fuzzyRecords.length > 0}
 		<div class="px-8 py-3 border-t border-border-card">
-			<Checkbox checked={showFuzzy} onchange={() => (showFuzzy = !showFuzzy)}>
+			<Checkbox checked={countFuzzy} onchange={() => (countFuzzy = !countFuzzy)}>
 				<span class="text-xs text-text-tertiary">
-					Show {fuzzyRecords.length} fuzzy {fuzzyRecords.length === 1 ? 'match' : 'matches'}
+					Count {fuzzyRecords.length} fuzzy {fuzzyRecords.length === 1 ? 'match' : 'matches'}
 				</span>
 			</Checkbox>
 		</div>

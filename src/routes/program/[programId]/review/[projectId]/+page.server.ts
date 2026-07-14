@@ -105,9 +105,13 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		url: string;
 		hours: number;
 		approvedAt: string | null;
+		createdAt: string | null;
 		playableUrl: string | null;
 		codeUrl: string | null;
 		isExact: boolean;
+		// Which exact-match criteria failed (empty for exact matches). "demo URL"
+		// also appears when the project has no demo URL to compare against.
+		mismatches: string[];
 	};
 
 	const repo = parseRepoUrl(project.codeUrl);
@@ -164,14 +168,21 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 					(recLast && authorNameParts.includes(recLast))
 				);
 				const isExact = repoMatches && demoMatches && nameMatches;
+				const mismatches = [
+					...(repoMatches ? [] : ['code URL']),
+					...(demoMatches ? [] : [normDemoUrl ? 'demo URL' : 'demo URL (project has none)']),
+					...(nameMatches ? [] : ['author name'])
+				];
 				return {
 					id: r.fields['ID'] ?? r.id,
 					url: airtableRecordUrl(r.id),
 					hours: r.fields['Override Hours Spent'] ?? r.fields['Hours Spent'] ?? 0,
 					approvedAt: r.fields['Approved At'] ?? r.fields['Created'] ?? null,
+					createdAt: r.fields['Created'] ?? null,
 					playableUrl: r.fields['Playable URL'] ?? null,
 					codeUrl: r.fields['Code URL'] ?? null,
-					isExact
+					isExact,
+					mismatches
 				};
 			});
 			const airtablePreviousHours = airtableRecords.filter((r) => r.isExact).reduce((s, r) => s + r.hours, 0);

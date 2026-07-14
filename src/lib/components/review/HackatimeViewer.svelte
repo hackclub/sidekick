@@ -12,7 +12,9 @@
 		Code,
 		Ship,
 		MessageSquare,
-		X
+		X,
+		CalendarOff,
+		Database
 	} from 'lucide-svelte';
 	import HeartbeatFrequencyBar from './HeartbeatFrequencyBar.svelte';
 	import HeartbeatScatter from './HeartbeatScatter.svelte';
@@ -54,7 +56,7 @@
 		totalSeconds: number;
 	}
 
-	type MarkerType = 'commit' | 'approval' | 'rejection' | 'comment' | 'ship';
+	type MarkerType = 'commit' | 'approval' | 'rejection' | 'comment' | 'ship' | 'airtable';
 
 	interface ReviewMarker {
 		type: MarkerType;
@@ -72,6 +74,9 @@
 		projectBreakdown?: ProjectBreakdown[];
 		markers?: ReviewMarker[];
 		authorTimezone?: string;
+		// ISO date (YYYY-MM-DD) — the program's Hackatime cutoff; activity before
+		// this date is shown in the day list but doesn't count toward hour totals.
+		hackatimeStartDate?: string;
 		class?: string;
 	}
 
@@ -83,6 +88,7 @@
 		projectBreakdown = [],
 		markers = [],
 		authorTimezone = 'UTC',
+		hackatimeStartDate,
 		class: className = ''
 	}: Props = $props();
 
@@ -91,10 +97,18 @@
 		commit: { icon: Code, label: 'Commit', color: '#8b5cf6' },
 		approval: { icon: Check, label: 'Approval', color: '#22c55e' },
 		rejection: { icon: X, label: 'Rejection', color: '#ef4444' },
-		comment: { icon: MessageSquare, label: 'Comment', color: '#3b82f6' }
+		comment: { icon: MessageSquare, label: 'Comment', color: '#3b82f6' },
+		airtable: { icon: Database, label: 'Airtable record', color: '#ec4899' }
 	};
 
-	const MARKER_ORDER: MarkerType[] = ['ship', 'commit', 'approval', 'rejection', 'comment'];
+	const MARKER_ORDER: MarkerType[] = [
+		'ship',
+		'commit',
+		'approval',
+		'rejection',
+		'comment',
+		'airtable'
+	];
 
 	const MAX_VISIBLE_PROJECTS = 4;
 
@@ -317,6 +331,21 @@
 		return days.sort((a, b) => b.date.localeCompare(a.date));
 	});
 
+	function isPreCutoff(date: string): boolean {
+		return !!hackatimeStartDate && date < hackatimeStartDate;
+	}
+
+	// The newest active day that falls before the cutoff. The day list runs
+	// newest → oldest, so the cutoff divider renders immediately to the left of
+	// this day's card — everything right of it doesn't count toward totals.
+	const cutoffBoundaryDate = $derived(allActiveDays.find((d) => isPreCutoff(d.date))?.date ?? null);
+
+	const cutoffTitle = $derived(
+		hackatimeStartDate
+			? `Hackatime cutoff (${formatDateLabel(hackatimeStartDate)}) — activity before this date doesn't count toward hour totals`
+			: ''
+	);
+
 	const monthGroups = $derived.by(() => {
 		const groups: { ym: string; label: string; startIdx: number; days: DayActivity[] }[] = [];
 		let idx = 0;
@@ -356,10 +385,10 @@
 		return new Date(iso).toLocaleDateString('sv-SE', { timeZone: authorTimezone });
 	}
 
-	// Batches each marker onto an active Hackatime day. Commits attach to the latest
-	// active day on or BEFORE the commit (that's when the work happened — a commit
-	// can't belong to a day after it). Other events attach to the earliest active day
-	// on or after them, so review actions between active days roll onto the next one.
+	// Batches each marker onto an active Hackatime day. Commits and Airtable records
+	// attach to the latest active day on or BEFORE them (both mark the tail end of work
+	// that already happened). Other events attach to the earliest active day on or
+	// after them, so review actions between active days roll onto the next one.
 	const dayMarkers = $derived.by(() => {
 		const result: Record<string, MarkerGroup[]> = {};
 		if (!allActiveDays.length || markers.length === 0) return result;
@@ -372,7 +401,7 @@
 		for (const m of markers) {
 			const mDate = markerDate(m.timestamp);
 			const target =
-				m.type === 'commit'
+				m.type === 'commit' || m.type === 'airtable'
 					? (ascDates.findLast((d) => d <= mDate) ?? firstDate)
 					: (ascDates.find((d) => d >= mDate) ?? lastDate);
 			byDate[target] ??= {};
@@ -781,13 +810,31 @@
 							</div>
 							<div class="flex gap-1.5">
 								{#each group.days as day (day.date)}
+									{#if day.date === cutoffBoundaryDate}
+										<div class="relative flex items-center shrink-0 px-1" title={cutoffTitle}>
+											<div
+												class="self-stretch border-l-2 border-dashed"
+												style="border-color: #f59e0b"
+											></div>
+											<div
+												class="absolute left-1/2 -translate-x-1/2 -top-1.5 z-10 flex items-center rounded-full h-3.5 px-1.5 shadow-sm ring-1 ring-page/40"
+												style="background-color: #f59e0b"
+											>
+												<CalendarOff size={9} color="white" strokeWidth={2.5} />
+											</div>
+										</div>
+									{/if}
 									<div class="relative shrink-0">
 										<button
 											class="flex flex-col gap-0.5 rounded-section p-1 cursor-pointer transition-all border w-[140px] shrink-0
 											{day.date === currentDate
 												? 'border-accent bg-accent-bg ring-1 ring-accent'
-												: 'border-transparent hover:border-border-card hover:bg-surface/50'}"
+												: 'border-transparent hover:border-border-card hover:bg-surface/50'}
+											{isPreCutoff(day.date) && day.date !== currentDate ? 'opacity-45' : ''}"
 											data-selected={day.date === currentDate}
+											title={isPreCutoff(day.date)
+												? "Before the Hackatime cutoff — doesn't count toward totals"
+												: undefined}
 											onclick={() => selectDay(day.date)}
 										>
 											<svg viewBox="0 0 400 100" class="w-full aspect-[4/1] bg-surface rounded-tag">

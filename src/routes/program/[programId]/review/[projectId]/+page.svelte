@@ -34,7 +34,7 @@
 	let reviewPanelRef = $state<HTMLElement | null>(null);
 	let authorizing = $state<string | null>(null);
 	let protocolError = $state<string | null>(null);
-	let showFuzzyAirtable = $state(false);
+	let countFuzzyAirtable = $state(false);
 
 	function normalizeForCompare(s: string): string {
 		return s.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -125,7 +125,7 @@
 	}
 
 	type ReviewMarker = {
-		type: 'commit' | 'approval' | 'rejection' | 'comment' | 'ship';
+		type: 'commit' | 'approval' | 'rejection' | 'comment' | 'ship' | 'airtable';
 		timestamp: string;
 		title: string;
 		subtitle?: string;
@@ -185,6 +185,19 @@
 				title: c.message.split('\n')[0],
 				subtitle: c.author,
 				avatarUrl: c.authorAvatarUrl ?? undefined
+			});
+		}
+
+		// Fuzzy matches may belong to other projects, so they're only marked while
+		// the "count fuzzy matches" checkbox on the Airtable Records card is on.
+		for (const r of airtable?.airtableRecords ?? []) {
+			if (!r.createdAt) continue;
+			if (!r.isExact && !countFuzzyAirtable) continue;
+			out.push({
+				type: 'airtable',
+				timestamp: r.createdAt,
+				title: r.isExact ? 'Airtable record created' : 'Airtable record created (fuzzy match)',
+				subtitle: `${r.id} · ${fmtHrs(r.hours)}h`
 			});
 		}
 
@@ -324,7 +337,7 @@
 	// dev transform drops the parentheses when reprinting such expressions, which
 	// silently changes the operator precedence.
 	function isExternalPreviousRecord(r: { isExact: boolean; hours: number; id: string }): boolean {
-		if (!showFuzzyAirtable && !r.isExact) return false;
+		if (!countFuzzyAirtable && !r.isExact) return false;
 		if (r.hours <= 0) return false;
 		const recProgram = normalizeForCompare(r.id.split('–')[0]?.trim() || r.id);
 		return recProgram !== normalizeForCompare(data.programYswsName);
@@ -728,7 +741,7 @@
 					<AirtableRecords
 						records={airtable?.airtableRecords ?? []}
 						loading={!airtable}
-						bind:showFuzzy={showFuzzyAirtable}
+						bind:countFuzzy={countFuzzyAirtable}
 					/>
 					<MultiSourceDetails
 						commits={github?.githubCommits ?? []}
@@ -786,6 +799,7 @@
 						projectBreakdown={hackatime?.projectBreakdown ?? []}
 						markers={reviewMarkers}
 						authorTimezone={data.authorTimezone}
+						hackatimeStartDate={data.project.hackatimeStartDate}
 					/>
 				</div>
 			{/if}
