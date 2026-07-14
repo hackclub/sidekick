@@ -38,6 +38,45 @@
 
 	const sourceTypeMap: Record<number | string, string> = { 0: 'Hackatime', 1: 'Wakapi', 2: 'Test data' };
 
+	let pathDisplay = $state<'absolute' | 'relative'>('absolute');
+
+	// Matches Unix (/foo/bar) and Windows (C:\foo, C:/foo) absolute paths; leaves
+	// non-path entities (e.g. "Claude <UUID>") alone.
+	function isAbsolutePath(s: string): boolean {
+		return /^(?:\/|[A-Za-z]:)/.test(s);
+	}
+
+	// Longest common directory prefix across all absolute-path entities.
+	const commonPathPrefix = $derived.by(() => {
+		let prefix: string | null = null;
+		for (const hb of filtered) {
+			if (!isAbsolutePath(hb.entity))
+				continue;
+			if (prefix === null) {
+				prefix = hb.entity;
+				continue;
+			}
+			let i = 0;
+			const max = Math.min(prefix.length, hb.entity.length);
+			while (i < max && prefix[i] === hb.entity[i]) i++;
+			prefix = prefix.slice(0, i);
+			if (prefix === '')
+				return '';
+		}
+		if (!prefix)
+			return '';
+		// Only strip whole directories, so cut back to the last separator.
+		const cut = Math.max(prefix.lastIndexOf('/'), prefix.lastIndexOf('\\'));
+		return cut >= 0 ? prefix.slice(0, cut + 1) : '';
+	});
+
+	function displayEntity(entity: string): string {
+		if (pathDisplay === 'relative' && commonPathPrefix && isAbsolutePath(entity) && entity.startsWith(commonPathPrefix)) {
+			return entity.slice(commonPathPrefix.length) || entity;
+		}
+		return entity;
+	}
+
 	interface ColDef {
 		key: string;
 		label: string;
@@ -45,6 +84,7 @@
 		getValue: (hb: HeartbeatRow) => string;
 		mono?: boolean;
 		highlightKey?: string;
+		headerExtra?: number;
 	}
 
 	const columns: ColDef[] = [
@@ -52,7 +92,7 @@
 		{ key: 'project', label: 'Project', minWidth: 55, highlightKey: 'project', getValue: (hb) => hb.project },
 		{ key: 'language', label: 'Lang', minWidth: 40, highlightKey: 'language', getValue: (hb) => hb.language },
 		{ key: 'editor', label: 'Editor', minWidth: 45, getValue: (hb) => hb.editor },
-		{ key: 'entity', label: 'File Path', minWidth: 80, mono: true, highlightKey: 'entity', getValue: (hb) => hb.entity },
+		{ key: 'entity', label: 'File Path', minWidth: 80, mono: true, highlightKey: 'entity', headerExtra: 110, getValue: (hb) => displayEntity(hb.entity) },
 		{ key: 'lineno', label: 'Line', minWidth: 40, mono: true, getValue: (hb) => String(hb.lineno) },
 		{ key: 'cursorpos', label: 'Col', minWidth: 35, mono: true, getValue: (hb) => String(hb.cursorpos) },
 		{ key: 'lines', label: 'Lines', minWidth: 42, mono: true, getValue: (hb) => String(hb.lines) },
@@ -72,7 +112,7 @@
 
 	// Auto-computed base widths from data
 	const autoWidths = $derived.by(() => {
-		const widths: number[] = columns.map((col) => Math.max(col.minWidth, col.label.length * CHAR_WIDTH + CELL_PAD));
+		const widths: number[] = columns.map((col) => Math.max(col.minWidth, col.label.length * CHAR_WIDTH + CELL_PAD + (col.headerExtra ?? 0)));
 		const sampleSize = Math.min(filtered.length, 200);
 		const step = filtered.length > sampleSize ? Math.floor(filtered.length / sampleSize) : 1;
 		for (let i = 0; i < filtered.length; i += step) {
@@ -242,6 +282,15 @@
 				{#each columns as col, i (col.key)}
 					<div class="shrink-0 px-1 relative" style:width="{colWidths[i]}px">
 						{col.label}
+						{#if col.key === 'entity'}
+							<span class="ml-1 font-medium text-text-tertiary">(<button
+									class="cursor-pointer {pathDisplay === 'absolute' ? 'text-accent' : 'hover:text-text-secondary'}"
+									onclick={() => (pathDisplay = 'absolute')}
+								>absolute</button>/<button
+									class="cursor-pointer {pathDisplay === 'relative' ? 'text-accent' : 'hover:text-text-secondary'}"
+									onclick={() => (pathDisplay = 'relative')}
+								>relative</button>)</span>
+						{/if}
 						{#if i < columns.length - 1}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div
@@ -276,10 +325,11 @@
 							{@const val = col.getValue(hb)}
 							{@const hk = col.highlightKey}
 							{#if hk}
+								{@const rawVal = String((hb as unknown as Record<string, unknown>)[hk] ?? val)}
 								<div
 									class="cell {col.mono ? 'font-mono' : ''}"
 									style:width="{colWidths[i]}px"
-									use:tooltipAction={{ text: val, key: hk }}
+									use:tooltipAction={{ text: rawVal, key: hk }}
 									data-highlighted={highlightKey === hk && highlightedIndices.has(index)}
 								>
 									{val}
