@@ -1,6 +1,7 @@
 import { getSessionUser } from '$lib/server/auth.js';
 import { createLogger } from '$lib/server/logger.js';
-import type { Handle } from '@sveltejs/kit';
+import { ProtocolError, ProtocolTransportError } from '$lib/server/protocol/client.js';
+import type { Handle, HandleServerError } from '@sveltejs/kit';
 
 const log = createLogger('hooks');
 
@@ -37,4 +38,23 @@ export const handle: Handle = async ({ event, resolve }) => {
 	});
 
 	return response;
+};
+
+// SvelteKit masks unexpected errors from load functions as "Internal Error".
+// Master-endpoint failures are our most common (and most actionable) breakage,
+// so surface exactly what failed instead of the generic message.
+export const handleError: HandleServerError = ({ error, event, status, message }) => {
+	log.error('unhandled error', error, { path: event.url.pathname, status });
+
+	if (error instanceof ProtocolError) {
+		return {
+			message: `Communication with the program's master endpoint failed: ${error.displayMessage}`
+		};
+	}
+	if (error instanceof ProtocolTransportError) {
+		// Already reads "<ACTION> request to the master endpoint failed: <reason>".
+		return { message: error.message };
+	}
+
+	return { message };
 };

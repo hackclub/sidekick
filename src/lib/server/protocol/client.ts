@@ -25,12 +25,14 @@ const log = createLogger("protocol");
 export class ProtocolError extends Error {
   status: number;
   body: string;
+  action?: string;
 
-  constructor(status: number, body: string) {
+  constructor(status: number, body: string, action?: string) {
     super(`Protocol error ${status}: ${body}`);
     this.name = "ProtocolError";
     this.status = status;
     this.body = body;
+    this.action = action;
   }
 
   // The machine-readable `error` code from the endpoint's JSON error body, if any.
@@ -42,6 +44,50 @@ export class ProtocolError extends Error {
       return null;
     }
   }
+
+  // Human-readable one-liner for surfacing to users: prefers the endpoint's JSON
+  // `message`, then its `error` code, then the (truncated) raw body.
+  get displayMessage(): string {
+    let detail: string;
+    try {
+      const parsed = JSON.parse(this.body);
+      detail = typeof parsed.message === "string" && parsed.message
+        ? parsed.message
+        : (this.errorCode ?? this.body);
+    } catch {
+      detail = this.body;
+    }
+    detail = detail.trim() || "empty response body";
+    if (detail.length > 300) detail = `${detail.slice(0, 300)}…`;
+    return `${this.action ?? "request"} returned HTTP ${this.status}: ${detail}`;
+  }
+}
+
+// Transport-level failure — the master endpoint never returned an HTTP response
+// (timeout, DNS failure, refused connection, TLS error, …).
+export class ProtocolTransportError extends Error {
+  action: string;
+
+  constructor(action: string, detail: string, cause?: unknown) {
+    super(`${action} request to the master endpoint failed: ${detail}`, { cause });
+    this.name = "ProtocolTransportError";
+    this.action = action;
+  }
+}
+
+// Digs the useful part out of a Node fetch failure: undici buries the reason
+// (ECONNREFUSED, ENOTFOUND, TLS errors, …) in `cause`, often with an empty
+// top-level message.
+function describeFetchError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const cause = err.cause as { code?: string; message?: string } | undefined;
+  if (cause?.message && cause.message.trim()) {
+    return cause.code && !cause.message.includes(cause.code)
+      ? `${cause.code} — ${cause.message}`
+      : cause.message;
+  }
+  if (cause?.code) return cause.code;
+  return err.message;
 }
 
 // An address exists (or may exist) but the endpoint can't retrieve it right now —
@@ -85,12 +131,13 @@ export class ProtocolClient {
 
       if (!response.ok) {
         const body = await response.text();
-        log.error("RPC protocol error", new ProtocolError(response.status, body), {
+        const protocolError = new ProtocolError(response.status, body, action);
+        log.error("RPC protocol error", protocolError, {
           action,
           status: response.status,
           body: body.slice(0, 200),
         });
-        throw new ProtocolError(response.status, body);
+        throw protocolError;
       }
 
       timer.end({ action, status: response.status });
@@ -99,10 +146,10 @@ export class ProtocolClient {
       if (err instanceof ProtocolError) throw err;
       if (controller.signal.aborted) {
         log.error("RPC call aborted", err, { action });
-      } else {
-        log.error("RPC call failed", err, { action });
+        throw new ProtocolTransportError(action, "timed out after 30 seconds", err);
       }
-      throw err;
+      log.error("RPC call failed", err, { action });
+      throw new ProtocolTransportError(action, describeFetchError(err), err);
     } finally {
       clearTimeout(timeout);
     }

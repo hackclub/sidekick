@@ -656,9 +656,8 @@ export const actions: Actions = {
 			result = await client.submitReviewAction(input);
 		} catch (e) {
 			if (e instanceof ProtocolError) {
-				const parsed = JSON.parse(e.body).message ?? e.body;
 				log.error('protocol error during review action', e, { action, shipId });
-				return fail(502, { protocolError: `Upstream error: ${parsed}` });
+				return fail(502, { protocolError: `Upstream error: ${e.displayMessage}` });
 			}
 			throw e;
 		}
