@@ -35,6 +35,11 @@
 	let authorizing = $state<string | null>(null);
 	let protocolError = $state<string | null>(null);
 	let countFuzzyAirtable = $state(false);
+	// Hour-breakdown toggles: which deductions the reviewer counts toward the
+	// remaining hours. Airtable records are keyed by their record URL.
+	let excludeAi = $state(true);
+	let excludeBrowsers = $state(false);
+	let uncountedAirtableShips = $state<Record<string, boolean>>({});
 
 	function normalizeForCompare(s: string): string {
 		return s.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -343,21 +348,30 @@
 		return recProgram !== normalizeForCompare(data.programYswsName);
 	}
 
+	// Only records the reviewer hasn't unchecked in the hour breakdown count.
 	const externalPreviousHours = $derived.by(() => {
 		if (!airtable?.airtableRecords) return 0;
 		return airtable.airtableRecords
-			.filter((r) => isExternalPreviousRecord(r))
+			.filter((r) => isExternalPreviousRecord(r) && !uncountedAirtableShips[r.url])
 			.reduce((sum, r) => sum + r.hours, 0);
 	});
 
 	const remainingHours = $derived.by(() => {
 		const delta = shippedDeltaHours;
 		if (!hackatime?.hackatime) return delta ?? 0;
-		const totalH = hackatime.hackatime.totalSeconds / 3600;
+		const ht = hackatime.hackatime;
+		const totalH = ht.totalSeconds / 3600;
 		const baseH = delta != null ? Math.min(totalH, delta) : totalH;
-		const aiRatio = totalH > 0 ? hackatime.hackatime.aiSeconds / 3600 / totalH : 0;
-		const scaledAiH = baseH * aiRatio;
-		return Math.max(0, baseH - scaledAiH - externalPreviousHours);
+		const excludedSeconds =
+			excludeAi && excludeBrowsers
+				? ht.aiAndBrowserSeconds
+				: excludeAi
+					? ht.aiSeconds
+					: excludeBrowsers
+						? ht.browserSeconds
+						: 0;
+		const exclRatio = totalH > 0 ? excludedSeconds / 3600 / totalH : 0;
+		return Math.max(0, baseH - baseH * exclRatio - externalPreviousHours);
 	});
 
 	// Snapshot of everything the reviewer currently sees, shaped to the shared
@@ -397,6 +411,7 @@
 			? {
 					totalSeconds: hackatime.hackatime.totalSeconds,
 					aiSeconds: hackatime.hackatime.aiSeconds,
+					browserSeconds: hackatime.hackatime.browserSeconds,
 					trustLevel: hackatime.trustLevel,
 					projectBreakdown: hackatime.projectBreakdown
 				}
@@ -654,14 +669,20 @@
 					truncated={hackatime?.hackatime?.truncated ?? false}
 					shippedHours={shippedDeltaHours}
 					aiSeconds={hackatime?.hackatime?.aiSeconds ?? 0}
+					browserSeconds={hackatime?.hackatime?.browserSeconds ?? 0}
+					aiAndBrowserSeconds={hackatime?.hackatime?.aiAndBrowserSeconds ?? 0}
 					previousShips={(airtable?.airtableRecords ?? [])
 						.filter((r) => isExternalPreviousRecord(r))
 						.map((r) => ({
+							key: r.url,
 							programName: r.id.split('–')[0]?.trim() || r.id,
 							date: '',
 							hours: r.hours,
 							url: r.url
 						}))}
+					bind:excludeAi
+					bind:excludeBrowsers
+					bind:uncountedShips={uncountedAirtableShips}
 					loading={!hackatime}
 					class="flex-1"
 				/>

@@ -4,9 +4,9 @@
 
 	interface Props {
 		checked: boolean;
-		onchange: () => void;
+		onchange?: () => void;
 		disabled?: boolean;
-		children: Snippet;
+		children?: Snippet;
 	}
 
 	let { checked, onchange, disabled = false, children }: Props = $props();
@@ -20,12 +20,14 @@
 	{disabled}
 >
 	{#if checked}
-		<div class="size-[18px] bg-accent rounded-[4px] flex items-center justify-center shrink-0 mt-px">
-			<Check size={13} class="text-white" strokeWidth={3} />
+		<div class="size-[18px] {disabled ? 'bg-border-card' : 'bg-accent'} rounded-[4px] flex items-center justify-center shrink-0 mt-px">
+			<Check size={13} class={disabled ? 'text-text-subtle' : 'text-white'} strokeWidth={3} />
 		</div>
 	{:else}
 		<div class="size-[18px] border-2 border-border-card rounded-[4px] shrink-0 mt-px {!disabled ? 'group-hover:border-accent/50' : ''}"></div>
 	{/if}
 
-	{@render children()}
+	{#if children}
+		{@render children()}
+	{/if}
 </button>

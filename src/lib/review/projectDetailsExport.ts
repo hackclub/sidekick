@@ -77,6 +77,8 @@ export interface ProjectExportHackatime {
 	totalSeconds: number;
 	/** Portion of `totalSeconds` attributed to AI-assisted coding. */
 	aiSeconds: number;
+	/** Portion of `totalSeconds` attributed to browser editors (Chrome/Firefox/Edge/Brave). */
+	browserSeconds: number;
 	trustLevel: string | null;
 	/** Per-hackatime-project time breakdown. */
 	projectBreakdown: { name: string; totalSeconds: number }[];
