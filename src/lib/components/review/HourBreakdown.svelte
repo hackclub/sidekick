@@ -10,7 +10,7 @@
 
 	interface Props {
 		aggregatedSeconds: number;
-		/** Heartbeat fetching hit its safety cap — all figures are lower bounds. */
+		/** Heartbeat fetching hit its safety cap; all figures are lower bounds. */
 		truncated?: boolean;
 		shippedHours?: number;
 		aiSeconds: number;
@@ -60,7 +60,7 @@
 	{#if !loading && truncated}
 		<div class="flex items-start gap-2 px-3 py-2 rounded-section bg-amber-400/10 border border-amber-400/40 text-xs text-amber-700 tracking-[-0.2px]">
 			<AlertTriangle size={14} class="shrink-0 mt-0.5" />
-			<span>Hackatime returned more activity than could be fetched — these figures are a lower bound, not the full total.</span>
+			<span>Hackatime returned more activity than could be fetched, so these figures are a lower bound, not the full total.</span>
 		</div>
 	{/if}
 

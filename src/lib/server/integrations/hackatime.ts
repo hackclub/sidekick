@@ -187,7 +187,7 @@ export interface ProjectHackatimeStats {
 	 * heartbeats can only shrink the aggregate.
 	 */
 	aiSeconds: number;
-	/** True if the heartbeat fetch hit the safety cap — totals are lower bounds. */
+	/** True if the heartbeat fetch hit the safety cap; totals are lower bounds. */
 	truncated: boolean;
 }
 
@@ -391,7 +391,7 @@ export interface HeartbeatRangeResult {
  * more. `project` narrows the fetch server-side; the filter is CASE-SENSITIVE,
  * so pass an exact name from the admin project list (see getMatchedProjects),
  * not a program-supplied key. The safety cap only guards against runaway
- * pagination — hitting it means the result is incomplete, and callers must
+ * pagination; hitting it means the result is incomplete, and callers must
  * treat the data as a lower bound (`truncated`), never as the full range.
  */
 export async function getRawHeartbeatRange(
