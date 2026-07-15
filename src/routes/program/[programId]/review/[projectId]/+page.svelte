@@ -651,6 +651,7 @@
 				/>
 				<HourBreakdown
 					aggregatedSeconds={hackatime?.hackatime?.totalSeconds ?? 0}
+					truncated={hackatime?.hackatime?.truncated ?? false}
 					shippedHours={shippedDeltaHours}
 					aiSeconds={hackatime?.hackatime?.aiSeconds ?? 0}
 					previousShips={(airtable?.airtableRecords ?? [])

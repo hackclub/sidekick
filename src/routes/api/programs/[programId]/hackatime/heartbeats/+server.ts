@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { requirePermission } from '$lib/server/rbac.js';
-import { getRawHeartbeatRange, tzDayBounds } from '$lib/server/integrations/hackatime.js';
+import { getRawHeartbeatRange, tzDayBounds, type RawHeartbeat } from '$lib/server/integrations/hackatime.js';
 import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
 
@@ -12,7 +12,7 @@ interface CachedHeartbeats {
 
 const cache = new Map<string, CachedHeartbeats>();
 
-function transformHeartbeats(raw: Awaited<ReturnType<typeof getRawHeartbeatRange>>, projectKeys: Set<string>) {
+function transformHeartbeats(raw: RawHeartbeat[], projectKeys: Set<string>) {
 	return raw
 		.filter((hb) => projectKeys.has((hb.project ?? '').toLowerCase()))
 		.sort((a, b) => a.time - b.time)
@@ -84,7 +84,7 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 	const { startS } = tzDayBounds(date, tz);
 	const { endS } = tzDayBounds(effectiveEndDate, tz);
 
-	const raw = await getRawHeartbeatRange(userId, startS, endS);
+	const { heartbeats: raw } = await getRawHeartbeatRange(userId, startS, endS);
 	const heartbeats = transformHeartbeats(raw, projectKeys);
 
 	const result = { heartbeats };

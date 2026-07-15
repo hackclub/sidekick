@@ -101,12 +101,21 @@ export function dateInTimezone(timestampS: number, tz: string): string {
 	return new Date(timestampS * 1000).toLocaleDateString('sv-SE', { timeZone: tz });
 }
 
-export async function getProjectDateRange(
+function utcDateStr(timestampS: number): string {
+	const d = new Date(timestampS * 1000);
+	return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Resolves the requested project keys (matched case-insensitively) to the exact
+ * project names Hackatime has on record, plus the span of their heartbeats.
+ * The exact casing matters: the admin heartbeats endpoint's `project` filter is
+ * case-sensitive, so heartbeat fetches must use these names, not the raw keys.
+ */
+async function getMatchedProjects(
 	userId: string,
-	projectKeys: string[],
-	tz?: string
-): Promise<{ firstDate: string; lastDate: string } | null> {
-	log.debug('getProjectDateRange called', { userId, projectKeys: projectKeys.join(','), tz });
+	projectKeys: string[]
+): Promise<{ names: string[]; earliestS: number; latestS: number } | null> {
 	const response = await authFetch('/api/admin/v1/user/projects', { id: userId });
 	const data = await response.json();
 	const keySet = new Set(projectKeys.map((k) => k.toLowerCase()));
@@ -121,7 +130,7 @@ export async function getProjectDateRange(
 		(p: AdminProject) => keySet.has(p.name.toLowerCase())
 	);
 	if (matched.length === 0) {
-		log.debug('getProjectDateRange no matching projects', { userId });
+		log.debug('getMatchedProjects no matching projects', { userId });
 		return null;
 	}
 
@@ -132,12 +141,24 @@ export async function getProjectDateRange(
 		if (p.last_heartbeat && p.last_heartbeat > latest) latest = p.last_heartbeat;
 	}
 	if (earliest === Infinity || latest === 0) {
-		log.debug('getProjectDateRange no valid timestamps', { userId, matchedCount: matched.length });
+		log.debug('getMatchedProjects no valid timestamps', { userId, matchedCount: matched.length });
 		return null;
 	}
 
-	const fd = new Date(earliest * 1000);
-	const ld = new Date(latest * 1000);
+	return { names: matched.map((p: AdminProject) => p.name), earliestS: earliest, latestS: latest };
+}
+
+export async function getProjectDateRange(
+	userId: string,
+	projectKeys: string[],
+	tz?: string
+): Promise<{ firstDate: string; lastDate: string } | null> {
+	log.debug('getProjectDateRange called', { userId, projectKeys: projectKeys.join(','), tz });
+	const matched = await getMatchedProjects(userId, projectKeys);
+	if (!matched) return null;
+
+	const fd = new Date(matched.earliestS * 1000);
+	const ld = new Date(matched.latestS * 1000);
 
 	const result = tz
 		? {
@@ -145,46 +166,74 @@ export async function getProjectDateRange(
 				lastDate: ld.toLocaleDateString('sv-SE', { timeZone: tz })
 			}
 		: {
-				firstDate: `${fd.getUTCFullYear()}-${String(fd.getUTCMonth() + 1).padStart(2, '0')}-${String(fd.getUTCDate()).padStart(2, '0')}`,
-				lastDate: `${ld.getUTCFullYear()}-${String(ld.getUTCMonth() + 1).padStart(2, '0')}-${String(ld.getUTCDate()).padStart(2, '0')}`
+				firstDate: utcDateStr(matched.earliestS),
+				lastDate: utcDateStr(matched.latestS)
 			};
 
-	log.debug('getProjectDateRange result', { userId, matchedCount: matched.length, firstDate: result.firstDate, lastDate: result.lastDate });
+	log.debug('getProjectDateRange result', { userId, matchedCount: matched.names.length, firstDate: result.firstDate, lastDate: result.lastDate });
 	return result;
 }
 
-export async function getProjectDetails(
+export interface ProjectHackatimeStats {
+	projects: ProjectDetail[];
+	/**
+	 * Seconds attributable to AI coding, computed as the delta between the full
+	 * aggregate and the aggregate with `ai coding` heartbeats removed:
+	 * `aggregate(all) - aggregate(excluding "ai coding")`. This matches how
+	 * Hackatime would credit the remaining (non-AI) time 1:1, and is robust to
+	 * interleaving: a stray AI heartbeat sitting between two human ones no longer
+	 * fragments the human session, because removing it re-merges the gap (capped
+	 * at the 2-minute timeout). The delta is always >= 0 since dropping interior
+	 * heartbeats can only shrink the aggregate.
+	 */
+	aiSeconds: number;
+	/** True if the heartbeat fetch hit the safety cap — totals are lower bounds. */
+	truncated: boolean;
+}
+
+/**
+ * Per-project coding totals plus AI-attributed seconds, from one shared
+ * heartbeat fetch.
+ *
+ * The public /users/{id}/projects/details endpoint honors the user's
+ * "disable public stats" flag even when queried with the admin token (such
+ * users read as 0h), and offers no reliable date window. Reconstruct
+ * durations from admin heartbeats instead — same source and session
+ * algorithm as Hackatime itself, and immune to the privacy flag.
+ */
+export async function getProjectHackatimeStats(
 	userId: string,
 	projectKeys: string[],
 	start?: string, // ISO dates (YYYY-MM-DD) — clamp aggregation to this window
 	end?: string
-): Promise<{ projects: ProjectDetail[] }> {
-	log.debug('getProjectDetails called', { userId, projectKeys: projectKeys.join(','), start, end });
-	if (projectKeys.length === 0) return { projects: [] };
+): Promise<ProjectHackatimeStats> {
+	log.debug('getProjectHackatimeStats called', { userId, projectKeys: projectKeys.join(','), start, end });
+	const empty: ProjectHackatimeStats = { projects: [], aiSeconds: 0, truncated: false };
+	if (projectKeys.length === 0) return empty;
 
-	// The public /users/{id}/projects/details endpoint honors the user's
-	// "disable public stats" flag even when queried with the admin token (such
-	// users read as 0h), and offers no reliable date window. Reconstruct
-	// durations from admin heartbeats instead — same source and session
-	// algorithm as getAiCodingSeconds, and immune to the privacy flag.
-	const range = await getProjectDateRange(userId, projectKeys);
-	if (!range) {
-		log.debug('getProjectDetails no date range found', { userId });
-		return { projects: [] };
+	const matched = await getMatchedProjects(userId, projectKeys);
+	if (!matched) {
+		log.debug('getProjectHackatimeStats no matching projects', { userId });
+		return empty;
 	}
-	if (start && range.lastDate < start) return { projects: [] };
-	if (end && range.firstDate > end) return { projects: [] };
+	const range = { firstDate: utcDateStr(matched.earliestS), lastDate: utcDateStr(matched.latestS) };
+	if (start && range.lastDate < start) return empty;
+	if (end && range.firstDate > end) return empty;
 	const firstDate = start && start > range.firstDate ? start : range.firstDate;
 	const lastDate = end && end < range.lastDate ? end : range.lastDate;
 
 	const startS = Math.floor(new Date(firstDate + 'T00:00:00Z').getTime() / 1000);
 	const endS = Math.floor(new Date(lastDate + 'T23:59:59Z').getTime() / 1000);
-	const all = await getRawHeartbeatRange(userId, startS, endS);
+	const results = await Promise.all(
+		matched.names.map((name) => getRawHeartbeatRange(userId, startS, endS, name))
+	);
+	const truncated = results.some((r) => r.truncated);
+	const scoped = results.flatMap((r) => r.heartbeats);
 
 	// Match case-insensitively but report the caller's casing back.
 	const keyByLower = new Map(projectKeys.map((k) => [k.toLowerCase(), k]));
 	const byProject = new Map<string, RawHeartbeat[]>();
-	for (const hb of all) {
+	for (const hb of scoped) {
 		const key = keyByLower.get((hb.project ?? '').toLowerCase());
 		if (key === undefined) continue;
 		let group = byProject.get(key);
@@ -200,8 +249,12 @@ export async function getProjectDetails(
 		totalSeconds: aggregateByProject(hbs)
 	}));
 
-	log.debug('getProjectDetails result', { userId, projectCount: projects.length });
-	return { projects };
+	const total = aggregateByProject(scoped);
+	const nonAi = aggregateByProject(scoped, { excludeCategories: ['ai coding'] });
+	const aiSeconds = Math.max(0, total - nonAi);
+
+	log.debug('getProjectHackatimeStats result', { userId, projectCount: projects.length, aiSeconds, truncated });
+	return { projects, aiSeconds, truncated };
 }
 
 export async function getUserTrustFactor(
@@ -327,84 +380,75 @@ export interface RawHeartbeat {
 	source_type: number | string;
 }
 
-/**
- * Returns the number of seconds attributable to AI coding, computed as the
- * delta between the full aggregate and the aggregate with `ai coding` heartbeats
- * removed: `aggregate(all) - aggregate(excluding "ai coding")`.
- *
- * This matches how Hackatime would credit the remaining (non-AI) time 1:1, and
- * is robust to interleaving: a stray AI heartbeat sitting between two human ones
- * no longer fragments the human session, because removing it re-merges the gap
- * (capped at the 2-minute timeout). The delta is always >= 0 since dropping
- * interior heartbeats can only shrink the aggregate.
- */
-export async function getAiCodingSeconds(
-	userId: string,
-	projectKeys: string[],
-	start?: string // ISO date (YYYY-MM-DD) — ignore activity before it
-): Promise<number> {
-	log.debug('getAiCodingSeconds called', { userId, projectKeys: projectKeys.join(','), start });
-	const range = await getProjectDateRange(userId, projectKeys);
-	if (!range) {
-		log.debug('getAiCodingSeconds no date range found', { userId });
-		return 0;
-	}
-	// Clamp the span-derived range to the program's Hackatime window, if any.
-	if (start && range.lastDate < start) return 0;
-	const firstDate = start && start > range.firstDate ? start : range.firstDate;
-
-	const startS = Math.floor(new Date(firstDate + 'T00:00:00Z').getTime() / 1000);
-	const endS = Math.floor(new Date(range.lastDate + 'T23:59:59Z').getTime() / 1000);
-	const all = await getRawHeartbeatRange(userId, startS, endS);
-
-	const keySet = new Set(projectKeys.map((k) => k.toLowerCase()));
-	const scoped = all.filter((hb) => keySet.has((hb.project ?? '').toLowerCase()));
-
-	const total = aggregateByProject(scoped);
-	const nonAi = aggregateByProject(scoped, { excludeCategories: ['ai coding'] });
-	const seconds = Math.max(0, total - nonAi);
-
-	log.debug('getAiCodingSeconds result', {
-		userId,
-		scopedHeartbeatCount: scoped.length,
-		total,
-		nonAi,
-		seconds
-	});
-	return seconds;
+export interface HeartbeatRangeResult {
+	heartbeats: RawHeartbeat[];
+	/** True if the fetch hit the safety cap and the tail of the range is missing. */
+	truncated: boolean;
 }
 
+/**
+ * Fetches every heartbeat in the range, paginating until the API reports no
+ * more. `project` narrows the fetch server-side; the filter is CASE-SENSITIVE,
+ * so pass an exact name from the admin project list (see getMatchedProjects),
+ * not a program-supplied key. The safety cap only guards against runaway
+ * pagination — hitting it means the result is incomplete, and callers must
+ * treat the data as a lower bound (`truncated`), never as the full range.
+ */
 export async function getRawHeartbeatRange(
 	userId: string,
 	startTimestampS: number,
-	endTimestampS: number
-): Promise<RawHeartbeat[]> {
-	log.debug('getRawHeartbeatRange called', { userId, startTimestampS, endTimestampS });
+	endTimestampS: number,
+	project?: string
+): Promise<HeartbeatRangeResult> {
+	log.debug('getRawHeartbeatRange called', { userId, startTimestampS, endTimestampS, project });
 	const timer = log.time('getRawHeartbeatRange');
 	const BATCH_SIZE = 5000;
-	const MAX_FETCH = 100000;
+	const MAX_FETCH = 500000;
 	let all: RawHeartbeat[] = [];
 	let offset = 0;
-	let hasMore = true;
+	let truncated = false;
 
-	while (hasMore && all.length < MAX_FETCH) {
-		const response = await authFetch('/api/admin/v1/user/heartbeats', {
+	for (;;) {
+		if (all.length >= MAX_FETCH) {
+			truncated = true;
+			break;
+		}
+		const params: Record<string, string> = {
 			id: userId,
 			start_date: String(startTimestampS),
 			end_date: String(endTimestampS),
 			limit: String(BATCH_SIZE),
 			offset: String(offset)
-		});
+		};
+		if (project !== undefined) params.project = project;
+		const response = await authFetch('/api/admin/v1/user/heartbeats', params);
 		const data = await response.json();
 		const batch: RawHeartbeat[] = data.heartbeats ?? [];
+		const hasMore = data.has_more ?? false;
+		if (batch.length === 0 && hasMore) {
+			// Defensive: an empty page with has_more=true would loop forever.
+			log.warn('getRawHeartbeatRange got empty batch with has_more=true; stopping', { userId, offset });
+			truncated = true;
+			break;
+		}
 		all = all.concat(batch);
-		hasMore = data.has_more ?? false;
 		offset += BATCH_SIZE;
 		log.trace('getRawHeartbeatRange batch', { userId, batchSize: batch.length, totalAccumulated: all.length, hasMore });
+		if (!hasMore) break;
 	}
 
-	timer.end({ userId, totalHeartbeats: all.length });
-	return all;
+	if (truncated) {
+		log.error('getRawHeartbeatRange hit fetch cap; result is truncated', undefined, {
+			userId,
+			project,
+			maxFetch: MAX_FETCH,
+			startTimestampS,
+			endTimestampS
+		});
+	}
+
+	timer.end({ userId, totalHeartbeats: all.length, truncated });
+	return { heartbeats: all, truncated };
 }
 
 export interface HeartbeatLapseTimelapse {
@@ -421,30 +465,31 @@ export async function getLapseTimelapsesFromHeartbeats(
 	projectKeys: string[]
 ): Promise<HeartbeatLapseTimelapse[]> {
 	log.debug('getLapseTimelapsesFromHeartbeats called', { userId, projectKeys: projectKeys.join(',') });
-	let range;
+	let matched;
 	try {
-		range = await getProjectDateRange(userId, projectKeys);
+		matched = await getMatchedProjects(userId, projectKeys);
 	} catch (err) {
 		log.error('getLapseTimelapsesFromHeartbeats failed to get date range', err, { userId });
 		return [];
 	}
-	if (!range) return [];
+	if (!matched) return [];
 
-	const startS = Math.floor(new Date(range.firstDate + 'T00:00:00Z').getTime() / 1000);
-	const endS = Math.floor(new Date(range.lastDate + 'T23:59:59Z').getTime() / 1000);
+	const startS = Math.floor(new Date(utcDateStr(matched.earliestS) + 'T00:00:00Z').getTime() / 1000);
+	const endS = Math.floor(new Date(utcDateStr(matched.latestS) + 'T23:59:59Z').getTime() / 1000);
 
 	let all: RawHeartbeat[];
 	try {
-		all = await getRawHeartbeatRange(userId, startS, endS);
+		const results = await Promise.all(
+			matched.names.map((name) => getRawHeartbeatRange(userId, startS, endS, name))
+		);
+		all = results.flatMap((r) => r.heartbeats);
 	} catch (err) {
 		log.error('getLapseTimelapsesFromHeartbeats failed to get heartbeats', err, { userId });
 		return [];
 	}
-	const keySet = new Set(projectKeys.map((k) => k.toLowerCase()));
 	const lapseHbs = all.filter(
 		(hb) =>
-			(hb.editor?.toLowerCase() === 'lapse' || hb.user_agent?.toLowerCase().includes('lapse')) &&
-			keySet.has((hb.project ?? '').toLowerCase())
+			hb.editor?.toLowerCase() === 'lapse' || hb.user_agent?.toLowerCase().includes('lapse')
 	);
 
 	const groups = new Map<string, RawHeartbeat[]>();

@@ -105,7 +105,7 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 	const endS = tzDayBounds(firstDayNextMonth, tz).startS - 1;
 
 	const projectKeys = new Set(projects.split(',').map((p) => p.trim().toLowerCase()));
-	const raw = await getRawHeartbeatRange(userId, startS, endS);
+	const { heartbeats: raw } = await getRawHeartbeatRange(userId, startS, endS);
 	const filtered = raw.filter(
 		(hb) =>
 			projectKeys.has((hb.project ?? '').toLowerCase()) &&

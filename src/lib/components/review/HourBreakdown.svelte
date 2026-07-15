@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Hourglass, Asterisk, BotOff, Ship, Anchor } from 'lucide-svelte';
+	import { Hourglass, Asterisk, BotOff, Ship, Anchor, AlertTriangle } from 'lucide-svelte';
 
 	interface PreviousShip {
 		programName: string;
@@ -10,6 +10,8 @@
 
 	interface Props {
 		aggregatedSeconds: number;
+		/** Heartbeat fetching hit its safety cap — all figures are lower bounds. */
+		truncated?: boolean;
 		shippedHours?: number;
 		aiSeconds: number;
 		previousShips: PreviousShip[];
@@ -17,7 +19,7 @@
 		class?: string;
 	}
 
-	let { aggregatedSeconds, shippedHours, aiSeconds, previousShips, loading = false, class: className = '' }: Props = $props();
+	let { aggregatedSeconds, truncated = false, shippedHours, aiSeconds, previousShips, loading = false, class: className = '' }: Props = $props();
 
 	function fmt(seconds: number): string {
 		const h = Math.floor(seconds / 3600);
@@ -54,6 +56,13 @@
 			<span class="font-bold text-[15px] text-text-primary tracking-[-0.4px]">Hour breakdown</span>
 		</div>
 	</div>
+
+	{#if !loading && truncated}
+		<div class="flex items-start gap-2 px-3 py-2 rounded-section bg-amber-400/10 border border-amber-400/40 text-xs text-amber-700 tracking-[-0.2px]">
+			<AlertTriangle size={14} class="shrink-0 mt-0.5" />
+			<span>Hackatime returned more activity than could be fetched — these figures are a lower bound, not the full total.</span>
+		</div>
+	{/if}
 
 	{#if loading}
 		<div class="flex flex-col gap-3 w-full animate-pulse">
