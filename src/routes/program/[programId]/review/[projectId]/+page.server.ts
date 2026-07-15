@@ -3,7 +3,7 @@ import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
 import { resolveActorIds } from '$lib/server/actors.js';
-import { getProjectDetails, getAiCodingSeconds, getTrustLogs, getUserInfo } from '$lib/server/integrations/hackatime.js';
+import { getProjectHackatimeStats, getTrustLogs, getUserInfo } from '$lib/server/integrations/hackatime.js';
 import type { TrustLog, UserInfo } from '$lib/server/integrations/hackatime.js';
 import { findRecordsByUrl, airtableRecordUrl, normalizeUrl as normalizeAirtableUrl } from '$lib/server/integrations/airtable.js';
 import { parseRepoUrl, getCommits, getRepoInfo, getReadme } from '$lib/server/integrations/github.js';
@@ -124,25 +124,24 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 
 	const hackatimeData = (async () => {
 		if (!(hackatimeUser && project.hackatimeProjectKeys.length > 0)) {
-			return { hackatime: null as { totalSeconds: number; aiSeconds: number } | null, trustLevel: null as string | null, trustLogs: [] as TrustLog[], projectBreakdown: [] as { name: string; totalSeconds: number }[] };
+			return { hackatime: null as { totalSeconds: number; aiSeconds: number; truncated: boolean } | null, trustLevel: null as string | null, trustLogs: [] as TrustLog[], projectBreakdown: [] as { name: string; totalSeconds: number }[] };
 		}
 		try {
 			// hackatimeStartDate scopes aggregation to the program's event window —
 			// without it, time logged on reused Hackatime projects before the event
 			// would inflate the totals (and the checks fed from them).
-			const [projectDetails, aiSeconds, trustLogs] = await Promise.all([
-				getProjectDetails(hackatimeUser, project.hackatimeProjectKeys, project.hackatimeStartDate),
-				getAiCodingSeconds(hackatimeUser, project.hackatimeProjectKeys, project.hackatimeStartDate),
+			const [stats, trustLogs] = await Promise.all([
+				getProjectHackatimeStats(hackatimeUser, project.hackatimeProjectKeys, project.hackatimeStartDate),
 				getTrustLogs(hackatimeUser).catch((e) => { log.warn('trust logs fetch failed', { error: e }); return [] as TrustLog[]; })
 			]);
-			const totalSeconds = projectDetails.projects.reduce((s, p) => s + p.totalSeconds, 0);
+			const totalSeconds = stats.projects.reduce((s, p) => s + p.totalSeconds, 0);
 			const trustLevel = userInfo?.trustLevel ?? null;
-			log.debug('hackatime data loaded', { totalSeconds, aiSeconds, trustLevel });
+			log.debug('hackatime data loaded', { totalSeconds, aiSeconds: stats.aiSeconds, trustLevel, truncated: stats.truncated });
 			return {
-				hackatime: { totalSeconds, aiSeconds },
+				hackatime: { totalSeconds, aiSeconds: stats.aiSeconds, truncated: stats.truncated },
 				trustLevel,
 				trustLogs,
-				projectBreakdown: projectDetails.projects.map((p) => ({ name: p.name, totalSeconds: p.totalSeconds }))
+				projectBreakdown: stats.projects.map((p) => ({ name: p.name, totalSeconds: p.totalSeconds }))
 			};
 		} catch (e) {
 			log.error('hackatime integration failed', e);
