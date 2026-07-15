@@ -14,7 +14,8 @@
 		MessageSquare,
 		X,
 		CalendarOff,
-		Database
+		Database,
+		CircleHelp
 	} from 'lucide-svelte';
 	import HeartbeatFrequencyBar from './HeartbeatFrequencyBar.svelte';
 	import HeartbeatScatter from './HeartbeatScatter.svelte';
@@ -22,6 +23,7 @@
 	import HackatimeBreakdown from './HackatimeBreakdown.svelte';
 	import HackatimeFiles from './HackatimeFiles.svelte';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
+	import Checkbox from '$lib/components/ui/Checkbox.svelte';
 
 	const log = createLogger('HackatimeViewer');
 
@@ -524,6 +526,74 @@
 		) ?? null
 	);
 
+	// "Ridiculous" heartbeats carry a lineno/cursorpos/lines value wildly above the
+	// day's median (bogus editor-reported values, e.g. a cursorpos in the millions) —
+	// a single one squashes the scatter's y-axis so the real activity flatlines.
+	const RIDICULOUS_MULTIPLIER = 100;
+	// Floor so tiny medians (e.g. median lineno of 3) don't flag legitimately
+	// large-but-sane values in big files.
+	const RIDICULOUS_FLOOR = 10_000;
+
+	let excludeRidiculous = $state(false);
+
+	function median(values: number[]): number {
+		const sorted = [...values].sort((a, b) => a - b);
+		const mid = Math.floor(sorted.length / 2);
+		return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+	}
+
+	const RIDICULOUS_FIELDS = ['lineno', 'cursorpos', 'lines'] as const;
+
+	const ridiculousThresholds = $derived.by(() => {
+		if (!codingHeartbeats || codingHeartbeats.length === 0) return null;
+		return Object.fromEntries(
+			RIDICULOUS_FIELDS.map((field) => [
+				field,
+				Math.max(
+					median(codingHeartbeats.map((hb) => hb[field])) * RIDICULOUS_MULTIPLIER,
+					RIDICULOUS_FLOOR
+				)
+			])
+		) as Record<(typeof RIDICULOUS_FIELDS)[number], number>;
+	});
+
+	function isRidiculous(hb: HeartbeatRow): boolean {
+		const t = ridiculousThresholds;
+		return !!t && RIDICULOUS_FIELDS.some((field) => hb[field] > t[field]);
+	}
+
+	const ridiculousHeartbeats = $derived(codingHeartbeats?.filter(isRidiculous) ?? []);
+	const ridiculousCount = $derived(ridiculousHeartbeats.length);
+
+	let ridiculousHelpOpen = $state(false);
+
+	// Whether this specific field is what put the heartbeat over the threshold —
+	// its cell gets highlighted in the help dropdown's mini-table.
+	function isFieldRidiculous(hb: HeartbeatRow, field: (typeof RIDICULOUS_FIELDS)[number]): boolean {
+		const t = ridiculousThresholds;
+		return !!t && hb[field] > t[field];
+	}
+
+	function formatHeartbeatTime(ms: number): string {
+		return new Date(ms).toLocaleTimeString('en-US', {
+			hour: '2-digit',
+			minute: '2-digit',
+			second: '2-digit',
+			hour12: false,
+			timeZone: authorTimezone
+		});
+	}
+
+	function fileName(entity: string): string {
+		return entity.split('/').pop() || entity;
+	}
+
+	const scatterHeartbeats = $derived(
+		codingHeartbeats && excludeRidiculous && ridiculousCount > 0
+			? codingHeartbeats.filter((hb) => !isRidiculous(hb))
+			: codingHeartbeats
+	);
+
 	const dayProjectKeys = $derived.by(() => {
 		if (!codingHeartbeats) return effectiveProjectKeys;
 		const keySet = new Set(effectiveProjectKeys.map((k) => k.toLowerCase()));
@@ -718,6 +788,12 @@
 		}
 	}
 </script>
+
+<svelte:window
+	onclick={() => {
+		if (ridiculousHelpOpen) ridiculousHelpOpen = false;
+	}}
+/>
 
 <div
 	class="border border-border-card rounded-card shadow-card overflow-hidden flex flex-col {className}"
@@ -938,11 +1014,104 @@
 			/>
 
 			<HeartbeatScatter
-				heartbeats={codingHeartbeats}
+				heartbeats={scatterHeartbeats ?? []}
 				{hoveredTimeRange}
 				timezone={authorTimezone}
 				onfocuschange={(timestamp) => handleFocusChange(timestamp)}
 			/>
+
+			{#if ridiculousCount > 0}
+				<div class="flex items-center gap-1.5 px-6 py-2.5 border-t border-border-card">
+					<Checkbox
+						checked={excludeRidiculous}
+						onchange={() => (excludeRidiculous = !excludeRidiculous)}
+					>
+						<span class="text-[12px] text-text-secondary leading-[18px] select-none">
+							Exclude {ridiculousCount} ridiculous heartbeat{ridiculousCount === 1 ? '' : 's'}
+						</span>
+					</Checkbox>
+					<span class="relative flex items-center">
+						<button
+							type="button"
+							class="flex items-center cursor-pointer"
+							onclick={(e) => {
+								e.stopPropagation();
+								ridiculousHelpOpen = !ridiculousHelpOpen;
+							}}
+						>
+							<CircleHelp size={14} class="text-text-tertiary hover:text-text-secondary" />
+						</button>
+						{#if ridiculousHelpOpen}
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<!-- svelte-ignore a11y_click_events_have_key_events -->
+							<div class="ridiculous-help-dropdown" onclick={(e) => e.stopPropagation()}>
+								<p class="text-[12px] text-text-secondary leading-snug">
+									Heartbeats whose line no, cursor pos, or total lines is more than
+									{RIDICULOUS_MULTIPLIER}× the day's median (and above
+									{RIDICULOUS_FLOOR.toLocaleString('en-US')}). These might sometimes be caused by
+									e.g. accidentally opening transpiled output, large JSON files, etc...
+								</p>
+								<div class="mt-2 max-h-48 overflow-auto scrollbar-thin">
+									<table class="w-full text-[11px] border-collapse">
+										<thead>
+											<tr class="text-left text-text-secondary">
+												<th class="mini-th">Time</th>
+												<th class="mini-th">Project</th>
+												<th class="mini-th">File</th>
+												<th class="mini-th text-right">Line</th>
+												<th class="mini-th text-right">Col</th>
+												<th class="mini-th text-right">Lines</th>
+											</tr>
+										</thead>
+										<tbody>
+											{#each ridiculousHeartbeats as hb, i (i)}
+												<!-- svelte-ignore a11y_click_events_have_key_events -->
+												<!-- svelte-ignore a11y_no_static_element_interactions -->
+												<tr
+													class="cursor-pointer hover:bg-surface/50 transition-colors"
+													title="Show in the table below"
+													onclick={() => handleFocusChange(hb.time)}
+												>
+													<td class="mini-td font-mono whitespace-nowrap">
+														{formatHeartbeatTime(hb.time)}
+													</td>
+													<td class="mini-td max-w-[70px] truncate" title={hb.project}>
+														{hb.project}
+													</td>
+													<td class="mini-td font-mono max-w-[110px] truncate" title={hb.entity}>
+														{fileName(hb.entity)}
+													</td>
+													<td
+														class="mini-td font-mono text-right {isFieldRidiculous(hb, 'lineno')
+															? 'text-check-fail font-semibold'
+															: ''}"
+													>
+														{hb.lineno.toLocaleString('en-US')}
+													</td>
+													<td
+														class="mini-td font-mono text-right {isFieldRidiculous(hb, 'cursorpos')
+															? 'text-check-fail font-semibold'
+															: ''}"
+													>
+														{hb.cursorpos.toLocaleString('en-US')}
+													</td>
+													<td
+														class="mini-td font-mono text-right {isFieldRidiculous(hb, 'lines')
+															? 'text-check-fail font-semibold'
+															: ''}"
+													>
+														{hb.lines.toLocaleString('en-US')}
+													</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+							</div>
+						{/if}
+					</span>
+				</div>
+			{/if}
 
 			<div class="flex flex-col min-h-[300px] max-h-[500px] border-t border-border-card">
 				<HeartbeatTable
@@ -1116,6 +1285,37 @@
 		padding: 8px 10px;
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 		z-index: 50;
+	}
+
+	.ridiculous-help-dropdown {
+		position: absolute;
+		left: 0;
+		top: calc(100% + 8px);
+		width: 440px;
+		background: var(--color-page, #fff);
+		border: 1px solid var(--color-border-card);
+		border-radius: 8px;
+		padding: 10px 12px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+		z-index: 50;
+		cursor: default;
+	}
+
+	.mini-th {
+		font-weight: 700;
+		padding: 0 6px 4px 0;
+		border-bottom: 1px solid var(--color-border-card);
+		position: sticky;
+		top: 0;
+		background: var(--color-page, #fff);
+	}
+
+	.mini-td {
+		padding: 3px 6px 3px 0;
+		color: var(--color-text-primary);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.overflow-tooltip {
