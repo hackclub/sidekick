@@ -27,6 +27,7 @@ export interface DurationHeartbeat {
 	id?: number;
 	project?: string | null;
 	category?: string | null;
+	editor?: string | null;
 }
 
 /**
@@ -53,20 +54,24 @@ export function sumCappedGaps(heartbeats: DurationHeartbeat[]): number {
 /**
  * Aggregates coding seconds the way Hackatime's `/projects/details` endpoint does:
  * partitioned by project (`PARTITION BY project`), each project rounded to an
- * integer, then summed. Pass `excludeCategories` to drop heartbeats by category
- * (lower-cased compare) BEFORE aggregating — removing interior heartbeats re-merges
- * the surrounding gaps, which is why `aggregate(all) - aggregate(exclude X)` is the
- * sound way to measure category X's contribution.
+ * integer, then summed. Pass `excludeCategories` / `excludeEditors` to drop
+ * heartbeats by category / editor (lower-cased compare) BEFORE aggregating —
+ * removing interior heartbeats re-merges the surrounding gaps, which is why
+ * `aggregate(all) - aggregate(exclude X)` is the sound way to measure X's
+ * contribution.
  */
 export function aggregateByProject(
 	heartbeats: DurationHeartbeat[],
-	opts: { excludeCategories?: string[] } = {}
+	opts: { excludeCategories?: string[]; excludeEditors?: string[] } = {}
 ): number {
-	const exclude = new Set((opts.excludeCategories ?? []).map((c) => c.toLowerCase()));
+	const excludeCategories = new Set((opts.excludeCategories ?? []).map((c) => c.toLowerCase()));
+	const excludeEditors = new Set((opts.excludeEditors ?? []).map((e) => e.toLowerCase()));
 
 	const byProject = new Map<string, DurationHeartbeat[]>();
 	for (const hb of heartbeats) {
-		if (exclude.size > 0 && exclude.has((hb.category ?? '').toLowerCase())) continue;
+		if (excludeCategories.size > 0 && excludeCategories.has((hb.category ?? '').toLowerCase()))
+			continue;
+		if (excludeEditors.size > 0 && excludeEditors.has((hb.editor ?? '').toLowerCase())) continue;
 		const key = hb.project ?? '';
 		let group = byProject.get(key);
 		if (!group) {

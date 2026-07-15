@@ -1,7 +1,10 @@
 <script lang="ts">
-	import { Hourglass, Asterisk, BotOff, Ship, Anchor, AlertTriangle } from 'lucide-svelte';
+	import { Hourglass, Asterisk, BotOff, Globe, Ship, Anchor, AlertTriangle } from 'lucide-svelte';
+	import Checkbox from '$lib/components/ui/Checkbox.svelte';
 
 	interface PreviousShip {
+		/** Stable identity for the include/exclude toggle (e.g. the Airtable record URL). */
+		key: string;
 		programName: string;
 		date: string;
 		hours: number;
@@ -14,12 +17,33 @@
 		truncated?: boolean;
 		shippedHours?: number;
 		aiSeconds: number;
+		/** Seconds attributed to browser editors (chrome/firefox/edge/brave). */
+		browserSeconds: number;
+		/** Seconds removed when excluding AI and browser heartbeats together (see ProjectHackatimeStats). */
+		aiAndBrowserSeconds: number;
 		previousShips: PreviousShip[];
+		excludeAi?: boolean;
+		excludeBrowsers?: boolean;
+		/** Ship keys the reviewer has unchecked, i.e. excluded from the deductions. */
+		uncountedShips?: Record<string, boolean>;
 		loading?: boolean;
 		class?: string;
 	}
 
-	let { aggregatedSeconds, truncated = false, shippedHours, aiSeconds, previousShips, loading = false, class: className = '' }: Props = $props();
+	let {
+		aggregatedSeconds,
+		truncated = false,
+		shippedHours,
+		aiSeconds,
+		browserSeconds,
+		aiAndBrowserSeconds,
+		previousShips,
+		excludeAi = $bindable(true),
+		excludeBrowsers = $bindable(false),
+		uncountedShips = $bindable({}),
+		loading = false,
+		class: className = ''
+	}: Props = $props();
 
 	function fmt(seconds: number): string {
 		const h = Math.floor(seconds / 3600);
@@ -39,14 +63,32 @@
 	// The funnel base: use shipped hours if it caps aggregated, otherwise use aggregated
 	const baseSeconds = $derived(hasShippedCap ? shippedSeconds! : aggregatedSeconds);
 
-	// Scale AI deduction proportionally if we're capping to shipped hours
-	const scaledAiSeconds = $derived(
-		aggregatedSeconds > 0 ? Math.round(aiSeconds * (baseSeconds / aggregatedSeconds)) : 0
-	);
-	const afterAi = $derived(baseSeconds - scaledAiSeconds);
+	// Scale deductions proportionally if we're capping to shipped hours
+	const ratio = $derived(aggregatedSeconds > 0 ? baseSeconds / aggregatedSeconds : 0);
 
-	const previousTotal = $derived(previousShips.reduce((sum, s) => sum + s.hours * 3600, 0));
-	const remaining = $derived(Math.max(0, afterAi - previousTotal));
+	const scaledAiSeconds = $derived(Math.round(aiSeconds * ratio));
+	// When AI is also excluded, the browser row shows the *incremental* removal on
+	// top of AI, so the two rows sum to the exact combined exclusion instead of
+	// double-counting overlap.
+	const scaledBrowserSeconds = $derived(
+		Math.round(Math.max(0, excludeAi ? aiAndBrowserSeconds - aiSeconds : browserSeconds) * ratio)
+	);
+
+	const afterAi = $derived(baseSeconds - (excludeAi ? scaledAiSeconds : 0));
+	const afterBrowsers = $derived(afterAi - (excludeBrowsers ? scaledBrowserSeconds : 0));
+
+	function isCounted(ship: PreviousShip): boolean {
+		return !uncountedShips[ship.key];
+	}
+
+	function toggleShip(ship: PreviousShip) {
+		uncountedShips = { ...uncountedShips, [ship.key]: !uncountedShips[ship.key] };
+	}
+
+	const previousTotal = $derived(
+		previousShips.filter(isCounted).reduce((sum, s) => sum + s.hours * 3600, 0)
+	);
+	const remaining = $derived(Math.max(0, afterBrowsers - previousTotal));
 </script>
 
 <div class="border border-border-card rounded-card shadow-card p-8 flex flex-col gap-4 {className}">
@@ -86,7 +128,10 @@
 				<span class="relative z-10 flex items-center justify-center w-[14px] rounded-sm bg-white"><Asterisk size={14} class="text-text-primary" /></span>
 				<span class="text-sm text-text-primary tracking-[-0.3px]">Aggregated time</span>
 			</div>
-			<span class="font-bold text-sm text-text-primary tracking-[-0.3px]">{fmt(aggregatedSeconds)}</span>
+			<div class="flex items-center gap-2">
+				<span class="font-bold text-sm text-text-primary tracking-[-0.3px]">{fmt(aggregatedSeconds)}</span>
+				<Checkbox checked disabled />
+			</div>
 		</div>
 
 		{#if hasShippedCap}
@@ -96,31 +141,57 @@
 					<span class="relative z-10 flex items-center justify-center w-[14px] rounded-sm bg-white"><Anchor size={14} class="text-text-primary" /></span>
 					<span class="text-sm text-text-primary tracking-[-0.3px]">Shipped hours</span>
 				</div>
-				<span class="text-sm text-text-primary tracking-[-0.3px]">
-					<span class="font-bold">{fmt(shippedSeconds!)}</span>
-					<span class="text-xs"> ({fmtDelta(cappedBy)})</span>
-				</span>
+				<div class="flex items-center gap-2">
+					<span class="text-sm text-text-primary tracking-[-0.3px]">
+						<span class="font-bold">{fmt(shippedSeconds!)}</span>
+						<span class="text-xs"> ({fmtDelta(cappedBy)})</span>
+					</span>
+					<Checkbox checked disabled />
+				</div>
 			</div>
 		{/if}
 
 		{#if scaledAiSeconds > 0}
 			<div class="flex items-center justify-between w-full">
-				<div class="flex gap-2 items-center">
+				<div class="flex gap-2 items-center {excludeAi ? '' : 'opacity-50'}">
 					<span class="relative z-10 flex items-center justify-center w-[14px] rounded-sm bg-white"><BotOff size={14} class="text-text-primary" /></span>
 					<span class="text-sm text-text-primary tracking-[-0.3px]">Excluding AI</span>
 				</div>
-				<span class="text-sm text-text-primary tracking-[-0.3px]">
-					<span class="font-bold">{fmt(afterAi)}</span>
-					<span class="text-xs"> ({fmtDelta(scaledAiSeconds)})</span>
-				</span>
+				<div class="flex items-center gap-2">
+					<span class="text-sm text-text-primary tracking-[-0.3px]">
+						<span class="font-bold">{fmt(afterAi)}</span>
+						<span class="text-xs {excludeAi ? '' : 'line-through opacity-50'}"> ({fmtDelta(scaledAiSeconds)})</span>
+					</span>
+					<Checkbox checked={excludeAi} onchange={() => (excludeAi = !excludeAi)} />
+				</div>
 			</div>
 		{/if}
 
-		{#each previousShips as ship, i (i)}
-			{@const deducted = ship.hours * 3600}
-			{@const priorDeductions = previousShips.slice(0, i).reduce((s, p) => s + p.hours * 3600, 0)}
+		{#if Math.round(browserSeconds * ratio) > 0}
 			<div class="flex items-center justify-between w-full">
-				<div class="flex gap-2 items-center">
+				<div class="flex gap-2 items-center {excludeBrowsers ? '' : 'opacity-50'}">
+					<span class="relative z-10 flex items-center justify-center w-[14px] rounded-sm bg-white"><Globe size={14} class="text-text-primary" /></span>
+					<span class="text-sm text-text-primary tracking-[-0.3px]">Excluding browsers</span>
+				</div>
+				<div class="flex items-center gap-2">
+					<span class="text-sm text-text-primary tracking-[-0.3px]">
+						<span class="font-bold">{fmt(afterBrowsers)}</span>
+						<span class="text-xs {excludeBrowsers ? '' : 'line-through opacity-50'}"> ({fmtDelta(scaledBrowserSeconds)})</span>
+					</span>
+					<Checkbox checked={excludeBrowsers} onchange={() => (excludeBrowsers = !excludeBrowsers)} />
+				</div>
+			</div>
+		{/if}
+
+		{#each previousShips as ship, i (ship.key)}
+			{@const counted = isCounted(ship)}
+			{@const deducted = ship.hours * 3600}
+			{@const priorDeductions = previousShips
+				.slice(0, i)
+				.filter(isCounted)
+				.reduce((s, p) => s + p.hours * 3600, 0)}
+			<div class="flex items-center justify-between w-full">
+				<div class="flex gap-2 items-center {counted ? '' : 'opacity-50'}">
 					<span class="relative z-10 flex items-center justify-center w-[14px] rounded-sm bg-white"><Ship size={14} class="text-text-primary" /></span>
 					<span class="text-sm text-text-primary tracking-[-0.3px]">
 						<!-- eslint-disable svelte/no-navigation-without-resolve -->
@@ -128,10 +199,13 @@
 						<!-- eslint-enable svelte/no-navigation-without-resolve -->
 					</span>
 				</div>
-				<span class="text-sm text-text-primary tracking-[-0.3px]">
-					<span class="font-bold">{fmt(afterAi - priorDeductions - deducted)}</span>
-					<span class="text-xs"> ({fmtDelta(deducted)})</span>
-				</span>
+				<div class="flex items-center gap-2">
+					<span class="text-sm text-text-primary tracking-[-0.3px]">
+						<span class="font-bold">{fmt(afterBrowsers - priorDeductions - (counted ? deducted : 0))}</span>
+						<span class="text-xs {counted ? '' : 'line-through opacity-50'}"> ({fmtDelta(deducted)})</span>
+					</span>
+					<Checkbox checked={counted} onchange={() => toggleShip(ship)} />
+				</div>
 			</div>
 		{/each}
 
@@ -140,7 +214,10 @@
 				<span class="w-[14px]"></span>
 				<span class="font-bold text-sm text-text-primary tracking-[-0.3px]">Total remaining</span>
 			</div>
-			<span class="font-bold text-sm text-text-primary tracking-[-0.3px]">{fmt(remaining)}</span>
+			<div class="flex items-center gap-2">
+				<span class="font-bold text-sm text-text-primary tracking-[-0.3px]">{fmt(remaining)}</span>
+				<span class="w-[18px]"></span>
+			</div>
 		</div>
 	</div>
 	{/if}

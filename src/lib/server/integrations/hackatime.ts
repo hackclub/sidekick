@@ -187,9 +187,25 @@ export interface ProjectHackatimeStats {
 	 * heartbeats can only shrink the aggregate.
 	 */
 	aiSeconds: number;
+	/**
+	 * Seconds attributable to browser activity, computed the same way as
+	 * `aiSeconds` but excluding heartbeats whose editor is one of
+	 * {@link BROWSER_EDITORS} (case-insensitive).
+	 */
+	browserSeconds: number;
+	/**
+	 * Seconds removed when excluding AI *and* browser heartbeats together. Not
+	 * necessarily `aiSeconds + browserSeconds` — removing both sets at once
+	 * re-merges gaps differently than removing each on its own. Always >=
+	 * max(aiSeconds, browserSeconds).
+	 */
+	aiAndBrowserSeconds: number;
 	/** True if the heartbeat fetch hit the safety cap; totals are lower bounds. */
 	truncated: boolean;
 }
+
+/** Editors whose heartbeats count as browser activity (compared case-insensitively). */
+export const BROWSER_EDITORS = ['chrome', 'firefox', 'edge', 'brave'];
 
 /**
  * Per-project coding totals plus AI-attributed seconds, from one shared
@@ -208,7 +224,7 @@ export async function getProjectHackatimeStats(
 	end?: string
 ): Promise<ProjectHackatimeStats> {
 	log.debug('getProjectHackatimeStats called', { userId, projectKeys: projectKeys.join(','), start, end });
-	const empty: ProjectHackatimeStats = { projects: [], aiSeconds: 0, truncated: false };
+	const empty: ProjectHackatimeStats = { projects: [], aiSeconds: 0, browserSeconds: 0, aiAndBrowserSeconds: 0, truncated: false };
 	if (projectKeys.length === 0) return empty;
 
 	const matched = await getMatchedProjects(userId, projectKeys);
@@ -251,10 +267,17 @@ export async function getProjectHackatimeStats(
 
 	const total = aggregateByProject(scoped);
 	const nonAi = aggregateByProject(scoped, { excludeCategories: ['ai coding'] });
+	const nonBrowser = aggregateByProject(scoped, { excludeEditors: BROWSER_EDITORS });
+	const nonAiNonBrowser = aggregateByProject(scoped, {
+		excludeCategories: ['ai coding'],
+		excludeEditors: BROWSER_EDITORS
+	});
 	const aiSeconds = Math.max(0, total - nonAi);
+	const browserSeconds = Math.max(0, total - nonBrowser);
+	const aiAndBrowserSeconds = Math.max(0, total - nonAiNonBrowser);
 
-	log.debug('getProjectHackatimeStats result', { userId, projectCount: projects.length, aiSeconds, truncated });
-	return { projects, aiSeconds, truncated };
+	log.debug('getProjectHackatimeStats result', { userId, projectCount: projects.length, aiSeconds, browserSeconds, truncated });
+	return { projects, aiSeconds, browserSeconds, aiAndBrowserSeconds, truncated };
 }
 
 export async function getUserTrustFactor(

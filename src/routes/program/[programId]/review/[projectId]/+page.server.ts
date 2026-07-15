@@ -124,7 +124,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 
 	const hackatimeData = (async () => {
 		if (!(hackatimeUser && project.hackatimeProjectKeys.length > 0)) {
-			return { hackatime: null as { totalSeconds: number; aiSeconds: number; truncated: boolean } | null, trustLevel: null as string | null, trustLogs: [] as TrustLog[], projectBreakdown: [] as { name: string; totalSeconds: number }[] };
+			return { hackatime: null as { totalSeconds: number; aiSeconds: number; browserSeconds: number; aiAndBrowserSeconds: number; truncated: boolean } | null, trustLevel: null as string | null, trustLogs: [] as TrustLog[], projectBreakdown: [] as { name: string; totalSeconds: number }[] };
 		}
 		try {
 			// hackatimeStartDate scopes aggregation to the program's event window —
@@ -138,7 +138,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			const trustLevel = userInfo?.trustLevel ?? null;
 			log.debug('hackatime data loaded', { totalSeconds, aiSeconds: stats.aiSeconds, trustLevel, truncated: stats.truncated });
 			return {
-				hackatime: { totalSeconds, aiSeconds: stats.aiSeconds, truncated: stats.truncated },
+				hackatime: { totalSeconds, aiSeconds: stats.aiSeconds, browserSeconds: stats.browserSeconds, aiAndBrowserSeconds: stats.aiAndBrowserSeconds, truncated: stats.truncated },
 				trustLevel,
 				trustLogs,
 				projectBreakdown: stats.projects.map((p) => ({ name: p.name, totalSeconds: p.totalSeconds }))
