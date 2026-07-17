@@ -68,6 +68,10 @@ A **project** is the primary entity - the thing a participant is building. It ha
   "authorId": "U05ABCDEF",
   "hackatimeId": "12345",
   "hackatimeProjectKeys": ["comet-chat", "comet-chat-v2"],
+  "tags": [
+    { "label": "First-time", "color": "#3b82f6" },
+    { "label": "AI-flagged", "color": "#ef4444" }
+  ],
   "ships": [
     {
       "id": "ship_001",
@@ -103,7 +107,23 @@ A **project** is the primary entity - the thing a participant is building. It ha
 | `hackatimeProjectKeys` | `string[]` | Yes      | Hackatime project keys to aggregate. Empty array if not using Hackatime.                                                                    |
 | `hackatimeStartDate`   | `string`   | No       | ISO date (`YYYY-MM-DD`). When set, Sidekick only counts Hackatime activity on or after this date when aggregating hours - send your event's start date so pre-event time on reused Hackatime projects doesn't inflate totals. Omit to count all-time. Also rendered as a cutoff marker in the reviewer's Hackatime day list, with pre-cutoff days dimmed. |
 | `ships`                | `Ship[]`   | Yes      | All submissions for this project, ordered chronologically.                                                                                  |
+| `tags`                 | `ProjectTag[]` | No   | Colored labels shown on the review queue (see below). Omit or send `[]` for none.                                                            |
 | `metadata`             | `object`   | No       | Any program-specific extra data. Sidekick preserves but doesn't interpret it.                                                               |
+
+#### Project Tags
+
+Tags are short, colored labels you attach to a project to surface an attribute right in the reviewer's queue — "First-time submitter", "AI-flagged", "Grant pending", whatever your program tracks. They render GitHub-style on each queue row and on the project's review page. Sidekick never interprets tags; they are purely informational for reviewers.
+
+```json
+{ "label": "AI-flagged", "color": "#ef4444" }
+```
+
+| Field   | Type     | Required | Description                                                                                                                            |
+| ------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `label` | `string` | Yes      | The text shown on the tag. Keep it short — long labels are truncated. Tags with an empty/blank label are dropped.                     |
+| `color` | `string` | No       | Hex color (`#rrggbb` or shorthand `#rgb`). Sidekick derives the pill's background, text, and border from it. Omit or send an unparseable value to get a neutral gray. |
+
+Return the same tags on every `FETCH_PROJECTS`, `FETCH_PROJECT_DETAIL`, and `FETCH_AUTHOR_PROJECTS` response so the project looks consistent everywhere it appears.
 
 ### Ships
 
@@ -447,11 +467,22 @@ Return a paginated list of projects with their embedded ships.
 {
   "projects": [ ... ],
   "nextCursor": "eyJpZCI6MTAwfQ",
-  "totalCount": 47
+  "totalCount": 47,
+  "explicitlySorted": false
 }
 ```
 
 `totalCount` is the total number of matching projects (not just this page). `nextCursor` is present only if there are more pages.
+
+#### Sort Hints
+
+By default Sidekick sorts each queue by earliest pending-ship submission date, so the longest-waiting projects float to the top. If your program already orders projects the way it wants them reviewed (a custom priority, a triage score, round-robin across reviewers, …), set `explicitlySorted: true` and Sidekick will **preserve the order you return** instead of applying its own sort.
+
+| Field              | Type      | Required | Description                                                                                                                                                                                    |
+| ------------------ | --------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `explicitlySorted` | `boolean` | No       | When `true`, Sidekick renders `projects` in the exact order received and does not re-sort. Omit or send `false` to let Sidekick sort. Applies per status query (e.g. `pending` vs `pending_hq`). |
+
+The hint is honored across pagination: Sidekick concatenates pages in `nextCursor` order and keeps that combined order. Because a single query can span multiple pages, set `explicitlySorted` consistently on **every** page of a given status query.
 
 ### `FETCH_PROJECT_DETAIL`
 

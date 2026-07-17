@@ -16,20 +16,25 @@ const log = createLogger('page:review-list');
 async function fetchAllProjects(
 	client: ProtocolClient,
 	status: 'pending' | 'pending_hq'
-): Promise<{ projects: Project[]; totalCount: number }> {
+): Promise<{ projects: Project[]; totalCount: number; explicitlySorted: boolean }> {
 	const projects: Project[] = [];
 	let cursor: string | undefined;
 	let totalCount = 0;
+	// The program advertises its own ordering via `explicitlySorted`. Honor it if
+	// any page of this status query sets it — pages are concatenated in cursor
+	// order, so the received order is preserved as-is.
+	let explicitlySorted = false;
 
 	for (;;) {
 		const result = await client.fetchProjects({ status, cursor, limit: 100 });
 		projects.push(...result.projects);
 		totalCount = result.totalCount;
+		if (result.explicitlySorted) explicitlySorted = true;
 		if (!result.nextCursor) break;
 		cursor = result.nextCursor;
 	}
 
-	return { projects, totalCount };
+	return { projects, totalCount, explicitlySorted };
 }
 
 export const load: PageServerLoad = async ({ params, parent }) => {
@@ -103,13 +108,18 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	}
 
 	// Sort by earliest pending ship submission date so longest-waiting projects
-	// appear first in the review queue.
+	// appear first in the review queue — unless the program advertised its own
+	// ordering via `explicitlySorted`, in which case we preserve what we received.
 	const getPendingDate = (p: typeof projectsResult.projects[0], shipStatus: string) => {
 		const ship = p.ships.find((s) => s.status === shipStatus);
 		return ship ? new Date(ship.submittedAt).getTime() : Infinity;
 	};
-	projectsResult.projects.sort((a, b) => getPendingDate(a, 'pending') - getPendingDate(b, 'pending'));
-	hqProjects.sort((a, b) => getPendingDate(a, 'pending_hq') - getPendingDate(b, 'pending_hq'));
+	if (!projectsResult.explicitlySorted) {
+		projectsResult.projects.sort((a, b) => getPendingDate(a, 'pending') - getPendingDate(b, 'pending'));
+	}
+	if (!hqProjectsResult.explicitlySorted) {
+		hqProjects.sort((a, b) => getPendingDate(a, 'pending_hq') - getPendingDate(b, 'pending_hq'));
+	}
 
 	const authorIds = [...new Set([
 		...projectsResult.projects.map((p) => p.authorId),
