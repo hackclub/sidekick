@@ -13,6 +13,18 @@
 // Shared domain types
 // ---------------------------------------------------------------------------
 
+// A short, colored label a program attaches to a project to communicate an
+// attribute right in the review queue (e.g. "AI-flagged", "First-time", "Grant
+// pending"). Rendered GitHub-style. Sidekick never interprets tags — they are
+// purely informational for reviewers.
+export interface ProjectTag {
+  label: string;
+  // Hex color ("#3b82f6" or shorthand "#39f"). Optional — Sidekick falls back to
+  // a neutral gray when omitted or unparseable. Sidekick derives the pill's
+  // background, text, and border from this single color.
+  color?: string;
+}
+
 export interface Project {
   id: string;
   title: string;
@@ -28,6 +40,8 @@ export interface Project {
   // pre-event time on reused Hackatime projects doesn't inflate the totals.
   hackatimeStartDate?: string;
   ships: Ship[];
+  // Optional colored labels shown on the review queue. Omit or send [] for none.
+  tags?: ProjectTag[];
   metadata?: Record<string, unknown>;
 }
 
@@ -345,6 +359,13 @@ export interface FetchProjectsOutput {
   projects: Project[];
   nextCursor?: string;
   totalCount: number;
+  // Sort hint. When true, the program asserts that `projects` is already in the
+  // exact order it wants shown, and Sidekick preserves that order instead of
+  // applying its own longest-waiting-first sort. The order is honored across
+  // pagination (pages are concatenated in cursor order). The flag is read
+  // per-status: set it on every page of a given status query for consistency.
+  // Omit or send false to let Sidekick sort.
+  explicitlySorted?: boolean;
 }
 
 export type FetchProjectDetailOutput = Project;

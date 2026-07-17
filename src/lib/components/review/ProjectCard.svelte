@@ -1,8 +1,10 @@
 <script lang="ts">
 	import NamedLink from '$lib/components/ui/NamedLink.svelte';
+	import ProjectTags from '$lib/components/review/ProjectTags.svelte';
 	import { Globe, BookMarked, Copy, Check } from 'lucide-svelte';
 	import { isUuid, shortenId } from '$lib/utils/id';
 	import type { ProjectDetailsExport } from '$lib/review/projectDetailsExport.js';
+	import type { ProjectTag } from '$lib/server/protocol/types.js';
 
 	interface Props {
 		id: string;
@@ -11,12 +13,13 @@
 		screenshotUrl?: string | null;
 		demoUrl: string;
 		codeUrl: string;
+		tags?: ProjectTag[];
 		/** Full project review payload, copied to the clipboard as JSON. */
 		details?: ProjectDetailsExport | null;
 		class?: string;
 	}
 
-	let { id, title, description, screenshotUrl = null, demoUrl, codeUrl, details = null, class: className = '' }: Props = $props();
+	let { id, title, description, screenshotUrl = null, demoUrl, codeUrl, tags = [], details = null, class: className = '' }: Props = $props();
 
 	let lightboxOpen = $state(false);
 	let copied = $state(false);
@@ -61,6 +64,7 @@
 				<span class="text-text-secondary" title={isUuid(id) ? id : undefined}>#{shortenId(id)}</span>
 				<span class="font-bold text-text-primary">{title}</span>
 			</div>
+			<ProjectTags {tags} />
 			<p class="text-sm text-text-primary tracking-[-0.3px] leading-[1.3] whitespace-pre-line">
 				{description}
 			</p>

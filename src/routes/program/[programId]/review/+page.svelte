@@ -6,6 +6,7 @@
 	import BentoLeaderboard from '$lib/components/ui/BentoLeaderboard.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import CsvExportModal from '$lib/components/ui/CsvExportModal.svelte';
+	import ProjectTags from '$lib/components/review/ProjectTags.svelte';
 	import { isUuid, shortenId } from '$lib/utils/id';
 
 	interface Props {
@@ -252,6 +253,7 @@
 						<div class="flex items-center gap-1.5 mb-0.5">
 							<span class="text-text-tertiary text-xs font-mono" title={isUuid(pa.projectId) ? pa.projectId : undefined}>#{shortenId(pa.projectId)}</span>
 							<span class="font-bold text-sm tracking-[-0.3px] truncate">{project?.title ?? shortenId(pa.projectId)}</span>
+							<ProjectTags tags={project?.tags} class="shrink-0" />
 						</div>
 						<div class="flex items-center gap-1.5 text-xs text-text-secondary tracking-[-0.24px]">
 							<Avatar name={reviewer?.name ?? pa.reviewerId} url={reviewer?.avatarUrl} size="xs" />
@@ -292,6 +294,7 @@
 						<div class="flex items-center gap-1.5 mb-0.5">
 							<span class="text-text-tertiary text-xs font-mono" title={isUuid(project.id) ? project.id : undefined}>#{shortenId(project.id)}</span>
 							<span class="font-bold text-sm tracking-[-0.3px] truncate">{project.title}</span>
+							<ProjectTags tags={project.tags} class="shrink-0" />
 						</div>
 						<div class="flex items-center gap-1.5 text-xs text-text-secondary tracking-[-0.24px]">
 							<Avatar name={actor?.name ?? project.authorId} url={actor?.avatarUrl} size="xs" />
@@ -350,6 +353,7 @@
 						<div class="flex items-center gap-1.5 mb-0.5">
 							<span class="text-text-tertiary text-xs font-mono" title={isUuid(project.id) ? project.id : undefined}>#{shortenId(project.id)}</span>
 							<span class="font-bold text-sm tracking-[-0.3px] truncate">{project.title}</span>
+							<ProjectTags tags={project.tags} class="shrink-0" />
 						</div>
 						<div class="flex items-center gap-1.5 text-xs text-text-secondary tracking-[-0.24px]">
 							<Avatar name={actor?.name ?? project.authorId} url={actor?.avatarUrl} size="xs" />

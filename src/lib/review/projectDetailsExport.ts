@@ -11,7 +11,7 @@
 // a payload copied early may legitimately have nulls there.
 // ============================================================================
 
-import type { TimelineEvent } from '$lib/server/protocol/types.js';
+import type { ProjectTag, TimelineEvent } from '$lib/server/protocol/types.js';
 
 /** Bump when the shape below changes in a backwards-incompatible way. */
 export const PROJECT_DETAILS_EXPORT_SCHEMA_VERSION = 1;
@@ -52,6 +52,8 @@ export interface ProjectExportProject {
 	demoUrl: string | null;
 	codeUrl: string;
 	hackatimeProjectKeys: string[];
+	/** Colored labels the program attached to the project. Empty if none. */
+	tags: ProjectTag[];
 }
 
 export interface ProjectExportAuthor {
