@@ -20,6 +20,7 @@
 	import { ChevronLeft } from 'lucide-svelte';
 	import type { TimelineEvent as TEvent, ReviewFieldDefinition } from '$lib/server/protocol/types.js';
 	import { isUuid, shortenId } from '$lib/utils/id';
+	import { normalizeTags } from '$lib/utils/tags';
 	import {
 		PROJECT_DETAILS_EXPORT_SCHEMA_VERSION,
 		type ProjectDetailsExport
@@ -389,7 +390,8 @@
 			screenshotUrl: data.project.screenshotUrl ?? null,
 			demoUrl: data.project.demoUrl ?? null,
 			codeUrl: data.project.codeUrl,
-			hackatimeProjectKeys: data.project.hackatimeProjectKeys
+			hackatimeProjectKeys: data.project.hackatimeProjectKeys,
+			tags: normalizeTags(data.project.tags)
 		},
 		author: {
 			name: data.author.name,
@@ -697,6 +699,7 @@
 						screenshotUrl={data.project.screenshotUrl}
 						demoUrl={data.project.demoUrl ?? ''}
 						codeUrl={data.project.codeUrl}
+						tags={data.project.tags}
 						details={projectDetailsExport}
 						class="h-full"
 					/>
