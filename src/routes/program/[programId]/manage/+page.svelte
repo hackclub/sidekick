@@ -1448,6 +1448,18 @@
 													</div>
 												</div>
 
+												<div class="flex flex-col gap-1">
+													<label for="keyword-{item.id}" class="text-xs font-semibold text-text-secondary">Keyword lock</label>
+													<input
+														id="keyword-{item.id}"
+														type="text"
+														bind:value={form.keywordLock}
+														placeholder={'e.g. \\AApple[a-zA-Z]{0,2}\\z'}
+														class="w-full h-9 px-3 rounded-input border border-border-input text-sm font-mono text-text-input focus:outline-none focus:border-border-active"
+													/>
+													<span class="text-xs text-text-tertiary">Ruby regular expression matched against the merchant name. Locks work in tandem: a transaction matching any configured lock is allowed.</span>
+												</div>
+
 												<div class="grid grid-cols-1 gap-3">
 													<div class="flex flex-col gap-1">
 														<label for="expiration-{item.id}" class="text-xs font-semibold text-text-secondary">Expiration (days)</label>
