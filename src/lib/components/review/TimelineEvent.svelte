@@ -2,6 +2,7 @@
 	import { Ship, CircleX, CircleCheck, MessageSquare, Eye, Pencil, X, Check, Clock, ShieldCheck, Loader2, Type, Link, Image, Gift, AlertTriangle } from 'lucide-svelte';
 	import type { TimelineEvent as TEvent, ReviewFieldDefinition } from '$lib/server/protocol/types.js';
 	import { wordDiff } from '$lib/utils/diff.js';
+	import { evaluateArithmetic } from '$lib/utils/math-expr.js';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import MarkdownTextarea from '$lib/components/ui/MarkdownTextarea.svelte';
 	import { marked, Renderer } from 'marked';
@@ -49,8 +50,24 @@
 	let editFeedback = $state('');
 	let editInternal = $state('');
 	let editHours = $state(0);
+	// A text box rather than a number input so authorizers can type arithmetic
+	// like "10.49 - 0.3" — the expression is folded into editHours as they type,
+	// and collapsed to its result on blur. NaN while unparseable.
+	let editHoursRaw = $state('0');
 	// Kept as a string so an empty input means "no override" — 0 is a valid override.
 	let editOverrideRaw = $state('');
+
+	function setEditHours(value: number) {
+		editHours = value;
+		editHoursRaw = String(value);
+	}
+
+	function collapseHoursExpression() {
+		const value = evaluateArithmetic(editHoursRaw);
+		if (value !== null) {
+			setEditHours(Math.round(value * 100) / 100);
+		}
+	}
 	let savedFeedback: string | null = $state(null);
 	let savedInternal: string | null = $state(null);
 	let savedHours: number | null = $state(null);
@@ -90,7 +107,7 @@
 		draftFor = event.id;
 		editFeedback = event.feedbackMessage;
 		editInternal = event.justification;
-		editHours = event.hoursAssigned;
+		setEditHours(event.hoursAssigned);
 		editOverrideRaw = event.rewardedHoursOverride !== undefined ? String(event.rewardedHoursOverride) : '';
 		savedFeedback = null;
 		savedInternal = null;
@@ -128,7 +145,7 @@
 	function startEditing() {
 		editFeedback = displayFeedback;
 		editInternal = displayInternal;
-		editHours = displayHours;
+		setEditHours(displayHours);
 		editError = null;
 		editing = true;
 	}
@@ -140,6 +157,10 @@
 
 	async function saveEditing() {
 		if (saving) return;
+		if (event.type === 'pending_approval' && !Number.isFinite(editHours)) {
+			editError = 'Hours to assign must be a number or arithmetic expression.';
+			return;
+		}
 		saving = true;
 		editError = null;
 
@@ -185,6 +206,10 @@
 		if (event.type !== 'pending_approval' || saving || authorizing === event.id) return;
 		if (editOverrideInvalid) {
 			editError = 'Rewarded hours override must be a non-negative number.';
+			return;
+		}
+		if (!Number.isFinite(editHours)) {
+			editError = 'Hours to assign must be a number or arithmetic expression.';
 			return;
 		}
 		editError = null;
@@ -573,10 +598,14 @@
 						<label class="font-bold text-sm tracking-[-0.3px]" for="pending-hours-{event.id}">Hours to assign</label>
 						<input
 							id="pending-hours-{event.id}"
-							type="number"
-							step="0.01"
-							min="0"
-							bind:value={editHours}
+							type="text"
+							inputmode="decimal"
+							value={editHoursRaw}
+							oninput={(e) => {
+								editHoursRaw = e.currentTarget.value;
+								editHours = evaluateArithmetic(editHoursRaw) ?? NaN;
+							}}
+							onchange={collapseHoursExpression}
 							class="border border-border-input rounded-tag px-2.5 py-2 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
 						/>
 					</div>

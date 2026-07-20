@@ -4,6 +4,7 @@
 	import MarkdownTextarea from '$lib/components/ui/MarkdownTextarea.svelte';
 	import Checkbox from '$lib/components/ui/Checkbox.svelte';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
+	import { evaluateArithmetic } from '$lib/utils/math-expr.js';
 	import type { ReviewFieldDefinition, ReviewFieldValues } from '$lib/server/protocol/types.js';
 
 	const log = createLogger('ReviewActionPanel');
@@ -69,6 +70,22 @@
 
 	let selectedAction: ActionType = $state('approve');
 	let hoursAssigned = $state(0);
+	// A text box rather than a number input so reviewers can type arithmetic
+	// like "10.49 - 0.3" — the expression is folded into hoursAssigned as they
+	// type, and collapsed to its result on blur. NaN while unparseable.
+	let hoursRaw = $state('0');
+
+	function setHours(value: number) {
+		hoursAssigned = value;
+		hoursRaw = String(value);
+	}
+
+	function collapseHoursExpression() {
+		const value = evaluateArithmetic(hoursRaw);
+		if (value !== null) {
+			setHours(Math.round(value * 100) / 100);
+		}
+	}
 	// Kept as a string so an empty input means "no override" — 0 is a valid override.
 	let rewardedOverrideRaw = $state('');
 	let showOverrideHelp = $state(false);
@@ -83,7 +100,7 @@
 	let userEditedHours = false;
 	$effect(() => {
 		if (!userEditedHours) {
-			hoursAssigned = Math.max(0, Math.round(remainingHours * 100) / 100);
+			setHours(Math.max(0, Math.round(remainingHours * 100) / 100));
 		}
 	});
 
@@ -196,7 +213,7 @@
 		if (prefill) {
 			selectedAction = prefill.action;
 			if (prefill.hoursAssigned !== undefined) {
-				hoursAssigned = prefill.hoursAssigned;
+				setHours(prefill.hoursAssigned);
 			}
 			if (prefill.feedbackMessage !== undefined) {
 				setDraft('feedbackMessage', prefill.feedbackMessage);
@@ -427,11 +444,15 @@
 					</label>
 					<input
 						id="hours"
-						type="number"
-						step="0.01"
-						min="0"
-						bind:value={hoursAssigned}
-						oninput={() => { userEditedHours = true; }}
+						type="text"
+						inputmode="decimal"
+						value={hoursRaw}
+						oninput={(e) => {
+							userEditedHours = true;
+							hoursRaw = e.currentTarget.value;
+							hoursAssigned = evaluateArithmetic(hoursRaw) ?? NaN;
+						}}
+						onchange={collapseHoursExpression}
 						class="border border-border-input rounded-section px-3.5 py-2.5 text-sm w-full bg-white outline-none focus:border-accent transition-colors"
 					/>
 					{#if exceedsRemaining}
