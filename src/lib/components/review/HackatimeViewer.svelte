@@ -66,6 +66,8 @@
 		title: string;
 		subtitle?: string;
 		avatarUrl?: string;
+		/** For commit markers: author key matching the GitHub-tab user filter. */
+		authorKey?: string;
 	}
 
 	interface Props {
@@ -79,6 +81,8 @@
 		// ISO date (YYYY-MM-DD) — the program's Hackatime cutoff; activity before
 		// this date is shown in the day list but doesn't count toward hour totals.
 		hackatimeStartDate?: string;
+		/** When set, commit tooltips only show commits by this author key and note how many are hidden. */
+		commitAuthorFilter?: string | null;
 		class?: string;
 	}
 
@@ -91,6 +95,7 @@
 		markers = [],
 		authorTimezone = 'UTC',
 		hackatimeStartDate,
+		commitAuthorFilter = null,
 		class: className = ''
 	}: Props = $props();
 
@@ -1198,6 +1203,11 @@
 {#if markerTooltip}
 	{@const cfg = MARKER_CONFIG[markerTooltip.group.type]}
 	{@const TipIcon = cfg.icon}
+	{@const tooltipItems =
+		markerTooltip.group.type === 'commit' && commitAuthorFilter
+			? markerTooltip.group.items.filter((it) => it.authorKey === commitAuthorFilter)
+			: markerTooltip.group.items}
+	{@const hiddenCommitCount = markerTooltip.group.items.length - tooltipItems.length}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="marker-tooltip"
@@ -1213,12 +1223,12 @@
 				<TipIcon size={10} color="white" strokeWidth={2.5} />
 			</span>
 			<span class="text-[12px] font-semibold text-text-primary">
-				{markerTooltip.group.items.length}
-				{cfg.label.toLowerCase()}{markerTooltip.group.items.length === 1 ? '' : 's'}
+				{tooltipItems.length}
+				{cfg.label.toLowerCase()}{tooltipItems.length === 1 ? '' : 's'}
 			</span>
 		</div>
 		<div class="flex flex-col gap-1.5 max-h-64 overflow-y-auto scrollbar-thin">
-			{#each markerTooltip.group.items as item, i (i)}
+			{#each tooltipItems as item, i (i)}
 				{#if markerTooltip.group.type === 'commit'}
 					{@const gap = commitGaps[item.timestamp]}
 					<div class="flex flex-col gap-1">
@@ -1270,6 +1280,11 @@
 					</div>
 				{/if}
 			{/each}
+			{#if hiddenCommitCount > 0}
+				<span class="text-[11px] text-text-tertiary italic">
+					({hiddenCommitCount} commit{hiddenCommitCount === 1 ? '' : 's'} hidden)
+				</span>
+			{/if}
 		</div>
 	</div>
 {/if}

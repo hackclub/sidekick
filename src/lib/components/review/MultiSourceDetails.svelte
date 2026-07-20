@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Ship, CircleCheck, CircleX, ExternalLink } from 'lucide-svelte';
+	import { Ship, CircleCheck, CircleX, ExternalLink, ChevronDown, Funnel } from 'lucide-svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
 	import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
 	import LapseIcon from '$lib/components/icons/LapseIcon.svelte';
@@ -22,8 +23,17 @@
 		sha: string;
 		message: string;
 		author: string;
+		authorLogin?: string | null;
 		authorAvatarUrl?: string | null;
 		date: string;
+	}
+
+	interface CommitAuthor {
+		key: string;
+		name: string;
+		login: string | null;
+		avatarUrl: string | null;
+		count: number;
 	}
 
 	interface TimelineMarker {
@@ -52,10 +62,21 @@
 		repoUrl?: string;
 		programId?: string;
 		loading?: boolean;
+		/** Author key (GitHub login, or git author name when unlinked) to filter commits by. */
+		selectedAuthor?: string | null;
 		class?: string;
 	}
 
-	let { commits, markers = [], timelapses = [], repoUrl = '', programId = '', loading = false, class: className = '' }: Props = $props();
+	let {
+		commits,
+		markers = [],
+		timelapses = [],
+		repoUrl = '',
+		programId = '',
+		loading = false,
+		selectedAuthor = $bindable(null),
+		class: className = ''
+	}: Props = $props();
 
 	let activeTab = $state('github');
 	let hoveredCommit: GitCommit | null = $state(null);
@@ -128,13 +149,60 @@
 
 	const tabs = $derived((() => {
 		const t = [
-			{ id: 'github', label: 'GitHub', icon: GitHubIcon }
+			{ id: 'github', label: commits.length > 0 ? `GitHub (${commits.length})` : 'GitHub', icon: GitHubIcon }
 		];
 		if (timelapses.length > 0) {
 			t.push({ id: 'lapse', label: `Lapse (${timelapses.length})`, icon: LapseIcon });
 		}
 		return t;
 	})());
+
+	function commitAuthorKey(c: GitCommit): string {
+		return c.authorLogin ?? c.author;
+	}
+
+	const commitAuthors = $derived.by((): CommitAuthor[] => {
+		const byKey = new SvelteMap<string, CommitAuthor>();
+		for (const c of commits) {
+			const key = commitAuthorKey(c);
+			const entry = byKey.get(key);
+			if (entry) {
+				entry.count++;
+				entry.avatarUrl ??= c.authorAvatarUrl ?? null;
+			} else {
+				byKey.set(key, {
+					key,
+					name: c.author,
+					login: c.authorLogin ?? null,
+					avatarUrl: c.authorAvatarUrl ?? null,
+					count: 1
+				});
+			}
+		}
+		return [...byKey.values()].sort((a, b) => b.count - a.count);
+	});
+
+	const filteredCommits = $derived(
+		selectedAuthor ? commits.filter((c) => commitAuthorKey(c) === selectedAuthor) : commits
+	);
+
+	const selectedAuthorEntry = $derived(
+		commitAuthors.find((a) => a.key === selectedAuthor) ?? null
+	);
+
+	let userFilterOpen = $state(false);
+
+	// Drop a stale filter if the commit list changes and no longer has that user.
+	$effect(() => {
+		if (selectedAuthor && commits.length > 0 && !commitAuthors.some((a) => a.key === selectedAuthor)) {
+			selectedAuthor = null;
+		}
+	});
+
+	function selectAuthor(key: string | null) {
+		selectedAuthor = key;
+		userFilterOpen = false;
+	}
 
 	function timeAgo(date: string): string {
 		const diff = Date.now() - new Date(date).getTime();
@@ -187,7 +255,7 @@
 	const displayItems = $derived.by((): DisplayItem[] => {
 		const merged: Array<{ date: string; item: DisplayItem }> = [];
 
-		for (const c of commits) {
+		for (const c of filteredCommits) {
 			merged.push({ date: c.date, item: { type: 'commit', commit: c } });
 		}
 		for (const m of markers) {
@@ -214,6 +282,12 @@
 	});
 </script>
 
+<svelte:window
+	onclick={() => {
+		if (userFilterOpen) userFilterOpen = false;
+	}}
+/>
+
 <div class="flex flex-col h-full border border-border-card rounded-card shadow-card overflow-hidden {className}">
 	<TabBar {tabs} active={activeTab} onchange={(id) => (activeTab = id)} />
 
@@ -237,8 +311,72 @@
 					{/each}
 				</div>
 			{:else}
+			{#if commitAuthors.length > 1}
+				<div class="flex items-center justify-between gap-2 pb-3 mb-4 border-b border-border-card">
+					<div class="flex items-center gap-1.5 text-[12px] text-text-tertiary">
+						<Funnel size={13} />
+						<span>Filter by user</span>
+					</div>
+					<div class="relative">
+						<button
+							class="flex items-center gap-1.5 text-[12px] font-medium rounded-tag border px-2.5 py-1 cursor-pointer transition-colors
+								{selectedAuthorEntry
+								? 'text-accent bg-accent-bg border-accent'
+								: 'text-text-primary bg-page border-border-input hover:border-border-active'}"
+							onclick={(e) => {
+								e.stopPropagation();
+								userFilterOpen = !userFilterOpen;
+							}}
+						>
+							{#if selectedAuthorEntry}
+								<Avatar name={selectedAuthorEntry.name} url={selectedAuthorEntry.avatarUrl} size="xs" />
+								<span class="truncate max-w-40">{selectedAuthorEntry.name}</span>
+								{#if selectedAuthorEntry.login && selectedAuthorEntry.login !== selectedAuthorEntry.name}
+									<span class="font-mono font-normal text-accent/70 truncate max-w-32">@{selectedAuthorEntry.login}</span>
+								{/if}
+							{:else}
+								<span>All users</span>
+							{/if}
+							<ChevronDown size={13} class="shrink-0 transition-transform {userFilterOpen ? 'rotate-180' : ''}" />
+						</button>
+						{#if userFilterOpen}
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<!-- svelte-ignore a11y_click_events_have_key_events -->
+							<div class="user-filter-dropdown" onclick={(e) => e.stopPropagation()}>
+								<button
+									class="flex w-full items-center gap-2 rounded-tag px-2 py-1.5 text-[12px] cursor-pointer transition-colors
+										{selectedAuthor === null ? 'text-accent bg-accent-bg' : 'text-text-primary hover:bg-surface'}"
+									onclick={() => selectAuthor(null)}
+								>
+									<span class="font-medium">All users</span>
+									<span class="ml-auto text-[11px] {selectedAuthor === null ? 'text-accent/70' : 'text-text-tertiary'}">
+										{commits.length} commit{commits.length === 1 ? '' : 's'}
+									</span>
+								</button>
+								{#each commitAuthors as author (author.key)}
+									{@const isSelected = selectedAuthor === author.key}
+									<button
+										class="flex w-full items-center gap-2 rounded-tag px-2 py-1.5 text-[12px] cursor-pointer transition-colors
+											{isSelected ? 'text-accent bg-accent-bg' : 'text-text-primary hover:bg-surface'}"
+										onclick={() => selectAuthor(author.key)}
+									>
+										<Avatar name={author.name} url={author.avatarUrl} size="sm" class="border border-border-card" />
+										<span class="font-medium truncate">{author.name}</span>
+										{#if author.login && author.login !== author.name}
+											<span class="font-mono text-[11px] truncate {isSelected ? 'text-accent/70' : 'text-text-secondary'}">@{author.login}</span>
+										{/if}
+										<span class="ml-auto shrink-0 text-[11px] {isSelected ? 'text-accent/70' : 'text-text-tertiary'}">
+											{author.count}
+										</span>
+									</button>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				</div>
+			{/if}
 			<div class="flex flex-col gap-0.5 relative">
-				{#if commits.length > 1}
+				{#if filteredCommits.length > 1}
 					<div class="absolute left-2.5 top-2.5 bottom-2.5 w-[2px] bg-border-card"></div>
 				{/if}
 
@@ -395,3 +533,25 @@
 		</div>
 	</div>
 {/if}
+
+<style>
+	.user-filter-dropdown {
+		position: absolute;
+		right: 0;
+		top: calc(100% + 6px);
+		min-width: 220px;
+		max-width: 320px;
+		max-height: 260px;
+		overflow-y: auto;
+		background: var(--color-page, #fff);
+		border: 1px solid var(--color-border-card);
+		border-radius: 8px;
+		padding: 4px;
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+		z-index: 50;
+		cursor: default;
+	}
+</style>

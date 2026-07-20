@@ -90,6 +90,8 @@ export interface ProjectExportGithubCommit {
 	sha: string;
 	message: string;
 	author: string;
+	/** GitHub username of the commit author, when GitHub could link one. */
+	authorLogin?: string | null;
 	authorAvatarUrl: string | null;
 	/** ISO 8601 commit date. */
 	date: string;

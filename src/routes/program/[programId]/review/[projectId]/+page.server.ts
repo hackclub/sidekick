@@ -85,6 +85,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		sha: string;
 		message: string;
 		author: string;
+		authorLogin: string | null;
 		authorAvatarUrl: string | null;
 		date: string;
 	};

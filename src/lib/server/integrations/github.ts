@@ -48,6 +48,7 @@ interface Commit {
 	sha: string;
 	message: string;
 	author: string;
+	authorLogin: string | null;
 	authorAvatarUrl: string | null;
 	date: string;
 }
@@ -207,7 +208,7 @@ export async function getCommits(
 				message: string;
 				author: { name: string; date: string };
 			};
-			author?: { avatar_url?: string } | null;
+			author?: { login?: string; avatar_url?: string } | null;
 		}>;
 
 		log.trace('getCommits page fetched', { owner, repo, page, commitsOnPage: data.length });
@@ -217,6 +218,7 @@ export async function getCommits(
 				sha: c.sha,
 				message: c.commit.message,
 				author: c.commit.author.name,
+				authorLogin: c.author?.login ?? null,
 				authorAvatarUrl: c.author?.avatar_url ?? null,
 				date: c.commit.author.date
 			});

@@ -41,6 +41,8 @@
 	let excludeAi = $state(true);
 	let excludeBrowsers = $state(false);
 	let uncountedAirtableShips = $state<Record<string, boolean>>({});
+	// GitHub-tab user filter, shared with the Hackatime day-marker commit tooltips.
+	let commitAuthorFilter = $state<string | null>(null);
 
 	function normalizeForCompare(s: string): string {
 		return s.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -136,6 +138,7 @@
 		title: string;
 		subtitle?: string;
 		avatarUrl?: string;
+		authorKey?: string;
 	};
 
 	const reviewMarkers = $derived.by<ReviewMarker[]>(() => {
@@ -190,7 +193,9 @@
 				timestamp: c.date,
 				title: c.message.split('\n')[0],
 				subtitle: c.author,
-				avatarUrl: c.authorAvatarUrl ?? undefined
+				avatarUrl: c.authorAvatarUrl ?? undefined,
+				// Must match MultiSourceDetails' commitAuthorKey so the filter lines up.
+				authorKey: c.authorLogin ?? c.author
 			});
 		}
 
@@ -773,6 +778,7 @@
 						repoUrl={data.project.codeUrl}
 						programId={data.program.id}
 						loading={!github}
+						bind:selectedAuthor={commitAuthorFilter}
 						markers={data.timeline
 							.filter(
 								(e) =>
@@ -825,6 +831,7 @@
 						markers={reviewMarkers}
 						authorTimezone={data.authorTimezone}
 						hackatimeStartDate={data.project.hackatimeStartDate}
+						{commitAuthorFilter}
 					/>
 				</div>
 			{/if}
