@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Ship, CircleCheck, CircleX, ExternalLink, ChevronDown, Funnel } from 'lucide-svelte';
+	import { Ship, CircleCheck, CircleX, ExternalLink, ChevronDown } from 'lucide-svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
 	import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
@@ -312,11 +312,7 @@
 				</div>
 			{:else}
 			{#if commitAuthors.length > 1}
-				<div class="flex items-center justify-between gap-2 pb-3 mb-4 border-b border-border-card">
-					<div class="flex items-center gap-1.5 text-[12px] text-text-tertiary">
-						<Funnel size={13} />
-						<span>Filter by user</span>
-					</div>
+				<div class="flex justify-end mb-3">
 					<div class="relative">
 						<button
 							class="flex items-center gap-1.5 text-[12px] font-medium rounded-tag border px-2.5 py-1 cursor-pointer transition-colors
