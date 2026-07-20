@@ -37,7 +37,8 @@ export const load: LayoutServerLoad = async ({ cookies, url }) => {
 			id: p.id,
 			name: p.name,
 			iconUrl: p.iconUrl,
-			description: p.description
+			description: p.description,
+			isMember: p.isMember
 		}))
 	};
 };

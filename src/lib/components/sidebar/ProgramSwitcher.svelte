@@ -13,6 +13,9 @@
 
 	let { programs, currentProgramId, onselect, onclose, onmanage, oncreate }: Props = $props();
 
+	const memberPrograms = $derived(programs.filter((p) => p.isMember));
+	const otherPrograms = $derived(programs.filter((p) => !p.isMember));
+
 	let visible = $state(false);
 	$effect(() => {
 		requestAnimationFrame(() => (visible = true));
@@ -35,28 +38,41 @@
 		role="dialog"
 		tabindex="-1"
 	>
+		{#snippet programButton(program: ProgramSummary)}
+			<button
+				class="flex items-center gap-2.5 px-2.5 py-2 rounded-tag text-left transition-colors cursor-pointer w-full
+					{program.id === currentProgramId ? 'bg-accent-bg' : 'hover:bg-surface'}"
+				onclick={() => { visible = false; setTimeout(() => onselect(program), 150); }}
+			>
+				{#if program.iconUrl}
+					<img src={program.iconUrl} alt="" class="size-6 object-cover rounded shrink-0" />
+				{:else}
+					<div class="size-6 bg-surface rounded flex items-center justify-center text-[10px] font-bold shrink-0">
+						{program.name.charAt(0)}
+					</div>
+				{/if}
+				<span class="text-sm font-medium text-text-primary truncate">{program.name}</span>
+			</button>
+		{/snippet}
+
 		<div class="flex flex-col gap-0.5">
-			{#each programs as program (program.id)}
-				<button
-					class="flex items-center gap-2.5 px-2.5 py-2 rounded-tag text-left transition-colors cursor-pointer w-full
-						{program.id === currentProgramId ? 'bg-accent-bg' : 'hover:bg-surface'}"
-					onclick={() => { visible = false; setTimeout(() => onselect(program), 150); }}
-				>
-					{#if program.iconUrl}
-						<img src={program.iconUrl} alt="" class="size-6 object-cover rounded shrink-0" />
-					{:else}
-						<div class="size-6 bg-surface rounded flex items-center justify-center text-[10px] font-bold shrink-0">
-							{program.name.charAt(0)}
-						</div>
-					{/if}
-					<span class="text-sm font-medium text-text-primary truncate">{program.name}</span>
-				</button>
+			{#each memberPrograms as program (program.id)}
+				{@render programButton(program)}
 			{/each}
 
 			{#if programs.length === 0}
 				<p class="text-[12px] text-text-tertiary px-2.5 py-2">No programs yet.</p>
 			{/if}
 		</div>
+
+		{#if otherPrograms.length > 0}
+			<div class="mt-1 pt-1 border-t border-border-input flex flex-col gap-0.5">
+				<p class="text-[11px] font-medium text-text-tertiary px-2.5 pt-1 pb-0.5">Other programs</p>
+				{#each otherPrograms as program (program.id)}
+					{@render programButton(program)}
+				{/each}
+			</div>
+		{/if}
 
 		<div class="mt-1 pt-1 border-t border-border-input flex flex-col gap-0.5">
 			{#if oncreate}

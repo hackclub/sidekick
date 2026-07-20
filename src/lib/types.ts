@@ -15,4 +15,5 @@ export interface ProgramSummary {
 	name: string;
 	iconUrl: string | null;
 	description: string | null;
+	isMember: boolean;
 }

@@ -88,12 +88,23 @@ export async function getUserPrograms(userId: string, isSuperAdmin: boolean) {
 	log.debug('getUserPrograms', { userId, isSuperAdmin });
 
 	if (isSuperAdmin) {
-		const programs = await db.program.findMany({
-			where: { isActive: true },
-			orderBy: { name: 'asc' }
-		});
-		log.debug('getUserPrograms result (super admin)', { userId, count: programs.length });
-		return programs;
+		const [programs, memberships] = await Promise.all([
+			db.program.findMany({
+				where: { isActive: true },
+				orderBy: { name: 'asc' }
+			}),
+			db.programMembership.findMany({
+				where: { userId },
+				select: { programId: true }
+			})
+		]);
+
+		const memberProgramIds = new Set(memberships.map((m) => m.programId));
+		const annotated = programs
+			.map((p) => ({ ...p, isMember: memberProgramIds.has(p.id) }))
+			.sort((a, b) => Number(b.isMember) - Number(a.isMember));
+		log.debug('getUserPrograms result (super admin)', { userId, count: annotated.length, memberCount: memberProgramIds.size });
+		return annotated;
 	}
 
 	const memberships = await db.programMembership.findMany({
@@ -101,7 +112,7 @@ export async function getUserPrograms(userId: string, isSuperAdmin: boolean) {
 		include: { program: true }
 	});
 
-	const programs = memberships.filter((m) => m.program.isActive).map((m) => m.program);
+	const programs = memberships.filter((m) => m.program.isActive).map((m) => ({ ...m.program, isMember: true }));
 	log.debug('getUserPrograms result', { userId, membershipCount: memberships.length, activeCount: programs.length });
 	return programs;
 }
