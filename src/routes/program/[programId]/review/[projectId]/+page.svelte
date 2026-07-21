@@ -573,7 +573,7 @@
 			const res = await fetch(`/api/programs/${data.program.id}/review/authorize`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ pendingApprovalId })
+				body: JSON.stringify({ pendingApprovalId, projectId: data.project.id })
 			});
 			t.end('status', res.status);
 			if (res.ok) {
@@ -598,7 +598,7 @@
 			const res = await fetch(`/api/programs/${data.program.id}/review/authorize`, {
 				method: 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ pendingApprovalId })
+				body: JSON.stringify({ pendingApprovalId, projectId: data.project.id })
 			});
 			t.end('status', res.status);
 			if (res.ok) {

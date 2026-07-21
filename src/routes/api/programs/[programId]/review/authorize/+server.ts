@@ -30,7 +30,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		isSuperAdmin: user.isSuperAdmin
 	});
 
-	const { pendingApprovalId, justification: rawJustification } = await request.json();
+	const { pendingApprovalId, justification: rawJustification, projectId } = await request.json();
 	if (!pendingApprovalId) throw error(400, 'pendingApprovalId is required');
 	const justification =
 		(typeof rawJustification === 'string' && rawJustification.trim()) || DEFAULT_AUTHORIZE_JUSTIFICATION;
@@ -61,7 +61,10 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 					action: 'review_authorize',
 					entityType: 'ship',
 					entityId: shipId,
-					metadata: { pendingApprovalId }
+					metadata: {
+						pendingApprovalId,
+						...(typeof projectId === 'string' && { projectId })
+					}
 				}
 			});
 
@@ -140,7 +143,7 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 		isSuperAdmin: user.isSuperAdmin
 	});
 
-	const { pendingApprovalId, message: rawMessage } = await request.json();
+	const { pendingApprovalId, message: rawMessage, projectId } = await request.json();
 	if (!pendingApprovalId) throw error(400, 'pendingApprovalId is required');
 	const message = (typeof rawMessage === 'string' && rawMessage.trim()) || DEFAULT_DEAUTHORIZE_MESSAGE;
 
@@ -169,7 +172,10 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 					action: 'review_discard_pending',
 					entityType: 'ship',
 					entityId: shipId,
-					metadata: { pendingApprovalId }
+					metadata: {
+						pendingApprovalId,
+						...(typeof projectId === 'string' && { projectId })
+					}
 				}
 			});
 

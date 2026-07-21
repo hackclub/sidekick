@@ -68,6 +68,20 @@ model Program {
   warehouseTemplates     WarehouseTemplate[]
   rejectionTemplates     RejectionTemplate[]
   projectTagDefinitions  ProjectTagDefinition[]
+  statsSnapshots         ProgramStatsSnapshot[]
+}
+
+model ProgramStatsSnapshot {
+  id                      String   @id @default(cuid())
+  programId               String
+  date                    DateTime @db.Date
+  pendingReviewCount      Int
+  pendingFulfillmentCount Int
+  createdAt               DateTime @default(now())
+
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, date])
 }
 
 model ProgramMembership {

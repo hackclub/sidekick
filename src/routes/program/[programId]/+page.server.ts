@@ -21,7 +21,40 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 
 	const now = new Date();
 	const weekAgo = new Date(now.getTime() - 7 * 86400000);
-	const twelveWeeksAgo = new Date(now.getTime() - 12 * 7 * 86400000);
+
+	const today = new Date(now.toISOString().slice(0, 10));
+	const [, snapshotRows] = await Promise.all([
+		db.programStatsSnapshot.upsert({
+			where: { programId_date: { programId: params.programId, date: today } },
+			create: {
+				programId: params.programId,
+				date: today,
+				pendingReviewCount: stats.pendingReviewCount,
+				pendingFulfillmentCount: stats.pendingFulfillmentCount
+			},
+			update: {
+				pendingReviewCount: stats.pendingReviewCount,
+				pendingFulfillmentCount: stats.pendingFulfillmentCount
+			}
+		}),
+		db.programStatsSnapshot.findMany({
+			where: { programId: params.programId, date: { lt: today } },
+			orderBy: { date: 'desc' },
+			take: 364
+		})
+	]);
+	const snapshots = snapshotRows
+		.map((s) => ({
+			date: s.date,
+			pendingReviewCount: s.pendingReviewCount,
+			pendingFulfillmentCount: s.pendingFulfillmentCount
+		}))
+		.reverse();
+	snapshots.push({
+		date: today,
+		pendingReviewCount: stats.pendingReviewCount,
+		pendingFulfillmentCount: stats.pendingFulfillmentCount
+	});
 
 	const [fulfillmentLogs, reviewLogs] = await Promise.all([
 		db.auditLog.findMany({
@@ -53,8 +86,89 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	);
 	const reviewLogsAllTime = aggregateByUser(reviewLogs);
 
-	const fulfillmentVolume = buildWeeklyVolume(fulfillmentLogs, twelveWeeksAgo, now);
-	const reviewVolume = buildWeeklyVolume(reviewLogs, twelveWeeksAgo, now);
+	const fulfillmentVolume = buildDailySeries(snapshots, 'pendingFulfillmentCount');
+	const reviewVolume = buildDailySeries(snapshots, 'pendingReviewCount');
+
+	const recentFulfillmentLogs = fulfillmentLogs.slice(0, 6);
+	const recentReviewLogs = reviewLogs.slice(0, 6);
+
+	const orderIds = [
+		...new Set(recentFulfillmentLogs.map((l) => l.entityId).filter((id): id is string => !!id))
+	];
+	const projectIds = [
+		...new Set(
+			recentReviewLogs
+				.map((l) => (l.metadata as Record<string, unknown> | null)?.projectId)
+				.filter((id): id is string => typeof id === 'string')
+		)
+	];
+	const [orderLabelEntries, projectLabelEntries] = await Promise.all([
+		Promise.all(
+			orderIds.map(async (id) => {
+				const label = await cachedEntityLabel(`${params.programId}:order:${id}`, async () => {
+					const { order, item } = await client.fetchOrderDetail({ orderId: id });
+					return order.quantity > 1 ? `${order.quantity}× ${item.name}` : item.name;
+				});
+				return [id, label] as const;
+			})
+		),
+		Promise.all(
+			projectIds.map(async (id) => {
+				const label = await cachedEntityLabel(`${params.programId}:project:${id}`, async () => {
+					const project = await client.fetchProjectDetail({ projectId: id });
+					return project.title;
+				});
+				return [id, label] as const;
+			})
+		)
+	]);
+	const orderLabels = new Map(orderLabelEntries);
+	const projectLabels = new Map(projectLabelEntries);
+
+	// Some review logs (e.g. HQ-queue authorizations from before projectId was
+	// recorded) only carry a ship ID — fall back to finding the ship in the
+	// program's project list, one sweep at most per load.
+	const unresolvedShipIds = [
+		...new Set(
+			recentReviewLogs
+				.filter((l) => {
+					const pid = (l.metadata as Record<string, unknown> | null)?.projectId;
+					return !(typeof pid === 'string' && projectLabels.get(pid));
+				})
+				.map((l) => l.entityId)
+				.filter((id): id is string => !!id)
+		)
+	];
+	let shipLabels = new Map<string, string | null>();
+	if (unresolvedShipIds.length > 0) {
+		let sweepPromise: Promise<Map<string, string>> | null = null;
+		const sweep = () =>
+			(sweepPromise ??= (async () => {
+				const map = new Map<string, string>();
+				let cursor: string | undefined;
+				for (let page = 0; page < 10; page++) {
+					const res = await client.fetchProjects({ status: 'all', limit: 200, cursor });
+					for (const project of res.projects)
+						for (const ship of project.ships) map.set(ship.id, project.title);
+					if (!res.nextCursor) break;
+					cursor = res.nextCursor;
+				}
+				return map;
+			})());
+		shipLabels = new Map(
+			await Promise.all(
+				unresolvedShipIds.map(
+					async (id) =>
+						[
+							id,
+							await cachedEntityLabel(`${params.programId}:ship:${id}`, async () =>
+								(await sweep()).get(id) ?? null
+							)
+						] as const
+				)
+			)
+		);
+	}
 
 	log.info('dashboard data loaded', {
 		programId: params.programId,
@@ -74,24 +188,56 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		reviewLeaderboardAllTime: reviewLogsAllTime,
 		fulfillmentVolume,
 		reviewVolume,
-		recentFulfillments: fulfillmentLogs.slice(0, 6).map((l) => ({
+		recentFulfillments: recentFulfillmentLogs.map((l) => ({
 			userName: l.user.name,
 			userAvatarUrl: l.user.avatarUrl,
 			action: l.action,
 			entityId: l.entityId,
+			entityLabel: (l.entityId && orderLabels.get(l.entityId)) || null,
 			metadata: l.metadata as Record<string, unknown> | null,
 			createdAt: l.createdAt.toISOString()
 		})),
-		recentReviews: reviewLogs.slice(0, 6).map((l) => ({
-			userName: l.user.name,
-			userAvatarUrl: l.user.avatarUrl,
-			action: l.action,
-			entityId: l.entityId,
-			metadata: l.metadata as Record<string, unknown> | null,
-			createdAt: l.createdAt.toISOString()
-		}))
+		recentReviews: recentReviewLogs.map((l) => {
+			const projectId = (l.metadata as Record<string, unknown> | null)?.projectId;
+			return {
+				userName: l.user.name,
+				userAvatarUrl: l.user.avatarUrl,
+				action: l.action,
+				entityId: l.entityId,
+				entityLabel:
+					(typeof projectId === 'string' && projectLabels.get(projectId)) ||
+					(l.entityId && shipLabels.get(l.entityId)) ||
+					null,
+				metadata: l.metadata as Record<string, unknown> | null,
+				createdAt: l.createdAt.toISOString()
+			};
+		})
 	};
 };
+
+// Human-readable names for audit-log entities live upstream, so the recent-history
+// lists resolve them through the protocol on load. Results (including failures, so a
+// deleted entity doesn't get re-queried every visit) are cached for a few minutes.
+const entityLabelCache = new Map<string, { label: string | null; expires: number }>();
+const ENTITY_LABEL_TTL = 10 * 60 * 1000;
+
+async function cachedEntityLabel(
+	cacheKey: string,
+	resolve: () => Promise<string | null>
+): Promise<string | null> {
+	const now = Date.now();
+	const hit = entityLabelCache.get(cacheKey);
+	if (hit && hit.expires > now) return hit.label;
+
+	let label: string | null = null;
+	try {
+		label = await resolve();
+	} catch (e) {
+		log.warn('failed to resolve entity label', { cacheKey, error: String(e) });
+	}
+	entityLabelCache.set(cacheKey, { label, expires: now + ENTITY_LABEL_TTL });
+	return label;
+}
 
 function aggregateByUser(
 	logs: Array<{ user: { name: string; avatarUrl: string | null } }>
@@ -110,20 +256,28 @@ function aggregateByUser(
 		.sort((a, b) => b.value - a.value);
 }
 
-function buildWeeklyVolume(
-	logs: Array<{ createdAt: Date }>,
-	start: Date,
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	_end: Date
-): number[] {
-	const weeks: number[] = new Array(12).fill(0);
-	const startMs = start.getTime();
-	const weekMs = 7 * 86400000;
-	for (const log of logs) {
-		const logMs = log.createdAt.getTime();
-		if (logMs < startMs) continue;
-		const weekIndex = Math.min(Math.floor((logMs - startMs) / weekMs), 11);
-		weeks[weekIndex]++;
+// Snapshots only exist for days the dashboard was loaded, so gap days carry the
+// last known value forward and are flagged as estimated.
+function buildDailySeries(
+	snapshots: Array<{ date: Date; pendingReviewCount: number; pendingFulfillmentCount: number }>,
+	key: 'pendingReviewCount' | 'pendingFulfillmentCount'
+): Array<{ date: string; count: number; estimated: boolean }> {
+	if (snapshots.length === 0) return [];
+	const dayMs = 86400000;
+	const byDay = new Map(snapshots.map((s) => [Math.floor(s.date.getTime() / dayMs), s[key]]));
+	const firstDay = Math.floor(snapshots[0].date.getTime() / dayMs);
+	const lastDay = Math.floor(snapshots[snapshots.length - 1].date.getTime() / dayMs);
+
+	const series: Array<{ date: string; count: number; estimated: boolean }> = [];
+	let carried = snapshots[0][key];
+	for (let day = firstDay; day <= lastDay; day++) {
+		const recorded = byDay.get(day);
+		if (recorded !== undefined) carried = recorded;
+		series.push({
+			date: new Date(day * dayMs).toISOString().slice(0, 10),
+			count: recorded ?? carried,
+			estimated: recorded === undefined
+		});
 	}
-	return weeks;
+	return series.slice(-365);
 }

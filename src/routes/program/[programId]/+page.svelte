@@ -12,6 +12,37 @@
 
 	let { data }: Props = $props();
 
+	const REVIEW_VERBS: Record<string, string> = {
+		review_approve: 'approved',
+		review_pending_approve: 'pre-approved',
+		review_authorize: 'authorized',
+		review_reject: 'rejected',
+		review_deauthorize: 'deauthorized',
+		review_discard_pending: 'sent back',
+		review_comment: 'commented on',
+		review_internal_comment: 'commented on',
+		review_edit_approval: 'edited an approval of',
+		review_edit_rejection: 'edited a rejection of'
+	};
+
+	function reviewVerb(action: string): string {
+		return REVIEW_VERBS[action] ?? 'reviewed';
+	}
+
+	function fulfillmentVerb(action: string, metadata: Record<string, unknown> | null): string {
+		if (action === 'order_status_change') {
+			switch (metadata?.status) {
+				case 'fulfilled':
+					return 'fulfilled';
+				case 'cancelled':
+					return 'cancelled';
+				case 'pending':
+					return 'reopened';
+			}
+		}
+		return 'updated';
+	}
+
 	function timeAgo(dateStr: string): string {
 		const diff = Date.now() - new Date(dateStr).getTime();
 		const hours = Math.floor(diff / 3600000);
@@ -31,9 +62,9 @@
 	<div class="flex items-center justify-between flex-wrap gap-4">
 		<div class="flex gap-5 items-center">
 			{#if data.program.iconUrl}
-				<img src={data.program.iconUrl} alt="" class="w-12 h-14 object-cover" />
+				<img src={data.program.iconUrl} alt="" class="w-12 h-14 object-contain" />
 			{:else}
-				<div class="w-12 h-14 bg-accent rounded-section flex items-center justify-center text-white font-bold text-xl">
+				<div class="size-12 bg-accent rounded-section flex items-center justify-center text-white font-bold text-xl">
 					{data.program.name.charAt(0)}
 				</div>
 			{/if}
@@ -64,7 +95,7 @@
 	<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
 		<BentoGraph
 			title="Pending Fulfillment"
-			description="Orders that haven't been fulfilled yet."
+			description="Orders awaiting fulfillment, day by day."
 			count={data.pendingFulfillmentCount}
 			data={data.fulfillmentVolume}
 			class="flex-1"
@@ -112,7 +143,7 @@
 		</BentoLeaderboard>
 		<BentoGraph
 			title="Pending Review"
-			description="Projects that haven't been reviewed yet."
+			description="Projects awaiting review, day by day."
 			count={data.pendingReviewCount}
 			data={data.reviewVolume}
 			class="flex-1"
@@ -130,13 +161,15 @@
 			{#snippet icon()}<Clock size={20} />{/snippet}
 			<div class="flex flex-col gap-2">
 				{#each data.recentFulfillments as entry, i (i)}
-					<div class="flex h-7 items-center justify-between">
-						<div class="flex gap-1 items-center text-sm">
+					<div class="flex h-7 items-center justify-between gap-2">
+						<div class="flex gap-1 items-center text-sm min-w-0">
 							<UserMention name={entry.userName} avatarUrl={entry.userAvatarUrl} size="sm" />
-							<span>fulfilled</span>
-							<span class="font-bold">{entry.entityId ?? 'an order'}</span>
+							<span class="shrink-0">{fulfillmentVerb(entry.action, entry.metadata)}</span>
+							<span class="font-bold truncate" title={entry.entityId ?? undefined}>
+								{entry.entityLabel ?? entry.entityId ?? 'an order'}
+							</span>
 						</div>
-						<span class="text-text-tertiary text-[12px]">{timeAgo(entry.createdAt)}</span>
+						<span class="text-text-tertiary text-[12px] shrink-0">{timeAgo(entry.createdAt)}</span>
 					</div>
 				{/each}
 			</div>
@@ -149,13 +182,15 @@
 			{#snippet icon()}<Scale size={20} />{/snippet}
 			<div class="flex flex-col gap-2">
 				{#each data.recentReviews as entry, i (i)}
-					<div class="flex h-7 items-center justify-between">
-						<div class="flex gap-1 items-center text-sm">
+					<div class="flex h-7 items-center justify-between gap-2">
+						<div class="flex gap-1 items-center text-sm min-w-0">
 							<UserMention name={entry.userName} avatarUrl={entry.userAvatarUrl} size="sm" />
-							<span>reviewed</span>
-							<span class="font-bold">{entry.entityId ?? 'a project'}</span>
+							<span class="shrink-0">{reviewVerb(entry.action)}</span>
+							<span class="font-bold truncate" title={entry.entityId ?? undefined}>
+								{entry.entityLabel ?? entry.entityId ?? 'a project'}
+							</span>
 						</div>
-						<span class="text-text-tertiary text-[12px]">{timeAgo(entry.createdAt)}</span>
+						<span class="text-text-tertiary text-[12px] shrink-0">{timeAgo(entry.createdAt)}</span>
 					</div>
 				{/each}
 			</div>
