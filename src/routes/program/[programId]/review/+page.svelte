@@ -1,13 +1,12 @@
 <script lang="ts">
 	import type { PageData } from './$types.js';
 	import { resolve } from '$app/paths';
-	import { Scale, Clock, CheckCircle, Hourglass, Trophy, ShieldCheck, Download, Copy, ChevronDown, Check } from 'lucide-svelte';
-	import BentoGraph from '$lib/components/ui/BentoGraph.svelte';
-	import BentoLeaderboard from '$lib/components/ui/BentoLeaderboard.svelte';
+	import { Clock, CheckCircle, Hourglass, Scale, ShieldCheck, Download, Copy, ChevronDown, Check, Search, Tag, ArrowUpDown } from 'lucide-svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import CsvExportModal from '$lib/components/ui/CsvExportModal.svelte';
 	import ProjectTags from '$lib/components/review/ProjectTags.svelte';
 	import { isUuid, shortenId } from '$lib/utils/id';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	interface Props {
 		data: PageData;
@@ -26,6 +25,128 @@
 	const projectMap = $derived(
 		Object.fromEntries(data.projects.map((p) => [p.id, p]))
 	);
+
+	// Filtering & sorting (client-side — the full queue is already loaded)
+	type SortMode = 'default' | 'newest' | 'title-asc' | 'title-desc' | 'author' | 'hours-desc' | 'hours-asc';
+
+	// The default mode preserves the server-provided order: longest-waiting first,
+	// or the program's own ordering when the upstream sets `explicitlySorted`.
+	const SORT_OPTIONS = $derived<{ value: SortMode; label: string }[]>([
+		{ value: 'default', label: data.explicitlySorted ? 'Program order' : 'Longest waiting' },
+		{ value: 'newest', label: 'Newest first' },
+		{ value: 'title-asc', label: 'Title A–Z' },
+		{ value: 'title-desc', label: 'Title Z–A' },
+		{ value: 'author', label: 'Author A–Z' },
+		{ value: 'hours-desc', label: 'Most hours' },
+		{ value: 'hours-asc', label: 'Fewest hours' }
+	]);
+
+	let searchInput = $state('');
+	const selectedTagIds = new SvelteSet<string>();
+	let sortMode = $state<SortMode>('default');
+	let tagDropdownOpen = $state(false);
+	let sortDropdownOpen = $state(false);
+
+	const sortLabel = $derived(SORT_OPTIONS.find((o) => o.value === sortMode)?.label ?? 'Sort');
+
+	const tagById = $derived(new Map(data.tagDefinitions.map((t) => [t.id, t])));
+
+	function customTagsFor(projectId: string): { label: string; color: string }[] {
+		return (data.projectTagIds[projectId] ?? [])
+			.map((id) => tagById.get(id))
+			.filter((t): t is { id: string; label: string; color: string } => !!t);
+	}
+
+	function matchesFilters(project: (typeof data.projects)[number]): boolean {
+		const query = searchInput.trim().toLowerCase();
+		if (query) {
+			const actor = data.actors[project.authorId];
+			const haystack = [project.title, project.id, project.authorId, actor?.name ?? '']
+				.join('\n')
+				.toLowerCase();
+			if (!haystack.includes(query)) return false;
+		}
+		if (selectedTagIds.size > 0) {
+			const assigned = new Set(data.projectTagIds[project.id] ?? []);
+			for (const id of selectedTagIds) {
+				if (!assigned.has(id)) return false;
+			}
+		}
+		return true;
+	}
+
+	// "default" preserves the server-provided order: longest-waiting first, or the
+	// program's own ordering when the upstream sets `explicitlySorted`.
+	function sortProjects(
+		list: typeof data.projects,
+		shipStatus: 'pending' | 'pending_hq'
+	): typeof data.projects {
+		if (sortMode === 'default') return list;
+		const shipOf = (p: (typeof data.projects)[number]) =>
+			p.ships.find((s) => s.status === shipStatus);
+		const date = (p: (typeof data.projects)[number]) => {
+			const ship = shipOf(p);
+			return ship ? new Date(ship.submittedAt).getTime() : 0;
+		};
+		const hours = (p: (typeof data.projects)[number]) => shipOf(p)?.hoursSubmitted ?? 0;
+		const author = (p: (typeof data.projects)[number]) =>
+			(data.actors[p.authorId]?.name ?? p.authorId).toLowerCase();
+		const sorted = [...list];
+		switch (sortMode) {
+			case 'newest':
+				sorted.sort((a, b) => date(b) - date(a));
+				break;
+			case 'title-asc':
+				sorted.sort((a, b) => a.title.localeCompare(b.title));
+				break;
+			case 'title-desc':
+				sorted.sort((a, b) => b.title.localeCompare(a.title));
+				break;
+			case 'author':
+				sorted.sort((a, b) => author(a).localeCompare(author(b)));
+				break;
+			case 'hours-desc':
+				sorted.sort((a, b) => hours(b) - hours(a));
+				break;
+			case 'hours-asc':
+				sorted.sort((a, b) => hours(a) - hours(b));
+				break;
+		}
+		return sorted;
+	}
+
+	const filteredProjects = $derived(sortProjects(data.projects.filter(matchesFilters), 'pending'));
+	const filteredHqProjects = $derived(sortProjects(data.hqProjects.filter(matchesFilters), 'pending_hq'));
+	const filtersActive = $derived(searchInput.trim().length > 0 || selectedTagIds.size > 0);
+
+	function toggleTagFilter(id: string) {
+		if (selectedTagIds.has(id)) selectedTagIds.delete(id);
+		else selectedTagIds.add(id);
+	}
+
+	function handleTagDropdownWindowClick(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		if (!target.closest('[data-tag-filter]')) tagDropdownOpen = false;
+	}
+
+	function handleSortDropdownWindowClick(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		if (!target.closest('[data-sort-dropdown]')) sortDropdownOpen = false;
+	}
+
+	$effect(() => {
+		if (tagDropdownOpen) {
+			window.addEventListener('click', handleTagDropdownWindowClick, true);
+			return () => window.removeEventListener('click', handleTagDropdownWindowClick, true);
+		}
+	});
+
+	$effect(() => {
+		if (sortDropdownOpen) {
+			window.addEventListener('click', handleSortDropdownWindowClick, true);
+			return () => window.removeEventListener('click', handleSortDropdownWindowClick, true);
+		}
+	});
 
 	// CSV export
 	let csvDropdownOpen = $state(false);
@@ -152,47 +273,91 @@
 	<title>Review - {data.program.name} - Sidekick</title>
 </svelte:head>
 
-<div class="px-6 lg:px-12 xl:px-16 py-10 flex flex-col gap-8 max-w-full overflow-hidden">
-	<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-		<BentoGraph
-			title="Review Volume"
-			description="Reviews completed per week."
-			count={data.totalReviewsThisWeek}
-			data={data.reviewVolume}
-			class="flex-1"
-		>
-			{#snippet icon()}<Scale size={20} />{/snippet}
-		</BentoGraph>
-		<BentoLeaderboard
-			title="Top Reviewers (This Week)"
-			description="Most active reviewers this week."
-			entries={data.reviewLeaderboardWeekly}
-			itemType="reviews"
-			class="flex-1"
-		>
-			{#snippet icon()}<Trophy size={20} />{/snippet}
-		</BentoLeaderboard>
-		<BentoLeaderboard
-			title="Top Reviewers (All Time)"
-			description="Most active reviewers overall."
-			entries={data.reviewLeaderboardAllTime}
-			itemType="reviews"
-			class="flex-1"
-		>
-			{#snippet icon()}<Trophy size={20} />{/snippet}
-		</BentoLeaderboard>
-	</div>
-
-	<div class="flex items-center gap-3">
-		<div class="size-9 bg-surface rounded-lg flex items-center justify-center shrink-0">
-			<Scale size={18} class="text-text-secondary" />
+<div class="px-10 py-8 flex flex-col gap-8 max-w-full overflow-hidden">
+	<div class="flex items-center justify-between flex-wrap gap-2">
+		<div class="flex gap-2 items-center flex-wrap min-w-0">
+			<form
+				class="border border-border-input rounded-tag flex gap-2 items-center px-3 py-1.5 w-[260px] min-w-0"
+				onsubmit={(e) => e.preventDefault()}
+			>
+				<Search size={14} class="text-text-placeholder shrink-0" />
+				<input
+					bind:value={searchInput}
+					placeholder="Search by user, title, or ID..."
+					class="flex-1 bg-transparent text-sm outline-none placeholder:text-text-placeholder font-medium min-w-0"
+				/>
+			</form>
+			{#if data.tagDefinitions.length > 0}
+				<div class="relative" data-tag-filter>
+					<button
+						class="border border-border-input rounded-tag flex gap-2 items-center px-3 py-1.5 cursor-pointer hover:bg-surface min-w-0"
+						onclick={() => (tagDropdownOpen = !tagDropdownOpen)}
+					>
+						<Tag size={14} class="text-text-dim shrink-0" />
+						<span class="font-medium text-sm text-text-dim truncate">
+							{selectedTagIds.size > 0 ? `Tags (${selectedTagIds.size})` : 'Tags'}
+						</span>
+						<ChevronDown size={12} class="text-text-dim shrink-0" />
+					</button>
+					{#if tagDropdownOpen}
+						<div class="absolute top-full left-0 mt-1 bg-page border border-border-card rounded-input shadow-lg z-30 min-w-[200px] max-h-[320px] overflow-y-auto py-1">
+							{#each data.tagDefinitions as tag (tag.id)}
+								<button
+									class="w-full text-left px-3 py-1.5 text-sm hover:bg-surface cursor-pointer flex items-center justify-between gap-2"
+									onclick={() => toggleTagFilter(tag.id)}
+								>
+									<ProjectTags tags={[tag]} />
+									{#if selectedTagIds.has(tag.id)}
+										<Check size={14} class="text-accent shrink-0" />
+									{/if}
+								</button>
+							{/each}
+							{#if selectedTagIds.size > 0}
+								<button
+									class="w-full text-left px-3 py-1.5 text-xs text-text-tertiary hover:bg-surface cursor-pointer border-t border-border-card mt-1"
+									onclick={() => selectedTagIds.clear()}
+								>
+									Clear tag filters
+								</button>
+							{/if}
+						</div>
+					{/if}
+				</div>
+			{/if}
+			<div class="relative" data-sort-dropdown>
+				<button
+					class="border border-border-input rounded-tag flex gap-2 items-center px-3 py-1.5 cursor-pointer hover:bg-surface min-w-0"
+					onclick={() => (sortDropdownOpen = !sortDropdownOpen)}
+				>
+					<ArrowUpDown size={14} class="text-text-dim shrink-0" />
+					<span class="font-medium text-sm text-text-dim truncate">{sortLabel}</span>
+					<ChevronDown size={12} class="text-text-dim shrink-0" />
+				</button>
+				{#if sortDropdownOpen}
+					<div class="absolute top-full left-0 mt-1 bg-page border border-border-card rounded-input shadow-lg z-30 min-w-[170px] py-1">
+						{#each SORT_OPTIONS as opt (opt.value)}
+							<button
+								class="w-full text-left px-3 py-1.5 text-sm hover:bg-surface cursor-pointer flex items-center justify-between gap-2"
+								onclick={() => { sortMode = opt.value; sortDropdownOpen = false; }}
+							>
+								{opt.label}
+								{#if sortMode === opt.value}
+									<Check size={14} class="text-accent shrink-0" />
+								{/if}
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
 		</div>
-		<div class="flex-1">
-			<h1 class="font-bold text-[17px] tracking-[-0.51px]">Review Queue</h1>
-			<p class="text-[13px] text-text-secondary tracking-[-0.3px]">
-			{data.pendingCount} pending review{#if data.pendingHqCount > 0}, {data.pendingHqCount} under HQ review{/if}
-		</p>
-		</div>
+		<div class="flex items-center gap-2 shrink-0">
+			<span class="font-medium text-sm text-text-muted whitespace-nowrap">
+				{#if filtersActive}
+					{filteredProjects.length + filteredHqProjects.length} of {data.projects.length + data.hqProjects.length} shown
+				{:else}
+					{data.pendingCount} pending review{#if data.pendingHqCount > 0}, {data.pendingHqCount} under HQ review{/if}
+				{/if}
+			</span>
 		{#if allExportableProjects.length > 0}
 			<div class="relative shrink-0" data-csv-dropdown>
 				<button
@@ -228,12 +393,13 @@
 				{/if}
 			</div>
 		{/if}
+		</div>
 	</div>
 
 	{#if data.canAuthorize && data.pendingApprovals.length > 0}
 		<div class="flex flex-col gap-2">
 			<div class="flex items-center gap-2">
-				<Clock size={16} class="text-amber-500" />
+				<Clock size={16} />
 				<h2 class="font-bold text-sm tracking-[-0.3px]">Pending Authorization</h2>
 				<span class="text-xs text-text-tertiary">{data.pendingApprovals.length} approval{data.pendingApprovals.length === 1 ? '' : 's'} awaiting authorization</span>
 			</div>
@@ -253,7 +419,7 @@
 						<div class="flex items-center gap-1.5 mb-0.5">
 							<span class="text-text-tertiary text-xs font-mono" title={isUuid(pa.projectId) ? pa.projectId : undefined}>#{shortenId(pa.projectId)}</span>
 							<span class="font-bold text-sm tracking-[-0.3px] truncate">{project?.title ?? shortenId(pa.projectId)}</span>
-							<ProjectTags tags={project?.tags} class="shrink-0" />
+							<ProjectTags tags={[...(project?.tags ?? []), ...customTagsFor(pa.projectId)]} class="shrink-0" />
 						</div>
 						<div class="flex items-center gap-1.5 text-xs text-text-secondary tracking-[-0.24px]">
 							<Avatar name={reviewer?.name ?? pa.reviewerId} url={reviewer?.avatarUrl} size="xs" />
@@ -268,14 +434,14 @@
 		</div>
 	{/if}
 
-	{#if data.hqProjects.length > 0}
+	{#if filteredHqProjects.length > 0}
 		<div class="flex flex-col gap-2">
 			<div class="flex items-center gap-2">
-				<ShieldCheck size={16} class="text-violet-500" />
+				<ShieldCheck size={16} />
 				<h2 class="font-bold text-sm tracking-[-0.3px]">Under HQ Review</h2>
-				<span class="text-xs text-text-tertiary">{data.hqProjects.length} project{data.hqProjects.length === 1 ? '' : 's'} awaiting HQ review</span>
+				<span class="text-xs text-text-tertiary">{filteredHqProjects.length} project{filteredHqProjects.length === 1 ? '' : 's'}</span>
 			</div>
-			{#each data.hqProjects as project (project.id)}
+			{#each filteredHqProjects as project (project.id)}
 				{@const hqShip = project.ships.find((s) => s.status === 'pending_hq')}
 				{@const approvedHours = project.ships
 					.filter((s) => s.status === 'approved')
@@ -294,7 +460,7 @@
 						<div class="flex items-center gap-1.5 mb-0.5">
 							<span class="text-text-tertiary text-xs font-mono" title={isUuid(project.id) ? project.id : undefined}>#{shortenId(project.id)}</span>
 							<span class="font-bold text-sm tracking-[-0.3px] truncate">{project.title}</span>
-							<ProjectTags tags={project.tags} class="shrink-0" />
+							<ProjectTags tags={[...(project.tags ?? []), ...customTagsFor(project.id)]} class="shrink-0" />
 						</div>
 						<div class="flex items-center gap-1.5 text-xs text-text-secondary tracking-[-0.24px]">
 							<Avatar name={actor?.name ?? project.authorId} url={actor?.avatarUrl} size="xs" />
@@ -328,13 +494,22 @@
 		</div>
 	{/if}
 
-	{#if data.projects.length === 0}
+	{#if data.projects.length === 0 && data.hqProjects.length === 0}
 		<div class="flex items-center justify-center h-32 text-text-tertiary text-sm">
 			No projects pending review. Nice work!
 		</div>
-	{:else}
+	{:else if filteredProjects.length === 0 && filteredHqProjects.length === 0}
+		<div class="flex items-center justify-center h-32 text-text-tertiary text-sm">
+			No projects match your filters.
+		</div>
+	{:else if filteredProjects.length > 0}
 		<div class="flex flex-col gap-2">
-			{#each data.projects as project (project.id)}
+			<div class="flex items-center gap-2">
+				<Scale size={16} />
+				<h2 class="font-bold text-sm tracking-[-0.3px]">Pending Review</h2>
+				<span class="text-xs text-text-tertiary">{filteredProjects.length} project{filteredProjects.length === 1 ? '' : 's'}</span>
+			</div>
+			{#each filteredProjects as project (project.id)}
 				{@const pendingShip = project.ships.find((s) => s.status === 'pending')}
 				{@const approvedHours = project.ships
 					.filter((s) => s.status === 'approved')
@@ -353,7 +528,7 @@
 						<div class="flex items-center gap-1.5 mb-0.5">
 							<span class="text-text-tertiary text-xs font-mono" title={isUuid(project.id) ? project.id : undefined}>#{shortenId(project.id)}</span>
 							<span class="font-bold text-sm tracking-[-0.3px] truncate">{project.title}</span>
-							<ProjectTags tags={project.tags} class="shrink-0" />
+							<ProjectTags tags={[...(project.tags ?? []), ...customTagsFor(project.id)]} class="shrink-0" />
 						</div>
 						<div class="flex items-center gap-1.5 text-xs text-text-secondary tracking-[-0.24px]">
 							<Avatar name={actor?.name ?? project.authorId} url={actor?.avatarUrl} size="xs" />

@@ -52,22 +52,18 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 
 	const client = new ProtocolClient(program.masterEndpoint, program.secretKey);
 
-	const now = new Date();
-	const weekAgo = new Date(now.getTime() - 7 * 86400000);
-	const twelveWeeksAgo = new Date(now.getTime() - 12 * 7 * 86400000);
-
-	const [projectsResult, hqProjectsResult, statsResult, reviewLogs, pendingApprovals] = await Promise.all([
+	const [projectsResult, hqProjectsResult, statsResult, tagDefinitions, tagAssignments, pendingApprovals] = await Promise.all([
 		fetchAllProjects(client, 'pending'),
 		fetchAllProjects(client, 'pending_hq'),
 		client.getProgramStats({}),
-		db.auditLog.findMany({
-			where: {
-				programId: params.programId,
-				action: { startsWith: 'review_' }
-			},
-			include: { user: true },
-			orderBy: { createdAt: 'desc' },
-			take: 500
+		db.projectTagDefinition.findMany({
+			where: { programId: params.programId },
+			orderBy: { label: 'asc' },
+			select: { id: true, label: true, color: true }
+		}),
+		db.projectTagAssignment.findMany({
+			where: { programId: params.programId },
+			select: { projectId: true, tagId: true }
 		}),
 		membership.canAuthorizeReviews
 			? db.pendingApproval.findMany({
@@ -76,6 +72,11 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 				})
 			: Promise.resolve([])
 	]);
+
+	const projectTagIds: Record<string, string[]> = {};
+	for (const a of tagAssignments) {
+		(projectTagIds[a.projectId] ??= []).push(a.tagId);
+	}
 
 	// Filter to projects that actually have pending_hq ships (endpoints that
 	// don't support the status may return all projects).
@@ -135,22 +136,12 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		actorsObj[id] = { name: actor.name, avatarUrl: actor.avatarUrl };
 	}
 
-	// Leaderboards
-	const weeklyLogs = reviewLogs.filter((l) => l.createdAt >= weekAgo);
-	const reviewLeaderboardWeekly = aggregateByUser(weeklyLogs);
-	const reviewLeaderboardAllTime = aggregateByUser(reviewLogs);
-
-	// Review volume: count per week for last 12 weeks
-	const reviewVolume = buildWeeklyVolume(reviewLogs, twelveWeeksAgo, now);
-	const totalReviewsThisWeek = weeklyLogs.length;
-
 	log.info('review list loaded', {
 		programId: params.programId,
 		projectCount: projectsResult.projects.length,
 		hqProjectCount: hqProjects.length,
 		pendingCount: statsResult.pendingReviewCount,
-		pendingApprovalCount: pendingApprovals.length,
-		totalReviewsThisWeek
+		pendingApprovalCount: pendingApprovals.length
 	});
 	tLoad.end();
 
@@ -162,10 +153,9 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		totalCount: projectsResult.totalCount,
 		pendingCount: statsResult.pendingReviewCount,
 		pendingHqCount: statsResult.pendingHqCount ?? hqProjects.length,
-		reviewLeaderboardWeekly,
-		reviewLeaderboardAllTime,
-		reviewVolume,
-		totalReviewsThisWeek,
+		explicitlySorted: projectsResult.explicitlySorted || hqProjectsResult.explicitlySorted,
+		tagDefinitions,
+		projectTagIds,
 		shipApprovalDates,
 		canAuthorize: membership.canAuthorizeReviews,
 		pendingApprovals: pendingApprovals.map((pa) => ({
@@ -180,38 +170,3 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		}))
 	};
 };
-
-function aggregateByUser(
-	logs: Array<{ user: { name: string; avatarUrl: string | null } }>
-): Array<{ username: string; avatarUrl: string | null; value: number }> {
-	const map = new Map<string, { avatarUrl: string | null; count: number }>();
-	for (const log of logs) {
-		const existing = map.get(log.user.name);
-		if (existing) {
-			existing.count++;
-		} else {
-			map.set(log.user.name, { avatarUrl: log.user.avatarUrl, count: 1 });
-		}
-	}
-	return Array.from(map.entries())
-		.map(([username, { avatarUrl, count }]) => ({ username, avatarUrl, value: count }))
-		.sort((a, b) => b.value - a.value);
-}
-
-function buildWeeklyVolume(
-	logs: Array<{ createdAt: Date }>,
-	start: Date,
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	_end: Date
-): number[] {
-	const weeks: number[] = new Array(12).fill(0);
-	const startMs = start.getTime();
-	const weekMs = 7 * 86400000;
-	for (const log of logs) {
-		const logMs = log.createdAt.getTime();
-		if (logMs < startMs) continue;
-		const weekIndex = Math.min(Math.floor((logMs - startMs) / weekMs), 11);
-		weeks[weekIndex]++;
-	}
-	return weeks;
-}
