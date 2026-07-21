@@ -67,6 +67,7 @@ model Program {
   cardGrantTemplates     CardGrantTemplate[]
   warehouseTemplates     WarehouseTemplate[]
   rejectionTemplates     RejectionTemplate[]
+  projectTagDefinitions  ProjectTagDefinition[]
 }
 
 model ProgramMembership {
@@ -179,6 +180,38 @@ model RejectionTemplate {
 
   program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
 
+  @@index([programId])
+}
+
+model ProjectTagDefinition {
+  id        String   @id @default(cuid())
+  programId String
+  label     String
+  color     String   @default("#6b7280")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  program     Program                @relation(fields: [programId], references: [id], onDelete: Cascade)
+  assignments ProjectTagAssignment[]
+
+  @@unique([programId, label])
+  @@index([programId])
+}
+
+// Assigns a program-defined tag to an external project. Projects live behind
+// the program's master endpoint, so `projectId` is an opaque upstream ID, not
+// a foreign key.
+model ProjectTagAssignment {
+  id        String   @id @default(cuid())
+  programId String
+  projectId String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  tag ProjectTagDefinition @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([tagId, projectId])
+  @@index([programId, projectId])
   @@index([programId])
 }
 

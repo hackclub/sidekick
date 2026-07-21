@@ -33,6 +33,7 @@
 		Banknote,
 		Package,
 		Plus,
+		Tag,
 		X
 	} from 'lucide-svelte';
 	import ManageLayout from '$lib/components/manage/ManageLayout.svelte';
@@ -42,6 +43,8 @@
 	import SecretKeyField from '$lib/components/ui/SecretKeyField.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import Checkbox from '$lib/components/ui/Checkbox.svelte';
+	import ProjectTags from '$lib/components/review/ProjectTags.svelte';
+	import { DEFAULT_TAG_COLOR } from '$lib/utils/tags.js';
 	import { SPENDING_CATEGORIES } from '$lib/data/spending-categories.js';
 	import { isUuid, shortenId } from '$lib/utils/id';
 	import type { PageData } from './$types.js';
@@ -735,6 +738,100 @@
 		}
 	}
 
+	const TAG_COLOR_PRESETS = [
+		'#6b7280', // gray
+		'#ef4444', // red
+		'#f97316', // orange
+		'#eab308', // yellow
+		'#22c55e', // green
+		'#14b8a6', // teal
+		'#3b82f6', // blue
+		'#8b5cf6', // violet
+		'#ec4899' // pink
+	];
+
+	interface ProjectTagForm {
+		label: string;
+		color: string;
+	}
+
+	let tagForms: Record<string, ProjectTagForm> = $state({});
+	let editingTags: Record<string, boolean> = $state({});
+	let showNewTag = $state(false);
+	let savingTag = $state<string | null>(null);
+	let deletingTag = $state<string | null>(null);
+	let tagError = $state<string | null>(null);
+
+	function initTagForm(id: string) {
+		if (!tagForms[id]) {
+			const existing = data.projectTags.find((t: { id: string }) => t.id === id);
+			tagForms[id] = {
+				label: existing?.label ?? '',
+				color: existing?.color ?? DEFAULT_TAG_COLOR
+			};
+		}
+	}
+
+	function toggleTagEdit(id: string) {
+		editingTags[id] = !editingTags[id];
+		if (editingTags[id]) {
+			initTagForm(id);
+		}
+		tagError = null;
+	}
+
+	// "new" is a sentinel form key for a tag that hasn't been created yet.
+	async function saveProjectTag(id: string) {
+		const form = tagForms[id];
+		if (!form || !form.label.trim())
+			return;
+		savingTag = id;
+		tagError = null;
+		try {
+			const res = await fetch(`/api/programs/${data.program.id}/tags`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					id: id === 'new' ? undefined : id,
+					label: form.label,
+					color: form.color
+				})
+			});
+			if (!res.ok) {
+				const body = await res.json().catch(() => null);
+				tagError = body?.message ?? 'Failed to save tag';
+				return;
+			}
+			await invalidateAll();
+			delete tagForms[id];
+			if (id === 'new') {
+				showNewTag = false;
+			} else {
+				editingTags[id] = false;
+			}
+		} finally {
+			savingTag = null;
+		}
+	}
+
+	async function deleteProjectTag(id: string) {
+		deletingTag = id;
+		tagError = null;
+		try {
+			const res = await fetch(`/api/programs/${data.program.id}/tags`, {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ id })
+			});
+			if (!res.ok)
+				return;
+			await invalidateAll();
+			delete tagForms[id];
+		} finally {
+			deletingTag = null;
+		}
+	}
+
 	let cancellingInvite = $state<string | null>(null);
 
 	async function cancelInvite(inviteId: string) {
@@ -1149,6 +1246,138 @@
 							<Plus size={13} />
 							Add quick rejection
 						</button>
+					{/if}
+				</div>
+			</ManageSection>
+
+			{#snippet projectTagFields(id: string)}
+				{@const form = tagForms[id]}
+				<div class="flex flex-col gap-1">
+					<label for="tag-label-{id}" class="text-xs font-semibold text-text-secondary">Name</label>
+					<input
+						id="tag-label-{id}"
+						type="text"
+						maxlength="50"
+						bind:value={form.label}
+						placeholder="e.g. hardware"
+						class="w-full h-9 px-3 rounded-input border border-border-input text-sm text-text-input focus:outline-none focus:border-border-active"
+					/>
+				</div>
+				<div class="flex flex-col gap-1.5">
+					<span class="text-xs font-semibold text-text-secondary">Color</span>
+					<div class="flex items-center gap-2 flex-wrap">
+						{#each TAG_COLOR_PRESETS as preset (preset)}
+							<button
+								type="button"
+								class="size-6 rounded-full cursor-pointer border-2 transition-transform hover:scale-110 {form.color.toLowerCase() === preset ? 'border-text-primary' : 'border-transparent'}"
+								style="background: {preset}"
+								aria-label="Use color {preset}"
+								onclick={() => (form.color = preset)}
+							></button>
+						{/each}
+						<input
+							type="text"
+							maxlength="7"
+							bind:value={form.color}
+							placeholder="#6b7280"
+							class="w-24 h-8 px-2 rounded-input border border-border-input text-sm font-mono text-text-input focus:outline-none focus:border-border-active"
+						/>
+						{#if form.label.trim()}
+							<ProjectTags tags={[{ label: form.label.trim(), color: form.color }]} />
+						{/if}
+					</div>
+				</div>
+			{/snippet}
+
+			<ManageSection title="Project Tags" description="Custom tags reviewers can assign to projects and filter the review queue by.">
+				{#snippet icon()}<Tag size={16} class="text-text-secondary" />{/snippet}
+				<div class="border border-dashed border-border-card rounded-section p-6 flex flex-col gap-2">
+					{#each data.projectTags as tag (tag.id)}
+						<div class="border border-border-card rounded-section bg-page overflow-hidden">
+							<button
+								class="w-full flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-surface/50 transition-colors"
+								onclick={() => toggleTagEdit(tag.id)}
+							>
+								<ProjectTags tags={[tag]} class="shrink-0" />
+								<span class="flex-1"></span>
+								<div class="shrink-0 text-text-tertiary">
+									{#if editingTags[tag.id]}
+										<ChevronUp size={16} />
+									{:else}
+										<ChevronDown size={16} />
+									{/if}
+								</div>
+							</button>
+
+							{#if editingTags[tag.id] && tagForms[tag.id]}
+								<div class="px-4 pb-4 flex flex-col gap-3 border-t border-border-card pt-4">
+									{@render projectTagFields(tag.id)}
+									<div class="flex gap-2 justify-end pt-1">
+										<button
+											class="px-3 py-1.5 rounded-tag text-check-fail border border-check-fail/30 hover:bg-check-fail/5 text-xs font-medium cursor-pointer disabled:opacity-50"
+											onclick={() => deleteProjectTag(tag.id)}
+											disabled={deletingTag === tag.id}
+										>
+											{#if deletingTag === tag.id}
+												<Loader2 size={12} class="animate-spin inline mr-1" />
+											{/if}
+											Delete
+										</button>
+										<button
+											class="px-3 py-1.5 rounded-tag bg-accent text-white text-xs font-medium hover:opacity-90 cursor-pointer disabled:opacity-50"
+											onclick={() => saveProjectTag(tag.id)}
+											disabled={savingTag === tag.id || !tagForms[tag.id].label.trim()}
+										>
+											{#if savingTag === tag.id}
+												<Loader2 size={12} class="animate-spin inline mr-1" />
+											{/if}
+											Save
+										</button>
+									</div>
+								</div>
+							{/if}
+						</div>
+					{:else}
+						{#if !showNewTag}
+							<p class="text-sm text-text-tertiary py-2">No project tags yet. Add tags like <span class="font-mono text-xs">hardware</span> or <span class="font-mono text-xs">review later</span> to organize the review queue.</p>
+						{/if}
+					{/each}
+
+					{#if showNewTag && tagForms['new']}
+						<div class="border border-dashed border-border-card rounded-section bg-page px-4 py-4 flex flex-col gap-3">
+							{@render projectTagFields('new')}
+							<div class="flex gap-2 justify-end pt-1">
+								<button
+									class="px-3 py-1.5 rounded-tag text-text-dim hover:bg-surface text-xs font-medium cursor-pointer disabled:opacity-50"
+									onclick={() => { showNewTag = false; delete tagForms['new']; tagError = null; }}
+									disabled={savingTag === 'new'}
+								>
+									Cancel
+								</button>
+								<button
+									class="px-3 py-1.5 rounded-tag bg-accent text-white text-xs font-medium hover:opacity-90 cursor-pointer disabled:opacity-50"
+									onclick={() => saveProjectTag('new')}
+									disabled={savingTag === 'new' || !tagForms['new'].label.trim()}
+								>
+									{#if savingTag === 'new'}
+										<Loader2 size={12} class="animate-spin inline mr-1" />
+									{/if}
+									Create
+								</button>
+							</div>
+						</div>
+					{:else}
+						<button
+							class="flex items-center gap-1.5 w-fit px-3 py-2 rounded-tag border border-border-input text-xs font-medium text-text-subtle hover:bg-surface transition-colors cursor-pointer"
+							onclick={() => { initTagForm('new'); showNewTag = true; }}
+						>
+							<Plus size={13} />
+							Add tag
+						</button>
+					{/if}
+
+					{#if tagError}
+						<p class="text-xs text-check-fail">{tagError}</p>
 					{/if}
 				</div>
 			</ManageSection>

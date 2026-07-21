@@ -485,14 +485,27 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		}
 	}
 
-	const rejectionTemplates = await db.rejectionTemplate.findMany({
-		where: { programId: params.programId },
-		orderBy: { createdAt: 'asc' },
-		select: { id: true, name: true, feedbackMessage: true, internalMessage: true }
-	});
+	const [rejectionTemplates, tagDefinitions, tagAssignments] = await Promise.all([
+		db.rejectionTemplate.findMany({
+			where: { programId: params.programId },
+			orderBy: { createdAt: 'asc' },
+			select: { id: true, name: true, feedbackMessage: true, internalMessage: true }
+		}),
+		db.projectTagDefinition.findMany({
+			where: { programId: params.programId },
+			orderBy: { label: 'asc' },
+			select: { id: true, label: true, color: true }
+		}),
+		db.projectTagAssignment.findMany({
+			where: { programId: params.programId, projectId: params.projectId },
+			select: { tagId: true }
+		})
+	]);
 
 	return {
 		project,
+		tagDefinitions,
+		assignedTagIds: tagAssignments.map((a) => a.tagId),
 		pendingShip: pendingShip ?? null,
 		rejectionTemplates,
 		author: {

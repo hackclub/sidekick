@@ -96,6 +96,11 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		orderBy: { createdAt: 'asc' }
 	});
 
+	const projectTagDefinitions = await db.projectTagDefinition.findMany({
+		where: { programId: params.programId },
+		orderBy: { label: 'asc' }
+	});
+
 	const hcbUser = await db.user.findUnique({
 		where: { id: user.id },
 		select: { hcbTokenExpiresAt: true }
@@ -216,6 +221,11 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			name: t.name,
 			feedbackMessage: t.feedbackMessage,
 			internalMessage: t.internalMessage
+		})),
+		projectTags: projectTagDefinitions.map((t) => ({
+			id: t.id,
+			label: t.label,
+			color: t.color
 		})),
 		hasTheseusApiKey: !!program.theseusApiKey,
 		theseusUser: program.theseusApiKey ? {

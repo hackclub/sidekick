@@ -5,6 +5,7 @@
 	import { isUuid, shortenId } from '$lib/utils/id';
 	import type { ProjectDetailsExport } from '$lib/review/projectDetailsExport.js';
 	import type { ProjectTag } from '$lib/server/protocol/types.js';
+	import type { Snippet } from 'svelte';
 
 	interface Props {
 		id: string;
@@ -14,12 +15,14 @@
 		demoUrl: string;
 		codeUrl: string;
 		tags?: ProjectTag[];
+		/** Rendered inline after the tag pills — e.g. an "add tag" control. */
+		tagPicker?: Snippet;
 		/** Full project review payload, copied to the clipboard as JSON. */
 		details?: ProjectDetailsExport | null;
 		class?: string;
 	}
 
-	let { id, title, description, screenshotUrl = null, demoUrl, codeUrl, tags = [], details = null, class: className = '' }: Props = $props();
+	let { id, title, description, screenshotUrl = null, demoUrl, codeUrl, tags = [], tagPicker = undefined, details = null, class: className = '' }: Props = $props();
 
 	let lightboxOpen = $state(false);
 	let copied = $state(false);
@@ -64,7 +67,12 @@
 				<span class="text-text-secondary" title={isUuid(id) ? id : undefined}>#{shortenId(id)}</span>
 				<span class="font-bold text-text-primary">{title}</span>
 			</div>
-			<ProjectTags {tags} />
+			{#if tags.length > 0 || tagPicker}
+				<div class="flex flex-wrap items-center gap-1">
+					<ProjectTags {tags} />
+					{@render tagPicker?.()}
+				</div>
+			{/if}
 			<p class="text-sm text-text-primary tracking-[-0.3px] leading-[1.3] whitespace-pre-line">
 				{description}
 			</p>

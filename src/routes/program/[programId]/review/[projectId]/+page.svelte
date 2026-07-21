@@ -3,7 +3,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { applyAction, deserialize } from '$app/forms';
 	import { resolve } from '$app/paths';
-	import { AlertTriangle, X } from 'lucide-svelte';
+	import { AlertTriangle, X, Plus, Check } from 'lucide-svelte';
 	import type { PageData } from './$types.js';
 
 	const log = createLogger('ReviewPage');
@@ -17,10 +17,12 @@
 	import AirtableRecords from '$lib/components/review/AirtableRecords.svelte';
 	import HackatimeViewer from '$lib/components/review/HackatimeViewer.svelte';
 	import OtherProjects from '$lib/components/review/OtherProjects.svelte';
+	import ProjectTags from '$lib/components/review/ProjectTags.svelte';
 	import { ChevronLeft } from 'lucide-svelte';
 	import type { TimelineEvent as TEvent, ReviewFieldDefinition } from '$lib/server/protocol/types.js';
 	import { isUuid, shortenId } from '$lib/utils/id';
 	import { normalizeTags } from '$lib/utils/tags';
+	import { SvelteSet } from 'svelte/reactivity';
 	import {
 		PROJECT_DETAILS_EXPORT_SCHEMA_VERSION,
 		type ProjectDetailsExport
@@ -43,6 +45,48 @@
 	let uncountedAirtableShips = $state<Record<string, boolean>>({});
 	// GitHub-tab user filter, shared with the Hackatime day-marker commit tooltips.
 	let commitAuthorFilter = $state<string | null>(null);
+
+	// Program-defined project tags — optimistic local set (writable derived, so it
+	// resyncs from server data on navigation/invalidation).
+	let assignedTagIds = $derived(new SvelteSet(data.assignedTagIds));
+	let tagMenuOpen = $state(false);
+	let savingTags = $state(false);
+
+	const assignedCustomTags = $derived(data.tagDefinitions.filter((t) => assignedTagIds.has(t.id)));
+
+	async function toggleAssignedTag(tagId: string) {
+		const prev = [...assignedTagIds];
+		if (assignedTagIds.has(tagId)) assignedTagIds.delete(tagId);
+		else assignedTagIds.add(tagId);
+		savingTags = true;
+		try {
+			const res = await fetch(
+				`/api/programs/${data.program.id}/projects/${encodeURIComponent(data.project.id)}/tags`,
+				{
+					method: 'PUT',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ tagIds: [...assignedTagIds] })
+				}
+			);
+			if (!res.ok) assignedTagIds = new SvelteSet(prev);
+		} catch {
+			assignedTagIds = new SvelteSet(prev);
+		} finally {
+			savingTags = false;
+		}
+	}
+
+	function handleTagMenuWindowClick(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		if (!target.closest('[data-tags-dropdown]')) tagMenuOpen = false;
+	}
+
+	$effect(() => {
+		if (tagMenuOpen) {
+			window.addEventListener('click', handleTagMenuWindowClick, true);
+			return () => window.removeEventListener('click', handleTagMenuWindowClick, true);
+		}
+	});
 
 	function normalizeForCompare(s: string): string {
 		return s.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -653,6 +697,35 @@
 		</div>
 	</div>
 
+	{#snippet tagPicker()}
+		<span class="relative inline-flex" data-tags-dropdown>
+			<button
+				class="inline-flex items-center gap-1 rounded-tag border border-dashed border-border-input px-1.5 py-0.5 text-[11px] font-medium leading-none tracking-[-0.2px] text-text-tertiary hover:text-text-secondary hover:bg-surface cursor-pointer disabled:opacity-50"
+				onclick={() => (tagMenuOpen = !tagMenuOpen)}
+				disabled={savingTags}
+			>
+				<Plus size={10} class="shrink-0" />
+				add tag
+			</button>
+			{#if tagMenuOpen}
+				<div class="absolute top-full left-0 mt-1 bg-page border border-border-card rounded-input shadow-lg z-30 min-w-[200px] max-h-[320px] overflow-y-auto py-1">
+					{#each data.tagDefinitions as tag (tag.id)}
+						<button
+							class="w-full text-left px-3 py-1.5 text-sm hover:bg-surface cursor-pointer flex items-center justify-between gap-2 disabled:opacity-50"
+							onclick={() => toggleAssignedTag(tag.id)}
+							disabled={savingTags}
+						>
+							<ProjectTags tags={[tag]} />
+							{#if assignedTagIds.has(tag.id)}
+								<Check size={14} class="text-accent shrink-0" />
+							{/if}
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</span>
+	{/snippet}
+
 	<div class="flex-1 overflow-auto px-4 md:px-6 wide:px-16 py-10">
 		<div class="review-bento gap-3">
 			<div class="flex flex-col gap-3" style="grid-area: user">
@@ -704,7 +777,8 @@
 						screenshotUrl={data.project.screenshotUrl}
 						demoUrl={data.project.demoUrl ?? ''}
 						codeUrl={data.project.codeUrl}
-						tags={data.project.tags}
+						tags={[...(data.project.tags ?? []), ...assignedCustomTags]}
+						tagPicker={data.canReview && data.tagDefinitions.length > 0 ? tagPicker : undefined}
 						details={projectDetailsExport}
 						class="h-full"
 					/>
