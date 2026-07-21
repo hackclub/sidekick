@@ -13,6 +13,7 @@
 </script>
 
 <span class="inline-flex items-center gap-1.5 px-0.5">
-	<Avatar {name} url={avatarUrl} size={size === 'sm' ? 'xs' : 'sm'} />
+	<!-- Inter's ink sits ~1px below the line-box center, so the avatar gets an optical nudge. -->
+	<Avatar {name} url={avatarUrl} size={size === 'sm' ? 'xs' : 'sm'} class="translate-y-px" />
 	<span class="font-bold {textSize} text-text-primary whitespace-nowrap">{name}</span>
 </span>

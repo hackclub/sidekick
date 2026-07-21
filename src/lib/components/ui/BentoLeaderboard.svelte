@@ -50,7 +50,7 @@
 				<div class="flex gap-4 items-center">
 					<span class="font-bold text-[15px] text-text-primary w-6">#{i + 1}</span>
 					<div class="flex gap-2 items-center">
-						<Avatar name={entry.username} url={entry.avatarUrl} size="sm" />
+						<Avatar name={entry.username} url={entry.avatarUrl} size="sm" class="translate-y-px" />
 						<span class="text-sm text-text-primary">{entry.username}</span>
 					</div>
 				</div>
