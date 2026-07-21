@@ -1,11 +1,12 @@
 import { env } from '$env/dynamic/private';
 import Groq from 'groq-sdk';
 import { execFile, spawn } from 'node:child_process';
-import { mkdtemp, rm, readdir, readFile, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, readdir, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { promisify } from 'node:util';
 import { createLogger } from '../logger.js';
+import { parseRepoUrl } from './github.js';
 
 const log = createLogger('groq-changelog');
 const exec = promisify(execFile);
@@ -287,20 +288,32 @@ export type ChangelogEvent =
 	| { type: 'done'; changelog: string }
 	| { type: 'error'; message: string };
 
+// Project code URLs often point at a subpage (/tree/<branch>, /blob/...) that
+// git cannot clone. Rebuild the bare repo URL for GitHub links and keep the
+// branch as a checkout hint; non-GitHub URLs pass through untouched.
+function resolveCloneTarget(repoUrl: string): { cloneUrl: string; branch: string | null } {
+	const parsed = parseRepoUrl(repoUrl);
+	if (!parsed) return { cloneUrl: repoUrl, branch: null };
+	return { cloneUrl: `https://github.com/${parsed.owner}/${parsed.repo}.git`, branch: parsed.branch };
+}
+
 async function cloneWithProgress(
 	repoUrl: string,
 	repoDir: string,
 	emit: (event: ChangelogEvent) => void,
 	shallow?: boolean
 ): Promise<boolean> {
-	log.info('cloneWithProgress starting', { repoUrl, repoDir, shallow });
+	const { cloneUrl, branch } = resolveCloneTarget(repoUrl);
+	log.info('cloneWithProgress starting', { repoUrl, cloneUrl, branch, repoDir, shallow });
 	const timer = log.time('cloneWithProgress');
 	emit({ type: 'status', message: 'Cloning repository...' });
-	try {
-		await new Promise<void>((resolve, reject) => {
+
+	const runClone = (withBranch: string | null) =>
+		new Promise<void>((resolve, reject) => {
 			const args = ['clone', '--progress'];
 			if (shallow) args.push('--depth=200');
-			args.push(repoUrl, repoDir);
+			if (withBranch) args.push('--branch', withBranch);
+			args.push(cloneUrl, repoDir);
 			const proc = spawn('git', args, { timeout: 120000 });
 			let stderr = '';
 			proc.stderr?.on('data', (data: Buffer) => {
@@ -321,6 +334,19 @@ async function cloneWithProgress(
 			});
 			proc.on('error', reject);
 		});
+
+	try {
+		try {
+			await runClone(branch);
+		} catch (e) {
+			// The branch is a best-effort parse of /tree/<x> — for slashed branch
+			// names <x> is only the first segment, so retry on the default branch.
+			if (!branch) throw e;
+			log.warn('cloneWithProgress branch clone failed, retrying default branch', { cloneUrl, branch, error: e });
+			await rm(repoDir, { recursive: true, force: true });
+			await mkdir(repoDir, { recursive: true });
+			await runClone(null);
+		}
 		timer.end({ repoUrl });
 		log.info('cloneWithProgress succeeded', { repoUrl });
 		return true;

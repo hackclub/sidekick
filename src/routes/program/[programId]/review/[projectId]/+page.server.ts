@@ -197,8 +197,13 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	const githubData = (async () => {
 		if (!repo) return { githubCommits: [] as GhCommit[], githubReadme: null as string | null, githubIsPublic: false };
 		try {
+			// repo.branch is a best-effort hint from /tree/<branch> URLs; it can be
+			// wrong (slashed branch names parse as the first segment), so fall back
+			// to the default branch rather than failing the whole GitHub block.
 			const [commits, repoInfo, readme] = await Promise.all([
-				getCommits(repo.owner, repo.repo),
+				repo.branch
+					? getCommits(repo.owner, repo.repo, { sha: repo.branch }).catch(() => getCommits(repo.owner, repo.repo))
+					: getCommits(repo.owner, repo.repo),
 				getRepoInfo(repo.owner, repo.repo),
 				getReadme(repo.owner, repo.repo)
 			]);

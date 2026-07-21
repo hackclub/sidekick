@@ -37,7 +37,9 @@ export function normalizeUrl(raw: string): string {
 		.split('?')[0]
 		.split('#')[0]
 		.replace(/\/+$/, '')
-		.replace(/\.git$/, '');
+		.replace(/\.git$/, '')
+		// GitHub links to a branch or file point at the same repo — compare equal.
+		.replace(/^(github\.com\/[^/]+\/[^/]+)\/(tree|blob)\/.*$/, '$1');
 }
 
 function getSearchVariants(raw: string): string[] {

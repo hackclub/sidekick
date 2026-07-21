@@ -123,7 +123,7 @@ async function authFetch(path: string, params?: Record<string, string>): Promise
 	return response;
 }
 
-export function parseRepoUrl(url: string): { owner: string; repo: string } | null {
+export function parseRepoUrl(url: string): { owner: string; repo: string; branch: string | null } | null {
 	log.trace('parseRepoUrl called', { url });
 	try {
 		const parsed = new URL(url);
@@ -142,8 +142,17 @@ export function parseRepoUrl(url: string): { owner: string; repo: string } | nul
 			return null;
 		}
 
-		const result = { owner: segments[0], repo: segments[1] };
-		log.trace('parseRepoUrl result', { owner: result.owner, repo: result.repo });
+		// Best-effort: for /tree/<x>/... and /blob/<x>/... links, <x> is the branch
+		// unless the branch name itself contains slashes — indistinguishable from a
+		// subdirectory path without hitting the API, so callers must treat this as a
+		// hint and fall back to the default branch if it doesn't resolve.
+		const branch =
+			segments.length >= 4 && (segments[2] === 'tree' || segments[2] === 'blob')
+				? segments[3]
+				: null;
+
+		const result = { owner: segments[0], repo: segments[1], branch };
+		log.trace('parseRepoUrl result', result);
 		return result;
 	} catch {
 		log.trace('parseRepoUrl failed to parse URL', { url });
@@ -178,10 +187,10 @@ export async function getRepoInfo(owner: string, repo: string): Promise<RepoInfo
 export async function getCommits(
 	owner: string,
 	repo: string,
-	opts?: { since?: string; until?: string; perPage?: number }
+	opts?: { since?: string; until?: string; perPage?: number; sha?: string }
 ): Promise<Commit[]> {
-	log.debug('getCommits called', { owner, repo, since: opts?.since, until: opts?.until, perPage: opts?.perPage });
-	const cacheKey = `commits:${owner}/${repo}:${opts?.since ?? ''}:${opts?.until ?? ''}:${opts?.perPage ?? ''}`;
+	log.debug('getCommits called', { owner, repo, since: opts?.since, until: opts?.until, perPage: opts?.perPage, sha: opts?.sha });
+	const cacheKey = `commits:${owner}/${repo}:${opts?.since ?? ''}:${opts?.until ?? ''}:${opts?.perPage ?? ''}:${opts?.sha ?? ''}`;
 	const cached = getCached<Commit[]>(cacheKey);
 	if (cached) {
 		log.debug('getCommits cache hit', { owner, repo, commitCount: cached.length });
@@ -197,6 +206,7 @@ export async function getCommits(
 		const params: Record<string, string> = { per_page: String(perPage), page: String(page) };
 		if (opts?.since) params.since = opts.since;
 		if (opts?.until) params.until = opts.until;
+		if (opts?.sha) params.sha = opts.sha;
 
 		const response = await authFetch(
 			`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits`,
