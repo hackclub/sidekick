@@ -379,7 +379,7 @@
 					{@const cumulative = info?.cumulative ?? 0}
 					<p class="text-sm tracking-[-0.3px]">
 						<!-- eslint-disable svelte/no-useless-mustaches -->
-						<span class="font-bold">{actor.name}</span> shipped{#if delta > 0}{' '}<span class="font-bold">{fmtHours(delta)}</span>{/if}{#if cumulative > 0 && cumulative !== delta}{' '}<span class="text-text-tertiary">(total {fmtHours(cumulative)})</span>{/if}
+						<span class="font-bold">{actor.name}</span> shipped{#if delta > 0}{' '}<span class="font-bold">{fmtHours(delta)}</span>{/if}{#if cumulative > 0}{' '}<span class="text-text-tertiary">(total {fmtHours(cumulative)})</span>{/if}
 						<!-- eslint-enable svelte/no-useless-mustaches -->
 					</p>
 				{:else if event.type === 'rejection'}
