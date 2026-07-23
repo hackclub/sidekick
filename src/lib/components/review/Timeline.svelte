@@ -35,14 +35,11 @@
 
 	// hoursSubmitted is cumulative per project, so each ship's delta is measured
 	// against the last *approved* ship's cumulative hours. Re-ship sequences
-	// (several consecutive ships with no review in between) all share that same
-	// baseline — only an approval moves it forward.
+	// (several consecutive ships with no review in between, rejected ships
+	// included) all share that same baseline — only an approval moves it forward.
 	const shipHourInfo = $derived.by(() => {
 		const info: Record<string, { delta: number; cumulative: number }> = {};
 		const approvalInfo: Record<string, { cumulative: number }> = {};
-		const rejectedShipIds = new Set(
-			events.filter((e) => e.type === 'rejection').map((e) => e.shipId)
-		);
 		let creditedSum = 0;
 		let lastApprovedShipHours = 0;
 		const shipEvents = events.filter((e) => e.type === 'ship') as Array<Extract<typeof events[number], { type: 'ship' }>>;
@@ -51,11 +48,6 @@
 			const hours = shipHours[event.shipId] || event.hoursSubmitted || 0;
 			const approved = approvedShipHours[event.shipId] ?? hours;
 			const hasApproval = shipsWithApproval.has(event.shipId);
-
-			if (rejectedShipIds.has(event.shipId)) {
-				info[event.shipId] = { delta: hours, cumulative: hours };
-				continue;
-			}
 
 			const delta =
 				lastApprovedShipHours > 0 && hours > lastApprovedShipHours
