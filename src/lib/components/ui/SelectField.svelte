@@ -142,7 +142,7 @@
 		>
 			{#each sections as section, s (section.group ?? `ungrouped-${s}`)}
 				{#if section.group}
-					<div class="px-3 pt-2 pb-1 text-[11px] font-bold uppercase tracking-[0.4px] text-text-tertiary {s > 0 ? 'border-t border-border-table mt-1' : ''}">
+					<div class="px-3 pt-2 pb-1 text-xs font-medium text-text-secondary tracking-[-0.2px] {s > 0 ? 'border-t border-border-table mt-1' : ''}">
 						{section.group}
 					</div>
 				{/if}

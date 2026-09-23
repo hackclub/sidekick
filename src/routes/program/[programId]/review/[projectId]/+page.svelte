@@ -797,7 +797,10 @@
 					/>
 				</div>
 
-				<div style="grid-area: checks">
+				<!-- A fixed width beside the project card on the wide layout: the list
+				     is otherwise as wide as its longest summary, and a program's
+				     wordy check pushes the project card's buttons off its edge. -->
+				<div class="checks-column" style="grid-area: checks">
 					<CheckList
 						{checks}
 						programChecks={data.pendingShip?.checks ?? []}
@@ -970,6 +973,11 @@
 				'heartbeats heartbeats       multi'
 				'others     others           others'
 				'timeline   timeline         timeline';
+		}
+
+		.checks-column {
+			flex: 0 0 420px;
+			min-width: 0;
 		}
 
 		.project-checks-wrapper {

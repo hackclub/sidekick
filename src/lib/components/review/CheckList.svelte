@@ -148,7 +148,7 @@
 			{@const passed = group.rows.filter((r) => r.state === 'pass')}
 			<div class="flex flex-col gap-2">
 				{#if groups.length > 1}
-					<p class="text-[11px] font-bold uppercase tracking-[0.4px] text-text-tertiary">{group.label}</p>
+					<p class="text-xs font-medium text-text-secondary tracking-[-0.2px]">{group.label}</p>
 				{/if}
 				{#each attention as r (r.key)}
 					{@render row(r)}
