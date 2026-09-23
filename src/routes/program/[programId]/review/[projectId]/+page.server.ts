@@ -57,6 +57,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	// sends as a raw ID — resolve those too so their pills show a name + avatar.
 	const actorIds = new Set([project.authorId]);
 	for (const event of timeline.events) {
+		if (event.type === 'system') continue;
 		actorIds.add(event.actorId);
 		if (event.type === 'discarded_approval') actorIds.add(event.discardedByActorId);
 		if (event.type === 'authorized_approval') actorIds.add(event.authorizedByActorId);

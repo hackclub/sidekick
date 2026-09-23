@@ -47,18 +47,125 @@ export interface Project {
   ships: Ship[];
   // Optional colored labels shown on the review queue. Omit or send [] for none.
   tags?: ProjectTag[];
+  // The project's own page on the program's site. Sidekick shows an "Open in
+  // <program>" button next to "Copy JSON" when set.
+  platformUrl?: string;
   metadata?: Record<string, unknown>;
+}
+
+// One choice of a "select" review field. `group` clusters options under a
+// heading (options sharing a group should be sent next to each other; groups
+// appear in the order they first occur). `imageUrl` is a small preview shown
+// beside the label, in the menu and on the closed control.
+export interface ReviewFieldOption {
+  value: string;
+  label: string;
+  description?: string;
+  group?: string;
+  imageUrl?: string;
 }
 
 export interface ReviewFieldDefinition {
   name: string;
   label: string;
   // "markdown" behaves exactly like "string" (string values on the wire) but
-  // renders as a textarea with Markdown support in the review form.
-  type: "string" | "integer" | "boolean" | "markdown";
+  // renders as a textarea with Markdown support in the review form. "select"
+  // is a dropdown over `options`; its value on the wire is the chosen
+  // option's `value` string.
+  type: "string" | "integer" | "boolean" | "markdown" | "select";
   required?: boolean;
   placeholder?: string;
   defaultValue?: string | number | boolean;
+  // Required for "select", ignored otherwise.
+  options?: ReviewFieldOption[];
+}
+
+// A check the program ran itself (a pre-screen, a fraud heuristic, a linter),
+// shown in the review page's "Automated checks" card next to Sidekick's own.
+// Sidekick never re-runs or interprets these; they are the program's report.
+export interface ProgramCheck {
+  id: string;
+  name: string;
+  status: "pass" | "fail" | "inconclusive";
+  // How much a failure matters. "warn" and "info" failures render as notices
+  // rather than failures. Defaults to "fail".
+  severity?: "info" | "warn" | "fail" | "critical";
+  // Heading the check is listed under. Checks without one are grouped under
+  // the program's name. Groups appear in the order they first occur.
+  group?: string;
+  // One or two sentences for the reviewer: why it failed, or what was seen.
+  summary?: string;
+  // A page that explains the rule (a guideline, a runbook).
+  url?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Blocks: program-defined rich content, loosely modelled on Slack's Block Kit.
+// Text fields are Markdown (raw HTML is escaped; only http(s) and mailto
+// links and http(s) images are kept). Any block may be marked `isInternal`,
+// which renders it with the reviewer-only styling.
+// ---------------------------------------------------------------------------
+
+export interface BlockImage {
+  imageUrl: string;
+  alt: string;
+}
+
+export interface BlockField {
+  label: string;
+  value: string; // Markdown
+}
+
+export type Block = { isInternal?: boolean } & (
+  | {
+      // The workhorse: an optional title, body text, a grid of label/value
+      // pairs and a thumbnail beside the text.
+      type: "section";
+      title?: string;
+      text?: string;
+      fields?: BlockField[];
+      accessory?: BlockImage;
+    }
+  | {
+      type: "image";
+      imageUrl: string;
+      alt: string;
+      title?: string;
+      caption?: string; // Markdown
+    }
+  | {
+      // A single muted line of small text and icons, for metadata.
+      type: "context";
+      elements: Array<{ type: "text"; text: string } | ({ type: "image" } & BlockImage)>;
+    }
+  | {
+      type: "callout";
+      tone: "info" | "success" | "warning" | "danger";
+      title?: string;
+      text: string;
+    }
+  | { type: "divider" }
+);
+
+// One step of an agent's work, in the order it happened: what it thought,
+// which tools it called with what, and what came back. `input` and `output`
+// may be strings or any JSON; Sidekick pretty-prints non-strings.
+export type TraceStep =
+  | { type: "thought"; text: string } // Markdown
+  | { type: "text"; text: string } // Markdown: something the agent said, not thought
+  | {
+      type: "tool_call";
+      name: string;
+      input?: unknown;
+      output?: unknown;
+      isError?: boolean;
+      durationMs?: number;
+    };
+
+// Who produced a `system` event: an automated reviewer, a bot, a pipeline.
+export interface SystemEventSource {
+  name: string;
+  iconUrl?: string;
 }
 
 export type ReviewFieldValues = Record<string, string | number | boolean>;
@@ -70,6 +177,9 @@ export interface Ship {
   status: "pending" | "pending_hq" | "approved" | "rejected";
   approveFields?: ReviewFieldDefinition[];
   rejectFields?: ReviewFieldDefinition[];
+  // The program's own checks for this ship, shown alongside Sidekick's. Only
+  // read from the ship under review.
+  checks?: ProgramCheck[];
   // Advertises that the program accepts `rewardedHoursOverride` on approvals of
   // this ship. When true, Sidekick offers reviewers an optional override of the
   // hours rewarded to the author (distinct from `hoursAssigned`, which is what
@@ -102,6 +212,8 @@ export type TimelineEvent =
       hoursSubmitted: number;
       changes?: ProjectChange[];
       displayFields?: ShipDisplayField[];
+      // Rendered after displayFields.
+      blocks?: Block[];
       timestamp: string;
     }
   | {
@@ -168,6 +280,25 @@ export type TimelineEvent =
       actorId: string;
       message: string;
       isInternal: boolean;
+      timestamp: string;
+    }
+  | {
+      // Something a machine said about the project: an automated review, a
+      // bot's analysis. Has no actorId; `source` names the machine. Never
+      // editable from Sidekick.
+      type: "system";
+      id: string;
+      shipId?: string;
+      source: SystemEventSource;
+      // One line completing "<source name> …", e.g. "suggested approving 4h".
+      summary: string;
+      // Colours the event's icon: the verdict at a glance.
+      tone?: "neutral" | "success" | "warning" | "danger";
+      blocks?: Block[];
+      // The machine's reasoning (Markdown), collapsed behind a toggle.
+      reasoning?: string;
+      // The agent's steps, shown under the reasoning.
+      trace?: TraceStep[];
       timestamp: string;
     }
 ;

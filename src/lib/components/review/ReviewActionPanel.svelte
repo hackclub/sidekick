@@ -2,6 +2,7 @@
 	import { createLogger } from '$lib/logger.js';
 	import { CircleCheck, CircleX, MessageSquare, Eye, AlertTriangle, Loader2, X, Copy, Sparkles, CircleHelp, Zap, ChevronDown } from 'lucide-svelte';
 	import MarkdownTextarea from '$lib/components/ui/MarkdownTextarea.svelte';
+	import SelectField from '$lib/components/ui/SelectField.svelte';
 	import Checkbox from '$lib/components/ui/Checkbox.svelte';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
 	import { evaluateArithmetic } from '$lib/utils/math-expr.js';
@@ -248,7 +249,7 @@
 			if (!def.required) continue;
 			const val = customFields[def.name];
 			if (val === undefined || val === null) return false;
-			if ((def.type === 'string' || def.type === 'markdown') && typeof val === 'string' && !val.trim()) return false;
+			if ((def.type === 'string' || def.type === 'markdown' || def.type === 'select') && typeof val === 'string' && !val.trim()) return false;
 		}
 		return true;
 	}
@@ -594,6 +595,22 @@
 									{/if}
 								</div>
 							</Checkbox>
+						{:else if fieldDef.type === 'select'}
+							<div class="flex flex-col gap-1.5">
+								<label class="font-bold text-sm tracking-[-0.3px]" for="field-{fieldDef.name}">
+									{fieldDef.label}
+									{#if !fieldDef.required}
+										<span class="font-normal text-text-secondary">(optional)</span>
+									{/if}
+								</label>
+								<SelectField
+									id="field-{fieldDef.name}"
+									options={fieldDef.options ?? []}
+									value={String(customFields[fieldDef.name] ?? '')}
+									placeholder={fieldDef.placeholder}
+									onchange={(v) => setCustomField(fieldDef.name, v)}
+								/>
+							</div>
 						{:else}
 							<div class="flex items-baseline gap-3">
 								<label class="font-bold text-sm tracking-[-0.3px] shrink-0" for="field-{fieldDef.name}">
@@ -764,6 +781,22 @@
 									{/if}
 								</div>
 							</Checkbox>
+						{:else if fieldDef.type === 'select'}
+							<div class="flex flex-col gap-1.5">
+								<label class="font-bold text-sm tracking-[-0.3px]" for="field-{fieldDef.name}">
+									{fieldDef.label}
+									{#if !fieldDef.required}
+										<span class="font-normal text-text-secondary">(optional)</span>
+									{/if}
+								</label>
+								<SelectField
+									id="field-{fieldDef.name}"
+									options={fieldDef.options ?? []}
+									value={String(customFields[fieldDef.name] ?? '')}
+									placeholder={fieldDef.placeholder}
+									onchange={(v) => setCustomField(fieldDef.name, v)}
+								/>
+							</div>
 						{:else}
 							<div class="flex items-baseline gap-3">
 								<label class="font-bold text-sm tracking-[-0.3px] shrink-0" for="field-{fieldDef.name}">

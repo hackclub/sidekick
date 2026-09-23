@@ -1,7 +1,8 @@
 <script lang="ts">
 	import NamedLink from '$lib/components/ui/NamedLink.svelte';
 	import ProjectTags from '$lib/components/review/ProjectTags.svelte';
-	import { Globe, BookMarked, Copy, Check } from 'lucide-svelte';
+	import { Globe, BookMarked, Copy, Check, ExternalLink } from 'lucide-svelte';
+	import { isSafeLinkUrl } from '$lib/utils/markdown.js';
 	import { isUuid, shortenId } from '$lib/utils/id';
 	import type { ProjectDetailsExport } from '$lib/review/projectDetailsExport.js';
 	import type { ProjectTag } from '$lib/server/protocol/types.js';
@@ -19,10 +20,13 @@
 		tagPicker?: Snippet;
 		/** Full project review payload, copied to the clipboard as JSON. */
 		details?: ProjectDetailsExport | null;
+		/** The project's page on the program's own site. */
+		platformUrl?: string | null;
+		programName?: string;
 		class?: string;
 	}
 
-	let { id, title, description, screenshotUrl = null, demoUrl, codeUrl, tags = [], tagPicker = undefined, details = null, class: className = '' }: Props = $props();
+	let { id, title, description, screenshotUrl = null, demoUrl, codeUrl, tags = [], tagPicker = undefined, details = null, platformUrl = null, programName = 'program', class: className = '' }: Props = $props();
 
 	let lightboxOpen = $state(false);
 	let copied = $state(false);
@@ -45,21 +49,37 @@
 				</button>
 			{/if}
 
-			{#if details}
-				<button
-					onclick={copyDetails}
-					title="Copy all project details as JSON"
-					class="shrink-0 ml-auto border border-border-button rounded-md flex gap-1.5 h-8 items-center justify-center px-3 hover:bg-surface transition-colors cursor-pointer"
-				>
-					{#if copied}
-						<Check size={14} class="text-check-pass" />
-						<span class="font-medium text-sm text-text-subtle tracking-[-0.3px]">Copied</span>
-					{:else}
-						<Copy size={14} />
-						<span class="font-medium text-sm text-text-subtle tracking-[-0.3px]">Copy JSON</span>
-					{/if}
-				</button>
-			{/if}
+			<div class="shrink-0 ml-auto flex gap-2">
+				{#if isSafeLinkUrl(platformUrl)}
+					<!-- eslint-disable svelte/no-navigation-without-resolve -->
+					<a
+						href={platformUrl}
+						target="_blank"
+						rel="noopener noreferrer"
+						title="Open this project on {programName}"
+						class="border border-border-button rounded-md flex gap-1.5 h-8 items-center justify-center px-3 hover:bg-surface transition-colors"
+					>
+						<ExternalLink size={14} />
+						<span class="font-medium text-sm text-text-subtle tracking-[-0.3px]">Open in {programName}</span>
+					</a>
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
+				{/if}
+				{#if details}
+					<button
+						onclick={copyDetails}
+						title="Copy all project details as JSON"
+						class="border border-border-button rounded-md flex gap-1.5 h-8 items-center justify-center px-3 hover:bg-surface transition-colors cursor-pointer"
+					>
+						{#if copied}
+							<Check size={14} class="text-check-pass" />
+							<span class="font-medium text-sm text-text-subtle tracking-[-0.3px]">Copied</span>
+						{:else}
+							<Copy size={14} />
+							<span class="font-medium text-sm text-text-subtle tracking-[-0.3px]">Copy JSON</span>
+						{/if}
+					</button>
+				{/if}
+			</div>
 		</div>
 
 		<div class="flex flex-col gap-2">

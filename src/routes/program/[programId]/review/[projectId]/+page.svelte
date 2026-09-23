@@ -196,6 +196,7 @@
 		const out: ReviewMarker[] = [];
 
 		for (const e of data.timeline) {
+			if (e.type === 'system') continue;
 			const actor = data.actors[e.actorId];
 			const name = actor?.name ?? 'Unknown';
 			const avatarUrl = actor?.avatarUrl ?? undefined;
@@ -790,12 +791,19 @@
 						tags={[...(data.project.tags ?? []), ...assignedCustomTags]}
 						tagPicker={data.canReview && data.tagDefinitions.length > 0 ? tagPicker : undefined}
 						details={projectDetailsExport}
+						platformUrl={data.project.platformUrl}
+						programName={data.program.name}
 						class="h-full"
 					/>
 				</div>
 
 				<div style="grid-area: checks">
-					<CheckList {checks} class="h-full" />
+					<CheckList
+						{checks}
+						programChecks={data.pendingShip?.checks ?? []}
+						programName={data.program.name}
+						class="h-full"
+					/>
 				</div>
 			</div>
 

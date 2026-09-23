@@ -1,10 +1,13 @@
 <script lang="ts">
-	import { Ship, CircleX, CircleCheck, MessageSquare, Eye, Pencil, X, Check, Clock, ShieldCheck, Loader2, Type, Link, Image, Gift, AlertTriangle } from 'lucide-svelte';
+	import { Ship, CircleX, CircleCheck, MessageSquare, Eye, Pencil, X, Check, Clock, ShieldCheck, Loader2, Type, Link, Image, Gift, AlertTriangle, Bot, ChevronRight } from 'lucide-svelte';
 	import type { TimelineEvent as TEvent, ReviewFieldDefinition } from '$lib/server/protocol/types.js';
 	import { wordDiff } from '$lib/utils/diff.js';
 	import { evaluateArithmetic } from '$lib/utils/math-expr.js';
+	import { renderSafeMarkdown, isSafeImageUrl } from '$lib/utils/markdown.js';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import MarkdownTextarea from '$lib/components/ui/MarkdownTextarea.svelte';
+	import Blocks from './Blocks.svelte';
+	import AgentTrace from './AgentTrace.svelte';
 	import { marked, Renderer } from 'marked';
 
 	const mdRenderer = new Renderer();
@@ -42,7 +45,34 @@
 
 	let { event, actors, shipHourInfo = {}, approvalHourInfo = {}, canAuthorize = false, onsave, onauthorize, ondelete, oneditpending, authorizing = null, fieldDefs = {}, supportsOverride = {} }: Props = $props();
 
-	const actor = $derived(actors[event.actorId] ?? { name: event.actorId, avatarUrl: null });
+	// System events name their machine instead of a person.
+	const actor = $derived(
+		event.type === 'system'
+			? { name: event.source.name, avatarUrl: isSafeImageUrl(event.source.iconUrl) ? event.source.iconUrl : null }
+			: (actors[event.actorId] ?? { name: event.actorId, avatarUrl: null })
+	);
+
+	const SYSTEM_TONE_ICON = {
+		neutral: 'text-text-secondary',
+		success: 'text-check-pass',
+		warning: 'text-amber-500',
+		danger: 'text-check-fail'
+	} as const;
+
+	// A select field stores the option's value; show the option's label when
+	// the definition is known.
+	function fieldDisplayValue(key: string, value: string | number | boolean): string | number {
+		const def = fieldDefs[key];
+		if (def?.type === 'select' && typeof value === 'string') {
+			return def.options?.find((o) => o.value === value)?.label ?? value;
+		}
+		return typeof value === 'boolean' ? String(value) : value;
+	}
+
+	// A machine's event starts folded to its one-line summary: it is context
+	// for the reviewer, not a decision they have to read through.
+	let systemOpen = $state(false);
+	const systemHasBody = $derived(event.type === 'system' && (!!event.blocks?.length || !!event.reasoning || !!event.trace?.length));
 
 	let editing = $state(false);
 	let saving = $state(false);
@@ -336,7 +366,7 @@
 						{#if typeof value === 'boolean'}
 							<span class={value ? 'text-check-pass' : 'text-check-fail'}>{value ? 'Yes' : 'No'}</span>
 						{:else}
-							<span>{value}</span>
+							<span>{fieldDisplayValue(key, value)}</span>
 						{/if}
 					</span>
 				{/each}
@@ -358,6 +388,8 @@
 				<Clock size={24} class="text-amber-500" />
 			{:else if event.type === 'discarded_approval'}
 				<CircleX size={24} class="text-text-tertiary" />
+			{:else if event.type === 'system'}
+				<Bot size={24} class={SYSTEM_TONE_ICON[event.tone ?? 'neutral'] ?? SYSTEM_TONE_ICON.neutral} />
 			{:else}
 				{#if event.isInternal}
 					<Eye size={24} class="text-accent" />
@@ -367,7 +399,13 @@
 			{/if}
 		</div>
 
-		<Avatar name={actor.name} url={actor.avatarUrl} size="md" class="border border-border-card relative z-10" />
+		{#if event.type === 'system' && !actor.avatarUrl}
+			<div class="size-7 rounded-full bg-surface border border-border-card flex items-center justify-center shrink-0 relative z-10">
+				<Bot size={14} class="text-text-secondary" />
+			</div>
+		{:else}
+			<Avatar name={actor.name} url={actor.avatarUrl} size="md" class="border border-border-card relative z-10" />
+		{/if}
 	</div>
 
 	<div class="flex flex-col gap-1.5 flex-1 min-w-0">
@@ -444,6 +482,26 @@
 							{discardedByActor.name}
 						</span>
 					</p>
+				{:else if event.type === 'system'}
+					<button
+						type="button"
+						class="text-sm tracking-[-0.3px] text-left flex items-center gap-1 rounded-tag outline-none focus-visible:ring-2 focus-visible:ring-accent/40 {systemHasBody ? 'cursor-pointer' : 'cursor-default'}"
+						aria-expanded={systemHasBody ? systemOpen : undefined}
+						disabled={!systemHasBody}
+						onclick={() => (systemOpen = !systemOpen)}
+					>
+						<span>
+							<span class="font-bold">{actor.name}</span>
+							<span class="inline-flex items-center gap-1 mx-0.5 px-1.5 py-0.5 rounded-tag bg-surface border border-border-card text-text-secondary text-[11px] font-medium align-[1px]">
+								<Bot size={10} />
+								Automated
+							</span>
+							{event.summary}
+						</span>
+						{#if systemHasBody}
+							<ChevronRight size={14} class="shrink-0 text-text-secondary transition-transform {systemOpen ? 'rotate-90' : ''}" />
+						{/if}
+					</button>
 				{:else}
 					<p class="text-sm tracking-[-0.3px]">
 						<span class="font-bold">{actor.name}</span>
@@ -519,6 +577,10 @@
 					</div>
 				{/each}
 			</div>
+		{/if}
+
+		{#if event.type === 'ship' && event.blocks && event.blocks.length > 0}
+			<Blocks blocks={event.blocks} />
 		{/if}
 
 		{#if event.type === 'rejection'}
@@ -691,6 +753,35 @@
 			<div class="{event.isInternal ? 'bg-accent-bg-warm border border-dashed border-accent' : 'bg-surface'} rounded-tag p-3">
 				<p class="text-sm tracking-[-0.3px]">{@render linkedText(event.message)}</p>
 			</div>
+		{:else if event.type === 'system' && systemOpen}
+			<!-- Plain boxes: a machine's event is reviewer-only as a whole, which the
+			     Automated badge already says, so each box repeating the internal
+			     dashed border is noise. -->
+			{#if event.blocks && event.blocks.length > 0}
+				<Blocks blocks={event.blocks} />
+			{/if}
+			{#if event.reasoning || event.trace?.length}
+				<details class="group bg-surface rounded-tag min-w-0">
+					<summary class="flex items-center gap-1.5 px-3.5 py-2.5 cursor-pointer select-none list-none text-xs font-medium text-text-secondary tracking-[-0.2px] rounded-tag outline-none focus-visible:ring-2 focus-visible:ring-accent/40 [&::-webkit-details-marker]:hidden">
+						<ChevronRight size={12} class="shrink-0 transition-transform group-open:rotate-90" />
+						Reasoning
+						{#if event.trace?.length}
+							<span class="text-text-tertiary">· {event.trace.length} {event.trace.length === 1 ? 'step' : 'steps'}</span>
+						{/if}
+					</summary>
+					<div class="px-3.5 pb-3 flex flex-col gap-3">
+						{#if event.reasoning}
+							<div class="prose prose-sm max-w-none text-sm tracking-[-0.3px] break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+								<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+								{@html renderSafeMarkdown(event.reasoning)}
+							</div>
+						{/if}
+						{#if event.trace?.length}
+							<AgentTrace steps={event.trace} />
+						{/if}
+					</div>
+				</details>
+			{/if}
 		{/if}
 
 		{#if alwaysEditing && event.type === 'pending_approval'}

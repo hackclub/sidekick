@@ -110,6 +110,7 @@ A **project** is the primary entity - the thing a participant is building. It ha
 | `hackatimeStartDate`   | `string`   | No       | ISO date (`YYYY-MM-DD`). When set, Sidekick only counts Hackatime activity on or after this date when aggregating hours - send your event's start date so pre-event time on reused Hackatime projects doesn't inflate totals. Omit to count all-time. Also rendered as a cutoff marker in the reviewer's Hackatime day list, with pre-cutoff days dimmed. |
 | `ships`                | `Ship[]`   | Yes      | All submissions for this project, ordered chronologically.                                                                                  |
 | `tags`                 | `ProjectTag[]` | No   | Colored labels shown on the review queue (see below). Omit or send `[]` for none.                                                            |
+| `platformUrl`          | `string`   | No       | The project's own page on your program's site. When set, the review page shows an "Open in <program>" button next to "Copy JSON".          |
 | `metadata`             | `object`   | No       | Any program-specific extra data. Sidekick preserves but doesn't interpret it.                                                               |
 
 #### Project Tags
@@ -140,6 +141,7 @@ A **ship** is a submission event - each time a participant submits their project
 | `approveFields`  | `ReviewFieldDefinition[]` | No     | Custom fields to show when approving this ship. If omitted or empty, no extra fields are shown. |
 | `rejectFields`   | `ReviewFieldDefinition[]` | No     | Custom fields to show when rejecting this ship. If omitted or empty, no extra fields are shown. |
 | `supportsRewardedOverride` | `boolean`     | No     | Advertises that approvals of this ship accept `rewardedHoursOverride` (see below). Default `false`. |
+| `checks`         | `ProgramCheck[]`        | No       | Checks your program ran on this ship, shown in the review page's "Automated checks" card (see below). Only read from the ship under review. |
 
 Ships are always embedded inside their parent project - they're never returned as standalone objects.
 
@@ -148,6 +150,34 @@ A project can accumulate **consecutive pending ships** when a participant re-shi
 #### Rewarded Hours Override
 
 Some programs reward participants for a different number of hours than what lands in the Airtable Unified YSWS DB. If a ship advertises `supportsRewardedOverride: true`, Sidekick lets the reviewer optionally fill in a **rewarded hours override** when approving. When set, it is sent as `rewardedHoursOverride` alongside `hoursAssigned` in `SUBMIT_REVIEW_ACTION` (and carried through `authorize` for two-stage flows). Where and how the override is surfaced (payouts, shop balance, etc.) is entirely up to your program; `hoursAssigned` remains the canonical value for the Unified YSWS DB. Echo the override back on the corresponding `"approval"` timeline events so Sidekick can display it.
+
+#### Program Checks
+
+If your program already screens submissions itself (required fields, a fraud heuristic, a linter, an AI pre-screen), report the results on the pending ship and Sidekick lists them in the "Automated checks" card beside its own checks, instead of you having to squeeze them into a text field.
+
+```json
+{
+  "id": "H2",
+  "name": "Tracked time is covered by heartbeats",
+  "status": "fail",
+  "severity": "warn",
+  "group": "Fraud signals",
+  "summary": "The project's tracked time is more than its heartbeats cover.",
+  "url": "https://your-program.hackclub.com/guides/hours"
+}
+```
+
+| Field      | Type     | Required | Description |
+| ---------- | -------- | -------- | ----------- |
+| `id`       | `string` | Yes      | Stable identifier, unique within the ship's checks. |
+| `name`     | `string` | Yes      | What the check verifies, as a short phrase. |
+| `status`   | `string` | Yes      | `"pass"`, `"fail"`, or `"inconclusive"` (the check could not run, e.g. an upstream API was down). |
+| `severity` | `string` | No       | `"info"`, `"warn"`, `"fail"`, or `"critical"`. A failing `"info"` or `"warn"` check renders as a warning rather than a failure. Default `"fail"`. |
+| `group`    | `string` | No       | Heading the check is listed under, e.g. `"Pre-screen"`. Checks without one are grouped under your program's name. Groups appear in the order they first occur. |
+| `summary`  | `string` | No       | One or two sentences for the reviewer, shown under a failing or inconclusive check. Plain text. |
+| `url`      | `string` | No       | An `http(s)` page explaining the rule, linked from the check's name. |
+
+Failures, warnings and inconclusive checks are always shown; passing checks are folded behind a count per group. Sidekick never re-runs or interprets program checks.
 
 #### Review Field Definitions
 
@@ -168,10 +198,37 @@ Ships can declare custom fields that reviewers must fill in when approving or re
 | -------------- | --------------------------- | -------- | --------------------------------------------------------------------------- |
 | `name`         | `string`                    | Yes      | Machine-readable key. Used in the submitted `fields` object.                |
 | `label`        | `string`                    | Yes      | Human-readable label shown to the reviewer.                                 |
-| `type`         | `string`                    | Yes      | `"string"`, `"integer"`, `"boolean"`, or `"markdown"`. `"markdown"` behaves exactly like `"string"` but is rendered as a textarea with Markdown support. |
+| `type`         | `string`                    | Yes      | `"string"`, `"integer"`, `"boolean"`, `"markdown"`, or `"select"`. `"markdown"` behaves exactly like `"string"` but is rendered as a textarea with Markdown support. `"select"` is a dropdown over `options`. |
 | `required`     | `boolean`                   | No       | If `true`, the reviewer must fill this field before submitting. Default `false`. |
-| `placeholder`  | `string`                    | No       | Placeholder text for string/integer inputs, or description text for boolean checkboxes. |
-| `defaultValue` | `string \| number \| boolean` | No     | Initial value pre-filled in the input. Type should match the field's `type`. |
+| `placeholder`  | `string`                    | No       | Placeholder text for string/integer inputs and for a select with nothing chosen, or description text for boolean checkboxes. |
+| `defaultValue` | `string \| number \| boolean` | No     | Initial value pre-filled in the input. Type should match the field's `type`; for `"select"` it is an option's `value`. |
+| `options`      | `ReviewFieldOption[]`       | For `"select"` | The choices a `"select"` field offers. Ignored for other types. |
+
+A **select** field's options can be grouped under headings and carry a small preview image, which suits choices that are easier to recognise than to name (a card, a badge, a track):
+
+```json
+{
+  "name": "card_override",
+  "label": "Card",
+  "type": "select",
+  "defaultValue": "offer_12",
+  "options": [
+    { "value": "offer_1", "label": "Wildcard ×1", "imageUrl": "https://your-cdn.com/cards/wildcard.webp" },
+    { "value": "offer_12", "label": "Cozy game ×1.3", "group": "Week of 14 Sep", "imageUrl": "https://your-cdn.com/cards/cozy.webp" },
+    { "value": "offer_13", "label": "Tiny tool ×1.2", "group": "Week of 14 Sep", "description": "Under 500 lines" }
+  ]
+}
+```
+
+| Field         | Type     | Required | Description |
+| ------------- | -------- | -------- | ----------- |
+| `value`       | `string` | Yes      | Sent as the field's value when chosen. |
+| `label`       | `string` | Yes      | Shown in the menu and on the closed control. |
+| `description` | `string` | No       | A second, muted line under the label. |
+| `group`       | `string` | No       | Heading the option is listed under. Send options of the same group next to each other; groups appear in the order they first occur, and ungrouped options stay where they are. |
+| `imageUrl`    | `string` | No       | An `http(s)` preview image, shown as a small portrait thumbnail. |
+
+As with every custom field, Sidekick only sends a value the reviewer changed from `defaultValue` (or a required one), so a select defaulting to the current state arrives only when the reviewer picked something else.
 
 Field values submitted by reviewers are sent as part of the `fields` object in `SUBMIT_REVIEW_ACTION` and `UPDATE_REVIEW_ACTION` (see below). Values are typed according to the field definition: strings for `"string"` and `"markdown"`, numbers for `"integer"`, and booleans for `"boolean"`.
 
@@ -309,6 +366,7 @@ All events carry an `actorId` (the person who performed the action) and a `times
 | `displayFields[].label` | `string` | Yes    | Human-readable label for the field.                                                        |
 | `displayFields[].value` | `string` | Yes    | The field's content. Plain text; URLs are auto-linked.                                     |
 | `displayFields[].isInternal` | `boolean` | No | If `true`, the field is reviewer-only and rendered with internal styling. Default `false` (public - the participant may see it in your program's own UI). |
+| `blocks`             | `Block[]` | No      | Rich content rendered after `displayFields` (see [Blocks](#blocks)). |
 
 Recognized fields and their `diffType`:
 
@@ -394,6 +452,54 @@ Programs with a two-stage review flow can emit this for a first-pass approval th
 | `internalMessage` | `string` | No       | Internal-only notes for other reviewers. |
 | `fields`          | `object` | No       | Custom field values from the review. Keys match `ReviewFieldDefinition.name`. |
 
+**`"system"` (optional) - something a machine said about the project**
+
+An automated reviewer's verdict, a bot's analysis, a pipeline's report: anything that isn't a person. System events have no `actorId`; `source` names the machine, and the event reads "*source name* · Automated · *summary*" (shown to reviewers only, so its boxes are drawn plain rather than with the internal styling), folded to that line until the reviewer opens it. They are never editable from Sidekick.
+
+```json
+{
+  "type": "system",
+  "id": "autoreview:ship_002",
+  "shipId": "ship_002",
+  "source": { "name": "Autoreview" },
+  "summary": "suggested approving 6.5h",
+  "tone": "success",
+  "blocks": [
+    { "type": "context", "elements": [{ "type": "text", "text": "Confidence 0.82 · 6.5h of 8h claimed" }] },
+    { "type": "section", "title": "Suggested feedback", "text": "Lovely README!" }
+  ],
+  "reasoning": "The heartbeats cover 6.4h; the remaining claim falls on two days with no commits.",
+  "trace": [
+    { "type": "thought", "text": "Compare the claimed hours with the heartbeats first." },
+    { "type": "tool_call", "name": "hackatime.heartbeats", "input": { "project": "comet-chat", "since": "2026-05-15" }, "output": { "coveredHours": 6.4, "days": 9 }, "durationMs": 840 },
+    { "type": "tool_call", "name": "github.commits", "input": { "repo": "user/comet-chat" }, "output": "rate limited", "isError": true, "durationMs": 120 },
+    { "type": "text", "text": "Suggesting 6.5h: the two uncovered days have no commits either." }
+  ],
+  "timestamp": "2026-05-28T10:05:00Z"
+}
+```
+
+| Field        | Type      | Required | Description |
+| ------------ | --------- | -------- | ----------- |
+| `id`         | `string`  | Yes      | Stable identifier for the event. |
+| `shipId`     | `string`  | No       | The ship the event is about, if any. |
+| `source`     | `object`  | Yes      | `{ "name": string, "iconUrl"?: string }`. `iconUrl` (http(s)) replaces the default robot avatar. |
+| `summary`    | `string`  | Yes      | One line completing "*source name* …", e.g. `"suggested approving 6.5h"`. |
+| `tone`       | `string`  | No       | `"neutral"`, `"success"`, `"warning"`, or `"danger"`: colours the event's icon so the verdict reads at a glance. Default `"neutral"`. |
+| `blocks`     | `Block[]` | No       | The event's body (see [Blocks](#blocks)), shown when the reviewer unfolds the event. |
+| `reasoning`  | `string`  | No       | The machine's reasoning (Markdown), collapsed behind a "Reasoning" toggle. |
+| `trace`      | `TraceStep[]` | No   | What an agent did, step by step, shown under the reasoning (see below). |
+
+A **trace step** is one of:
+
+| `type`        | Fields | Shown as |
+| ------------- | ------ | -------- |
+| `"thought"`   | `text` (Markdown) | Muted text: what the agent considered. |
+| `"text"`      | `text` (Markdown) | Plain text: what the agent said or concluded. |
+| `"tool_call"` | `name`, `input?`, `output?`, `isError?`, `durationMs?` | A row with the tool's name, a one-line glimpse of its input and how long it took; opening it shows the full input and output. `input` and `output` may be strings or any JSON (pretty-printed). `isError: true` marks the output as an error. |
+
+Send steps in the order they happened. Traces can be long; Sidekick keeps each input and output in its own scrolling box, but trim anything a reviewer would never read (a whole file's contents, say) before sending it.
+
 **`"comment"` - a comment on the project**
 
 ```json
@@ -411,6 +517,46 @@ Programs with a two-stage review flow can emit this for a first-pass approval th
 | `message`    | `string`  | Yes      | The comment body.                                                     |
 | `isInternal` | `boolean` | Yes      | `true` = only visible to reviewers. `false` = visible to participant. |
 
+### Blocks
+
+Blocks are program-defined rich content, loosely modelled on Slack's Block Kit: a short list of typed blocks that Sidekick lays out consistently, so you can show program-specific data without Sidekick having to know what it means. Ship events (`blocks`) and system events accept them.
+
+Every text field in a block is **Markdown**. HTML in it is escaped, links keep only `http(s):` and `mailto:` targets, and images only `http(s):` sources; anything else renders as plain text. Any block may set `isInternal: true` to get the reviewer-only styling (dashed orange). Unknown block types are skipped, so newer programs degrade gracefully on older Sidekicks.
+
+**`section`** - the workhorse: a title, body text, a label/value grid and a thumbnail leading the text. Every part is optional.
+
+```json
+{
+  "type": "section",
+  "title": "Card",
+  "text": "**Cozy game** ×1.3\nA game you could play with a cup of tea.",
+  "fields": [{ "label": "Picked", "value": "Week of 14 Sep" }],
+  "accessory": { "imageUrl": "https://your-cdn.com/cards/cozy.webp", "alt": "Cozy game card" }
+}
+```
+
+**`image`** - one larger picture, with an optional title and caption.
+
+```json
+{ "type": "image", "imageUrl": "https://your-cdn.com/diagram.png", "alt": "Commit timeline", "title": "Commits", "caption": "Two gaps longer than a week." }
+```
+
+**`context`** - a single muted line of small text and round icons, for metadata.
+
+```json
+{ "type": "context", "elements": [
+  { "type": "image", "imageUrl": "https://your-cdn.com/bot.png", "alt": "" },
+  { "type": "text", "text": "Rulebook 2026.09.1 · ran 3m after the ship" }
+] }
+```
+
+**`callout`** - a tinted box with an icon for something the reviewer shouldn't miss. `tone` is `"info"`, `"success"`, `"warning"`, or `"danger"`.
+
+```json
+{ "type": "callout", "tone": "warning", "title": "Re-ship", "text": "Two earlier ships were superseded before review." }
+```
+
+**`divider`** - a horizontal rule. `{ "type": "divider" }`
 
 ## Actions Reference
 
