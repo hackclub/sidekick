@@ -976,6 +976,24 @@
 		return out;
 	});
 
+	// Commits on the selected day, pinned onto the scatter at their exact time.
+	const dayCommitMarks = $derived(
+		markers
+			.filter(
+				(m) =>
+					m.type === 'commit' &&
+					markerDate(m.timestamp) === currentDate &&
+					(!commitAuthorFilter || m.authorKey === commitAuthorFilter)
+			)
+			.map((m, i) => ({
+				key: `${m.timestamp}-${i}`,
+				time: new Date(m.timestamp).getTime(),
+				title: m.title,
+				subtitle: m.subtitle,
+				avatarUrl: m.avatarUrl
+			}))
+	);
+
 	const allMarkers = $derived(historyMarkers.length ? [...markers, ...historyMarkers] : markers);
 
 	const historyTabs = $derived(
@@ -1296,6 +1314,7 @@
 				historyMarks={dayHistoryMarks}
 				flaggedRanges={dayFlaggedRanges}
 				onhistoryclick={focusHistoryEntry}
+				commitMarks={dayCommitMarks}
 			/>
 
 			{#if ridiculousCount > 0}

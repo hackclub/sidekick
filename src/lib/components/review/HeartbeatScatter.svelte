@@ -5,6 +5,15 @@
 		type HistoryMark
 	} from '$lib/review/localHistory.js';
 	import { HISTORY_KIND_STYLE } from '$lib/review/localHistoryStyle.js';
+	import { Code } from 'lucide-svelte';
+
+	export interface CommitMark {
+		key: string;
+		time: number;
+		title: string;
+		subtitle?: string;
+		avatarUrl?: string;
+	}
 
 	interface HeartbeatPoint {
 		time: number;
@@ -24,6 +33,8 @@
 		/** Stretches of coding with no local history behind them. */
 		flaggedRanges?: FlaggedRange[];
 		onhistoryclick?: (key: string) => void;
+		/** Git commits to pin above the plot. */
+		commitMarks?: CommitMark[];
 	}
 
 	let {
@@ -33,12 +44,21 @@
 		onfocuschange,
 		historyMarks = [],
 		flaggedRanges = [],
-		onhistoryclick
+		onhistoryclick,
+		commitMarks = []
 	}: Props = $props();
 
 	const GRID = { left: 50, right: 30, bottom: 80 };
-	// Room above the plot for the history icon row.
-	const gridTop = $derived(historyMarks.length > 0 || flaggedRanges.length > 0 ? 84 : 50);
+	const COMMIT_COLOR = '#8b5cf6';
+
+	// Icon rows between the legend and the plot: commits on top, local history below.
+	const hasHistoryRow = $derived(historyMarks.length > 0 || flaggedRanges.length > 0);
+	const hasCommitRow = $derived(commitMarks.length > 0);
+	const commitRowTop = 26;
+	const historyRowTop = $derived(hasCommitRow ? 48 : 30);
+	const gridTop = $derived(
+		hasCommitRow && hasHistoryRow ? 90 : hasCommitRow || hasHistoryRow ? 84 : 50
+	);
 
 	// Bumped whenever the chart's x mapping changes (render, zoom, resize) so the
 	// HTML overlays get repositioned.
@@ -243,12 +263,19 @@
 		kind: HistoryMark['kind'];
 	}
 
+	interface CommitCluster {
+		x: number;
+		marks: CommitMark[];
+	}
+
 	const overlay = $derived.by(() => {
 		void layoutTick;
 		const clusters: MarkCluster[] = [];
 		const lines: { x: number; kind: HistoryMark['kind'] }[] = [];
 		const bands: (FlaggedRange & { x1: number; x2: number })[] = [];
-		if (!chart || plotWidth === 0) return { clusters, lines, bands };
+		const commitClusters: CommitCluster[] = [];
+		const commitLines: number[] = [];
+		if (!chart || plotWidth === 0) return { clusters, lines, bands, commitClusters, commitLines };
 
 		const minX = GRID.left;
 		const maxX = plotWidth - GRID.right;
@@ -278,10 +305,20 @@
 			if (x2 > x1) bands.push({ ...r, x1, x2 });
 		}
 
-		return { clusters, lines, bands };
+		for (const m of [...commitMarks].sort((a, b) => a.time - b.time)) {
+			const x = toPx(m.time);
+			if (x === null || x < minX - 1 || x > maxX + 1) continue;
+			commitLines.push(x);
+			const last = commitClusters[commitClusters.length - 1];
+			if (last && x - last.x < 16) last.marks.push(m);
+			else commitClusters.push({ x, marks: [m] });
+		}
+
+		return { clusters, lines, bands, commitClusters, commitLines };
 	});
 
 	let hoveredCluster = $state<MarkCluster | null>(null);
+	let hoveredCommits = $state<CommitCluster | null>(null);
 
 	function formatMarkTime(t: number): string {
 		return new Date(t).toLocaleTimeString('en-US', {
@@ -361,7 +398,7 @@
 	{#each overlay.lines as line, i (i)}
 		<div
 			class="pointer-events-none absolute w-px opacity-40"
-			style="left: {line.x}px; top: 46px; bottom: {GRID.bottom}px; background: {HISTORY_KIND_STYLE[
+			style="left: {line.x}px; top: {historyRowTop + 16}px; bottom: {GRID.bottom}px; background: {HISTORY_KIND_STYLE[
 				line.kind
 			].color};"
 		></div>
@@ -372,7 +409,7 @@
 		<button
 			type="button"
 			class="absolute -translate-x-1/2 z-10 flex items-center gap-0.5 rounded-full h-4 px-1 shadow-sm cursor-pointer ring-1 ring-page/60"
-			style="left: {cluster.x}px; top: 30px; background-color: {kindStyle.color};"
+			style="left: {cluster.x}px; top: {historyRowTop}px; background-color: {kindStyle.color};"
 			aria-label="{cluster.marks.length} local history entr{cluster.marks.length === 1 ? 'y' : 'ies'}"
 			onmouseenter={() => (hoveredCluster = cluster)}
 			onmouseleave={() => (hoveredCluster = null)}
@@ -384,6 +421,58 @@
 			{/if}
 		</button>
 	{/each}
+
+	{#each overlay.commitLines as x, i (i)}
+		<div
+			class="pointer-events-none absolute border-l border-dashed opacity-70"
+			style="left: {x}px; top: {commitRowTop + 16}px; bottom: {GRID.bottom}px; border-color: {COMMIT_COLOR};"
+		></div>
+	{/each}
+
+	{#each overlay.commitClusters as cluster, i (i)}
+		<button
+			type="button"
+			class="absolute -translate-x-1/2 z-10 flex items-center gap-0.5 rounded-full h-4 px-1 shadow-sm cursor-pointer ring-1 ring-page/60"
+			style="left: {cluster.x}px; top: {commitRowTop}px; background-color: {COMMIT_COLOR};"
+			aria-label="{cluster.marks.length} commit{cluster.marks.length === 1 ? '' : 's'}"
+			onmouseenter={() => (hoveredCommits = cluster)}
+			onmouseleave={() => (hoveredCommits = null)}
+			onclick={() => onfocuschange?.(cluster.marks[0].time)}
+		>
+			<Code size={10} color="white" strokeWidth={2.5} />
+			{#if cluster.marks.length > 1}
+				<span class="text-[8px] font-bold text-white leading-none">{cluster.marks.length}</span>
+			{/if}
+		</button>
+	{/each}
+
+	{#if hoveredCommits}
+		<div
+			class="pointer-events-none absolute z-20 w-64 -translate-x-1/2 rounded-tag border border-border-card bg-page px-2.5 py-2 shadow-card"
+			style="left: {Math.min(Math.max(hoveredCommits.x, 130), plotWidth - 130)}px; top: {gridTop}px;"
+		>
+			{#each hoveredCommits.marks.slice(0, 6) as mark (mark.key)}
+				<div class="flex flex-col gap-0.5 py-0.5">
+					<span class="text-[12px] text-text-primary leading-snug line-clamp-2">{mark.title}</span>
+					<div class="flex items-center gap-1.5 min-w-0">
+						{#if mark.avatarUrl}
+							<img src={mark.avatarUrl} alt="" class="w-3.5 h-3.5 rounded-full shrink-0 object-cover" />
+						{/if}
+						{#if mark.subtitle}
+							<span class="text-[11px] text-text-secondary truncate">{mark.subtitle}</span>
+						{/if}
+						<span class="ml-auto text-[10px] font-mono text-text-tertiary shrink-0"
+							>{formatMarkTime(mark.time)}</span
+						>
+					</div>
+				</div>
+			{/each}
+			{#if hoveredCommits.marks.length > 6}
+				<span class="text-[11px] text-text-tertiary italic">+{hoveredCommits.marks.length - 6} more</span>
+			{/if}
+			<div class="text-[10px] text-text-tertiary mt-1">Click to jump to it in the table</div>
+		</div>
+	{/if}
 
 	{#if hoveredCluster}
 		<div
