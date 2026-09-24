@@ -5,7 +5,7 @@
 	import SelectField from '$lib/components/ui/SelectField.svelte';
 	import Checkbox from '$lib/components/ui/Checkbox.svelte';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
-	import { evaluateArithmetic } from '$lib/utils/math-expr.js';
+	import { evaluateHours } from '$lib/utils/math-expr.js';
 	import type { ReviewFieldDefinition, ReviewFieldValues } from '$lib/server/protocol/types.js';
 
 	const log = createLogger('ReviewActionPanel');
@@ -82,7 +82,7 @@
 	}
 
 	function collapseHoursExpression() {
-		const value = evaluateArithmetic(hoursRaw);
+		const value = evaluateHours(hoursRaw);
 		if (value !== null) {
 			setHours(Math.round(value * 100) / 100);
 		}
@@ -446,12 +446,11 @@
 					<input
 						id="hours"
 						type="text"
-						inputmode="decimal"
 						value={hoursRaw}
 						oninput={(e) => {
 							userEditedHours = true;
 							hoursRaw = e.currentTarget.value;
-							hoursAssigned = evaluateArithmetic(hoursRaw) ?? NaN;
+							hoursAssigned = evaluateHours(hoursRaw) ?? NaN;
 						}}
 						onchange={collapseHoursExpression}
 						class="border border-border-input rounded-section px-3.5 py-2.5 text-sm w-full bg-white outline-none focus:border-accent transition-colors"

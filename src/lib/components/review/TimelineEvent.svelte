@@ -2,7 +2,7 @@
 	import { Ship, CircleX, CircleCheck, MessageSquare, Eye, Pencil, X, Check, Clock, ShieldCheck, Loader2, Type, Link, Image, Gift, AlertTriangle, Bot, ChevronRight } from 'lucide-svelte';
 	import type { TimelineEvent as TEvent, ReviewFieldDefinition } from '$lib/server/protocol/types.js';
 	import { wordDiff } from '$lib/utils/diff.js';
-	import { evaluateArithmetic } from '$lib/utils/math-expr.js';
+	import { evaluateHours } from '$lib/utils/math-expr.js';
 	import { renderSafeMarkdown, isSafeImageUrl } from '$lib/utils/markdown.js';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import MarkdownTextarea from '$lib/components/ui/MarkdownTextarea.svelte';
@@ -93,7 +93,7 @@
 	}
 
 	function collapseHoursExpression() {
-		const value = evaluateArithmetic(editHoursRaw);
+		const value = evaluateHours(editHoursRaw);
 		if (value !== null) {
 			setEditHours(Math.round(value * 100) / 100);
 		}
@@ -188,7 +188,7 @@
 	async function saveEditing() {
 		if (saving) return;
 		if (event.type === 'pending_approval' && !Number.isFinite(editHours)) {
-			editError = 'Hours to assign must be a number or arithmetic expression.';
+			editError = 'Hours to assign must be a number, a duration like 1h 50m, or an arithmetic expression.';
 			return;
 		}
 		saving = true;
@@ -239,7 +239,7 @@
 			return;
 		}
 		if (!Number.isFinite(editHours)) {
-			editError = 'Hours to assign must be a number or arithmetic expression.';
+			editError = 'Hours to assign must be a number, a duration like 1h 50m, or an arithmetic expression.';
 			return;
 		}
 		editError = null;
@@ -661,11 +661,10 @@
 						<input
 							id="pending-hours-{event.id}"
 							type="text"
-							inputmode="decimal"
 							value={editHoursRaw}
 							oninput={(e) => {
 								editHoursRaw = e.currentTarget.value;
-								editHours = evaluateArithmetic(editHoursRaw) ?? NaN;
+								editHours = evaluateHours(editHoursRaw) ?? NaN;
 							}}
 							onchange={collapseHoursExpression}
 							class="border border-border-input rounded-tag px-2.5 py-2 text-sm w-full bg-white outline-none focus:border-accent transition-colors"

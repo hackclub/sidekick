@@ -4,7 +4,20 @@
  * isn't a well-formed expression or doesn't produce a finite number.
  */
 export function evaluateArithmetic(input: string): number | null {
-	const tokens = tokenize(input);
+	return evaluate(input, false);
+}
+
+/**
+ * Like {@link evaluateArithmetic}, but for an hours field: numbers may carry an
+ * `h`/`m`/`s` unit (converted to hours), and adjacent durations add up, so
+ * "50m", "1h 50m", "1h30m" and "2 * 45m" all work. Bare numbers are hours.
+ */
+export function evaluateHours(input: string): number | null {
+	return evaluate(input, true);
+}
+
+function evaluate(input: string, units: boolean): number | null {
+	const tokens = tokenize(input, units);
 	if (!tokens)
 		return null;
 
@@ -63,16 +76,32 @@ export function evaluateArithmetic(input: string): number | null {
 
 type Token = number | '+' | '-' | '*' | '/' | '(' | ')';
 
-function tokenize(input: string): Token[] | null {
+const UNIT_HOURS: Record<string, number> = { h: 1, m: 1 / 60, s: 1 / 3600 };
+
+function tokenize(input: string, units = false): Token[] | null {
 	const tokens: Token[] = [];
-	const re = /\s*(?:(\d+(?:\.\d+)?|\.\d+)|([-+*/()]))/y;
+	const re = units
+		? /\s*(?:(\d+(?:\.\d+)?|\.\d+)\s*([hms])?(?![a-z])|([-+*/()]))/iy
+		: /\s*(?:(\d+(?:\.\d+)?|\.\d+)()|([-+*/()]))/y;
 	let pos = 0;
+	let lastWasDuration = false;
 	while (pos < input.length) {
 		re.lastIndex = pos;
 		const match = re.exec(input);
 		if (!match)
 			return input.slice(pos).trim() === '' ? tokens : null;
-		tokens.push(match[1] !== undefined ? parseFloat(match[1]) : (match[2] as Token));
+		if (match[1] !== undefined) {
+			const unit = match[2]?.toLowerCase();
+			// "1h 50m" — consecutive durations are summed.
+			if (unit && lastWasDuration)
+				tokens.push('+');
+			tokens.push(parseFloat(match[1]) * (unit ? UNIT_HOURS[unit] : 1));
+			lastWasDuration = !!unit;
+		}
+		else {
+			tokens.push(match[3] as Token);
+			lastWasDuration = false;
+		}
 		pos = re.lastIndex;
 	}
 	return tokens;
