@@ -16,8 +16,14 @@
 		CalendarOff,
 		Database,
 		CircleHelp,
-		RefreshCw
+		RefreshCw,
+		History as HistoryIcon,
+		Sparkles,
+		TriangleAlert,
+		FileArchive,
+		LoaderCircle as Spinner
 	} from 'lucide-svelte';
+	import { tick } from 'svelte';
 	import {
 		cachedHackatimeFetch,
 		invalidateClientHackatimeCache,
@@ -28,6 +34,15 @@
 	import HeartbeatTable from './HeartbeatTable.svelte';
 	import HackatimeBreakdown from './HackatimeBreakdown.svelte';
 	import HackatimeFiles from './HackatimeFiles.svelte';
+	import LocalHistoryPanel from './LocalHistoryPanel.svelte';
+	import {
+		parseLocalHistoryZip,
+		analyzeLocalHistory,
+		baseName,
+		type LocalHistory,
+		type HistoryMark,
+		type FlaggedRange
+	} from '$lib/review/localHistory.js';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
 	import Checkbox from '$lib/components/ui/Checkbox.svelte';
 
@@ -64,7 +79,16 @@
 		totalSeconds: number;
 	}
 
-	type MarkerType = 'commit' | 'approval' | 'rejection' | 'comment' | 'ship' | 'airtable';
+	type MarkerType =
+		| 'commit'
+		| 'approval'
+		| 'rejection'
+		| 'comment'
+		| 'ship'
+		| 'airtable'
+		| 'history'
+		| 'aiEdit'
+		| 'noHistory';
 
 	interface ReviewMarker {
 		type: MarkerType;
@@ -111,7 +135,10 @@
 		approval: { icon: Check, label: 'Approval', color: '#22c55e' },
 		rejection: { icon: X, label: 'Rejection', color: '#ef4444' },
 		comment: { icon: MessageSquare, label: 'Comment', color: '#3b82f6' },
-		airtable: { icon: Database, label: 'Airtable record', color: '#ec4899' }
+		airtable: { icon: Database, label: 'Airtable record', color: '#ec4899' },
+		history: { icon: HistoryIcon, label: 'Local history file', color: '#0d9488' },
+		aiEdit: { icon: Sparkles, label: 'AI-edited file', color: '#a855f7' },
+		noHistory: { icon: TriangleAlert, label: 'Session without history', color: '#bf0000' }
 	};
 
 	const MARKER_ORDER: MarkerType[] = [
@@ -120,7 +147,10 @@
 		'approval',
 		'rejection',
 		'comment',
-		'airtable'
+		'airtable',
+		'noHistory',
+		'aiEdit',
+		'history'
 	];
 
 	const MAX_VISIBLE_PROJECTS = 4;
@@ -163,12 +193,15 @@
 	let breakdownScope = $state<'day' | 'all'>('day');
 	let allHeartbeats = $state<HeartbeatRow[] | null>(null);
 	let allHeartbeatsLoading = $state(false);
+	// Set after a failed all-time fetch so the auto-fetch effect doesn't retry in a loop.
+	let allHeartbeatsFailed = $state(false);
 	let heartbeatsFromCache = $state(false);
 
 	const detailTabs = [
 		{ id: 'graph', label: 'Graph', icon: ChartLine },
 		{ id: 'breakdown', label: 'Breakdown', icon: PieChart },
-		{ id: 'files', label: 'Files', icon: FileCode }
+		{ id: 'files', label: 'Files', icon: FileCode },
+		{ id: 'history', label: 'Local history', icon: HistoryIcon }
 	];
 
 	const effectiveProjectKeys = $derived(selectedProject ? [selectedProject] : hackatimeProjectKeys);
@@ -410,17 +443,21 @@
 	// after them, so review actions between active days roll onto the next one.
 	const dayMarkers = $derived.by(() => {
 		const result: Record<string, MarkerGroup[]> = {};
-		if (!allActiveDays.length || markers.length === 0) return result;
+		if (!allActiveDays.length || allMarkers.length === 0) return result;
 
 		const ascDates = allActiveDays.map((d) => d.date).sort();
 		const firstDate = ascDates[0];
 		const lastDate = ascDates[ascDates.length - 1];
 		const byDate: Record<string, Record<string, ReviewMarker[]>> = {};
 
-		for (const m of markers) {
+		for (const m of allMarkers) {
 			const mDate = markerDate(m.timestamp);
 			const target =
-				m.type === 'commit' || m.type === 'airtable'
+				m.type === 'commit' ||
+				m.type === 'airtable' ||
+				m.type === 'history' ||
+				m.type === 'aiEdit' ||
+				m.type === 'noHistory'
 					? (ascDates.findLast((d) => d <= mDate) ?? firstDate)
 					: (ascDates.find((d) => d >= mDate) ?? lastDate);
 			byDate[target] ??= {};
@@ -664,6 +701,7 @@
 			invalidateClientHackatimeCache(hackatimeUser);
 			activityCache = {};
 			allHeartbeats = null;
+			allHeartbeatsFailed = false;
 			commitGaps = {};
 			refreshNonce++;
 			await loadOverview();
@@ -697,13 +735,19 @@
 		} catch (e) {
 			log.error('Failed to fetch all heartbeats', {}, e);
 			allHeartbeats = null;
+			allHeartbeatsFailed = true;
 		} finally {
 			allHeartbeatsLoading = false;
 		}
 	}
 
 	$effect(() => {
-		if (breakdownScope === 'all' && !allHeartbeats && !allHeartbeatsLoading) {
+		if (
+			(breakdownScope === 'all' || localHistory) &&
+			!allHeartbeats &&
+			!allHeartbeatsLoading &&
+			!allHeartbeatsFailed
+		) {
 			fetchAllHeartbeats();
 		}
 	});
@@ -711,6 +755,7 @@
 	$effect(() => {
 		void effectiveProjectKeys;
 		allHeartbeats = null;
+		allHeartbeatsFailed = false;
 	});
 
 	const allCodingHeartbeats = $derived(
@@ -810,6 +855,136 @@
 	function formatGap(seconds: number): string {
 		return seconds >= 86400 ? '>1d' : formatDuration(seconds);
 	}
+
+	// ── VS Code local history ───────────────────────────────────────────────
+	// A reviewer-supplied zip of the author's History folder, correlated with
+	// heartbeats in-browser. Not persisted anywhere.
+	let localHistory = $state<LocalHistory | null>(null);
+	let historyParsing = $state(false);
+	let historyError = $state<string | null>(null);
+	let historyFocusKey = $state<string | null>(null);
+	let historyInput = $state<HTMLInputElement>();
+
+	async function loadLocalHistory(file: File) {
+		historyParsing = true;
+		historyError = null;
+		try {
+			localHistory = await parseLocalHistoryZip(file);
+			activeTab = 'history';
+			log.info('Loaded local history', {
+				files: localHistory.files.length,
+				entries: localHistory.entries.length
+			});
+		} catch (e) {
+			log.error('Failed to read local history zip', {}, e);
+			historyError = e instanceof Error ? e.message : String(e);
+			activeTab = 'history';
+		} finally {
+			historyParsing = false;
+		}
+	}
+
+	async function focusHistoryEntry(key: string) {
+		activeTab = 'history';
+		historyFocusKey = null;
+		await tick();
+		historyFocusKey = key;
+	}
+
+	// All-time heartbeats once they're in; until then just the selected day.
+	const historyHeartbeats = $derived(allCodingHeartbeats ?? codingHeartbeats);
+	const historyAnalysis = $derived(
+		localHistory && historyHeartbeats ? analyzeLocalHistory(localHistory, historyHeartbeats) : null
+	);
+	const historyAnalysisPartial = $derived(!!localHistory && !allCodingHeartbeats);
+
+	const historyFileByKey = $derived(new Map((localHistory?.files ?? []).map((f) => [f.key, f])));
+
+	const dayHistoryMarks = $derived.by((): HistoryMark[] => {
+		if (!historyAnalysis) return [];
+		return historyAnalysis.projectEntries
+			.filter((e) => dayString(e.timestamp) === currentDate)
+			.map((e) => ({
+				key: e.key,
+				time: e.timestamp,
+				kind: e.kind,
+				title: baseName(historyFileByKey.get(e.fileKey)?.displayPath ?? ''),
+				subtitle: e.kind === 'ai' ? e.prompt ?? e.source : e.source
+			}));
+	});
+
+	const dayFlaggedRanges = $derived.by((): FlaggedRange[] => {
+		if (!historyAnalysis) return [];
+		return historyAnalysis.flaggedSessions
+			.filter((s) => dayString(s.start) === currentDate || dayString(s.end) === currentDate)
+			.map((s) => ({
+				start: s.start,
+				end: s.end,
+				severity: s.flag!,
+				label:
+					s.flag === 'missing'
+						? `no history · ${formatDuration(s.durationMs / 1000)}`
+						: 'history pruned'
+			}));
+	});
+
+	// Day-strip markers: one per file per day (saves / AI edits), plus every
+	// session with no history behind it.
+	const historyMarkers = $derived.by((): ReviewMarker[] => {
+		if (!historyAnalysis) return [];
+		const out: ReviewMarker[] = [];
+		const groups: Record<
+			string,
+			{ ai: number; total: number; last: number; fileKey: string; prompt?: string }
+		> = {};
+
+		for (const e of historyAnalysis.projectEntries) {
+			const id = `${dayString(e.timestamp)}|${e.fileKey}`;
+			const g = (groups[id] ??= { ai: 0, total: 0, last: 0, fileKey: e.fileKey });
+			g.total++;
+			g.last = Math.max(g.last, e.timestamp);
+			if (e.kind === 'ai') {
+				g.ai++;
+				g.prompt ??= e.prompt;
+			}
+		}
+
+		for (const g of Object.values(groups)) {
+			const name = baseName(historyFileByKey.get(g.fileKey)?.displayPath ?? '');
+			out.push({
+				type: g.ai > 0 ? 'aiEdit' : 'history',
+				timestamp: new Date(g.last).toISOString(),
+				title: name,
+				subtitle:
+					g.ai > 0
+						? `${g.ai} of ${g.total} snapshot${g.total === 1 ? '' : 's'} from AI chat${g.prompt ? ` — “${g.prompt}”` : ''}`
+						: `${g.total} snapshot${g.total === 1 ? '' : 's'}`
+			});
+		}
+
+		for (const s of historyAnalysis.flaggedSessions) {
+			if (s.flag !== 'missing') continue;
+			const files = [...new Set(s.entities.map(baseName))];
+			out.push({
+				type: 'noHistory',
+				timestamp: new Date(s.start).toISOString(),
+				title: `${formatDuration(s.durationMs / 1000)} of coding, no history`,
+				subtitle: `${s.heartbeatCount} heartbeats · ${files.slice(0, 3).join(', ')}${files.length > 3 ? '…' : ''}`
+			});
+		}
+
+		return out;
+	});
+
+	const allMarkers = $derived(historyMarkers.length ? [...markers, ...historyMarkers] : markers);
+
+	const historyTabs = $derived(
+		detailTabs.map((t) =>
+			t.id === 'history' && historyAnalysis?.flaggedSessions.some((s) => s.flag === 'missing')
+				? { ...t, color: 'text-check-fail' }
+				: t
+		)
+	);
 
 	function handleFocusChange(timestamp: number) {
 		focusedTimestamp = timestamp;
@@ -919,6 +1094,34 @@
 			</div>
 		</div>
 		<div class="flex items-center shrink-0 ml-4">
+			<input
+				bind:this={historyInput}
+				type="file"
+				accept=".zip,application/zip"
+				class="hidden"
+				onchange={(e) => {
+					const f = (e.currentTarget as HTMLInputElement).files?.[0];
+					if (f) loadLocalHistory(f);
+					(e.currentTarget as HTMLInputElement).value = '';
+				}}
+			/>
+			<button
+				class="flex items-center gap-1 text-[11px] px-2 py-1 rounded-tag cursor-pointer transition-colors shrink-0 mr-2 disabled:opacity-50 disabled:cursor-default {localHistory
+					? 'text-accent bg-accent-bg border border-accent'
+					: 'bg-page border border-border-card text-text-secondary hover:text-text-primary'}"
+				onclick={() => (localHistory ? (activeTab = 'history') : historyInput?.click())}
+				disabled={historyParsing}
+				title={localHistory
+					? `${localHistory.fileName} — open the Local history tab`
+					: "Correlate a zip of the author's VS Code History folder with these heartbeats"}
+			>
+				{#if historyParsing}
+					<Spinner size={12} class="animate-spin" />
+				{:else}
+					<FileArchive size={12} />
+				{/if}
+				{localHistory ? 'Local history loaded' : 'Upload VS Code history'}
+			</button>
 			<button
 				class="flex items-center gap-1 text-[11px] px-2 py-1 rounded-tag cursor-pointer transition-colors shrink-0 bg-page border border-border-card text-text-secondary hover:text-text-primary disabled:opacity-50 disabled:cursor-default"
 				onclick={refreshHackatimeData}
@@ -1074,7 +1277,7 @@
 			</div>
 		</div>
 	{:else if codingHeartbeats && codingHeartbeats.length > 0}
-		<TabBar tabs={detailTabs} active={activeTab} onchange={(id) => (activeTab = id)} />
+		<TabBar tabs={historyTabs} active={activeTab} onchange={(id) => (activeTab = id)} />
 
 		{#if activeTab === 'graph'}
 			<HeartbeatFrequencyBar
@@ -1090,6 +1293,9 @@
 				{hoveredTimeRange}
 				timezone={authorTimezone}
 				onfocuschange={(timestamp) => handleFocusChange(timestamp)}
+				historyMarks={dayHistoryMarks}
+				flaggedRanges={dayFlaggedRanges}
+				onhistoryclick={focusHistoryEntry}
 			/>
 
 			{#if ridiculousCount > 0}
@@ -1194,6 +1400,24 @@
 					onrangechange={(range) => (visibleRange = range)}
 				/>
 			</div>
+		{:else if activeTab === 'history'}
+			<LocalHistoryPanel
+				history={localHistory}
+				analysis={historyAnalysis}
+				partial={historyAnalysisPartial}
+				parsing={historyParsing}
+				parseError={historyError}
+				{currentDate}
+				timezone={authorTimezone}
+				focusKey={historyFocusKey}
+				onupload={loadLocalHistory}
+				onclear={() => {
+					localHistory = null;
+					historyError = null;
+					historyFocusKey = null;
+				}}
+				onselectday={selectDay}
+			/>
 		{:else if activeTab === 'breakdown' || activeTab === 'files'}
 			<div class="flex items-center gap-1 px-6 pt-4">
 				<button
