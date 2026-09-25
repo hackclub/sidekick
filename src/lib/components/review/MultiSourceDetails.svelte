@@ -277,6 +277,10 @@
 	function commitUrl(sha: string): string | null {
 		if (!repoUrl)
 			return null;
+		// Code URLs often point at a subpage like /tree/<branch>, so rebuild the bare repo URL.
+		const repo = parseGhUrl(repoUrl);
+		if (repo)
+			return `https://github.com/${repo.owner}/${repo.repo}/commit/${sha}`;
 		const clean = repoUrl.replace(/\.git$/, '').replace(/\/$/, '');
 		return `${clean}/commit/${sha}`;
 	}
