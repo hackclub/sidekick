@@ -33,12 +33,17 @@ export const load: LayoutServerLoad = async ({ cookies, url }) => {
 			isSuperAdmin: user.isSuperAdmin,
 			isProgramAuthor: user.isProgramAuthor
 		},
-		programs: programs.map((p) => ({
-			id: p.id,
-			name: p.name,
-			iconUrl: p.iconUrl,
-			description: p.description,
-			isMember: p.isMember
-		}))
+		// The pinned program always leads the list, wherever the picker or the
+		// home page shows it.
+		programs: programs
+			.map((p) => ({
+				id: p.id,
+				name: p.name,
+				iconUrl: p.iconUrl,
+				description: p.description,
+				isMember: p.isMember,
+				isPinned: p.id === user.pinnedProgramId
+			}))
+			.sort((a, b) => Number(b.isPinned) - Number(a.isPinned))
 	};
 };

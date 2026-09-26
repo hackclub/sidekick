@@ -19,10 +19,12 @@ model User {
   hcbAccessToken    String?
   hcbRefreshToken   String?
   hcbTokenExpiresAt DateTime?
+  pinnedProgramId   String?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
 
-  memberships ProgramMembership[]
+  pinnedProgram Program?            @relation("PinnedProgram", fields: [pinnedProgramId], references: [id], onDelete: SetNull)
+  memberships   ProgramMembership[]
   auditLogs   AuditLog[]
   sessions    Session[]
 }
@@ -69,6 +71,7 @@ model Program {
   rejectionTemplates     RejectionTemplate[]
   projectTagDefinitions  ProjectTagDefinition[]
   statsSnapshots         ProgramStatsSnapshot[]
+  pinnedBy               User[]                 @relation("PinnedProgram")
 }
 
 model ProgramStatsSnapshot {

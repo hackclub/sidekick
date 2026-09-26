@@ -16,4 +16,5 @@ export interface ProgramSummary {
 	iconUrl: string | null;
 	description: string | null;
 	isMember: boolean;
+	isPinned: boolean;
 }

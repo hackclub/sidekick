@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { sidebarExpanded } from '$lib/stores/sidebar.js';
 	import type { ProgramSummary, SessionUser } from '$lib/types.js';
@@ -44,6 +44,11 @@
 		showProgramSwitcher = false;
 		// eslint-disable-next-line svelte/no-navigation-without-resolve
 		goto(`/program/${program.id}`);
+	}
+
+	async function handleProgramPin(program: ProgramSummary, pinned: boolean) {
+		const res = await fetch(`/api/programs/${program.id}/pin`, { method: pinned ? 'PUT' : 'DELETE' });
+		if (res.ok) await invalidateAll();
 	}
 </script>
 
@@ -218,6 +223,7 @@
 		{programs}
 		currentProgramId={currentProgram?.id}
 		onselect={handleProgramSelect}
+		onpin={handleProgramPin}
 		onclose={() => (showProgramSwitcher = false)}
 		onmanage={currentProgram ? () => { showProgramSwitcher = false; navigateTo(`${programBase}/manage`); } : undefined}
 		oncreate={() => { showProgramSwitcher = false; navigateTo('/program/new'); }}

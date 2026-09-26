@@ -1,20 +1,22 @@
 <script lang="ts">
 	import type { ProgramSummary } from '$lib/types.js';
-	import { Plus, Settings } from 'lucide-svelte';
+	import { Pin, PinOff, Plus, Settings } from 'lucide-svelte';
 
 	interface Props {
 		programs: ProgramSummary[];
 		currentProgramId?: string;
 		onselect: (program: ProgramSummary) => void;
+		onpin: (program: ProgramSummary, pinned: boolean) => void;
 		onclose: () => void;
 		onmanage?: () => void;
 		oncreate?: () => void;
 	}
 
-	let { programs, currentProgramId, onselect, onclose, onmanage, oncreate }: Props = $props();
+	let { programs, currentProgramId, onselect, onpin, onclose, onmanage, oncreate }: Props = $props();
 
-	const memberPrograms = $derived(programs.filter((p) => p.isMember));
-	const otherPrograms = $derived(programs.filter((p) => !p.isMember));
+	const pinnedProgram = $derived(programs.find((p) => p.isPinned));
+	const memberPrograms = $derived(programs.filter((p) => p.isMember && !p.isPinned));
+	const otherPrograms = $derived(programs.filter((p) => !p.isMember && !p.isPinned));
 
 	let visible = $state(false);
 	$effect(() => {
@@ -39,21 +41,44 @@
 		tabindex="-1"
 	>
 		{#snippet programButton(program: ProgramSummary)}
-			<button
-				class="flex items-center gap-2.5 px-2.5 py-2 rounded-tag text-left transition-colors cursor-pointer w-full
+			<div
+				class="group flex items-center rounded-tag transition-colors w-full
 					{program.id === currentProgramId ? 'bg-accent-bg' : 'hover:bg-surface'}"
-				onclick={() => { visible = false; setTimeout(() => onselect(program), 150); }}
 			>
-				{#if program.iconUrl}
-					<img src={program.iconUrl} alt="" class="size-6 object-cover rounded shrink-0" />
-				{:else}
-					<div class="size-6 bg-surface rounded flex items-center justify-center text-[10px] font-bold shrink-0">
-						{program.name.charAt(0)}
-					</div>
-				{/if}
-				<span class="text-sm font-medium text-text-primary truncate">{program.name}</span>
-			</button>
+				<button
+					class="flex items-center gap-2.5 pl-2.5 py-2 text-left cursor-pointer flex-1 min-w-0"
+					onclick={() => { visible = false; setTimeout(() => onselect(program), 150); }}
+				>
+					{#if program.iconUrl}
+						<img src={program.iconUrl} alt="" class="size-6 object-cover rounded shrink-0" />
+					{:else}
+						<div class="size-6 bg-surface rounded flex items-center justify-center text-[10px] font-bold shrink-0">
+							{program.name.charAt(0)}
+						</div>
+					{/if}
+					<span class="text-sm font-medium text-text-primary truncate">{program.name}</span>
+				</button>
+				<button
+					class="p-1.5 mr-1 rounded-tag cursor-pointer shrink-0 transition-opacity hover:bg-white/70
+						{program.isPinned ? 'text-accent' : 'text-text-tertiary opacity-0 group-hover:opacity-100 focus-visible:opacity-100'}"
+					title={program.isPinned ? 'Unpin' : 'Pin (open this program by default)'}
+					aria-label={program.isPinned ? `Unpin ${program.name}` : `Pin ${program.name}`}
+					onclick={() => onpin(program, !program.isPinned)}
+				>
+					{#if program.isPinned}
+						<PinOff size={14} />
+					{:else}
+						<Pin size={14} />
+					{/if}
+				</button>
+			</div>
 		{/snippet}
+
+		{#if pinnedProgram}
+			<div class="mb-1 pb-1 border-b border-border-input flex flex-col gap-0.5">
+				{@render programButton(pinnedProgram)}
+			</div>
+		{/if}
 
 		<div class="flex flex-col gap-0.5">
 			{#each memberPrograms as program (program.id)}
