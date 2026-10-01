@@ -27,9 +27,9 @@
 </svelte:head>
 
 {#if showShell}
-	<div class="flex h-screen bg-page">
+	<div class="flex max-md:flex-col h-screen max-md:h-dvh bg-page">
 		<Sidebar user={data.user!} programs={data.programs} {currentProgram} {permissions} />
-		<main class="flex-1 min-w-0 overflow-auto">
+		<main class="flex-1 min-w-0 max-md:min-h-0 overflow-auto">
 			{@render children()}
 		</main>
 	</div>

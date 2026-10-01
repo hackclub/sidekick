@@ -54,7 +54,7 @@
 <div
 	class="border border-border-card rounded-card shadow-card overflow-hidden flex flex-col {className}"
 >
-	<div class="flex items-center px-6 py-4 border-b border-border-card">
+	<div class="flex items-center px-6 max-md:px-4 py-4 border-b border-border-card">
 		<div class="flex items-center gap-2.5">
 			<FolderGit2 size={18} class="text-text-secondary" />
 			<div class="flex flex-col gap-0.5">
@@ -89,7 +89,7 @@
 				{@const status = ship ? STATUS_CONFIG[ship.status] : null}
 				<a
 					href={resolve(`/program/${programId}/review/${project.id}`)}
-					class="flex items-center gap-4 px-6 py-3 hover:bg-surface/50 transition-colors"
+					class="flex items-center gap-4 max-md:gap-3 px-6 max-md:px-4 py-3 hover:bg-surface/50 transition-colors"
 				>
 					{#if project.screenshotUrl}
 						<img
@@ -118,7 +118,9 @@
 							{project.description}
 						</p>
 					</div>
-					<div class="flex items-center gap-4 shrink-0 text-xs text-text-secondary">
+					<div
+						class="flex max-md:flex-col items-center max-md:items-end gap-4 max-md:gap-0.5 shrink-0 text-xs text-text-secondary"
+					>
 						{#if ship}
 							<div class="flex items-center gap-1" title="Last shipped">
 								<Hourglass size={12} class="text-text-tertiary" />

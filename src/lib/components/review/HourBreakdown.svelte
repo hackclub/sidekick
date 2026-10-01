@@ -91,7 +91,7 @@
 	const remaining = $derived(Math.max(0, afterBrowsers - previousTotal));
 </script>
 
-<div class="border border-border-card rounded-card shadow-card p-8 flex flex-col gap-4 {className}">
+<div class="border border-border-card rounded-card shadow-card p-8 max-md:p-4 flex flex-col gap-4 {className}">
 	<div class="flex items-center justify-between w-full">
 		<div class="flex gap-2 items-center">
 			<Hourglass size={14} class="text-text-primary" />

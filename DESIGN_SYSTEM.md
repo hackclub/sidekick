@@ -74,6 +74,18 @@ Font families: **Inter** (primary sans-serif), **Cascadia Mono** (monospace for 
 | Sidebar collapsed width    | 96px (16px padding + 64px button + 16px padding) |
 | Sidebar expanded width     | 280px                                          |
 
+## Mobile
+
+Everything below Tailwind's `md` breakpoint (768px) is the mobile layout. Desktop classes are the default; mobile is layered on with `max-md:` variants (or a `max-width: 767px` media query in scoped CSS), so nothing mobile-specific can change the desktop layout.
+
+- **Navigation:** the sidebar is replaced by a bottom tab bar (program switcher, Home, Review, Fulfillment, Admin, Account), rendered by `Sidebar.svelte`.
+- **Padding:** pages and cards drop to 12-16px (`max-md:px-4`, `max-md:p-4`).
+- **Rows:** side-by-side groups stack (`max-md:flex-col`); secondary metadata wraps under the title instead of squeezing it.
+- **Tables:** the fulfillment table becomes a list of cards with its headers as sort chips; wide data tables scroll sideways inside their own container.
+- **Master/detail:** a selected order takes the whole screen, with a back button to the list.
+- **Popovers:** anchor them to a full-width ancestor (`max-md:relative` on it, `max-md:static` on the trigger) so they can't run off-screen.
+- **Inputs:** form fields render at 16px (set globally in `app.css`) so iOS doesn't zoom on focus.
+
 ## Component Patterns
 
 ### BentoBox

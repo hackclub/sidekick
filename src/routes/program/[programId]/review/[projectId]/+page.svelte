@@ -690,8 +690,8 @@
 			<div class="flex gap-1.5 items-center text-sm tracking-[-0.4px] min-w-0 truncate">
 				<span class="text-text-secondary shrink-0" title={isUuid(data.project.id) ? data.project.id : undefined}>#{shortenId(data.project.id)}</span>
 				<span class="font-bold truncate">{data.project.title}</span>
-				<span class="shrink-0">by</span>
-				<div class="flex gap-1 items-center shrink-0">
+				<span class="shrink-0 max-md:hidden">by</span>
+				<div class="flex gap-1 items-center shrink-0 max-md:hidden">
 					{#if data.author.avatarUrl}
 						<img src={data.author.avatarUrl} alt="" class="size-[18px] rounded-full object-cover" />
 					{/if}
@@ -736,7 +736,7 @@
 		</span>
 	{/snippet}
 
-	<div class="flex-1 overflow-auto px-4 md:px-6 wide:px-16 py-10">
+	<div class="flex-1 overflow-auto px-4 max-md:px-3 md:px-6 wide:px-16 py-10 max-md:py-4">
 		<div class="review-bento gap-3">
 			<div class="flex flex-col gap-3" style="grid-area: user">
 				<UserCard
@@ -897,7 +897,7 @@
 							}))}
 						timelapses={lapse?.lapseTimelapses ?? []}
 						lookoutSessions={lookout?.lookoutSessions ?? []}
-						class="flex-1 min-h-0"
+						class="flex-1 min-h-0 max-md:max-h-[32rem]"
 					/>
 				</div>
 			</div>
@@ -938,7 +938,8 @@
 <style>
 	.review-bento {
 		display: grid;
-		grid-template-columns: 1fr;
+		/* minmax(0, …) so wide content (URLs, tables, code) can't stretch the single mobile column */
+		grid-template-columns: minmax(0, 1fr);
 		grid-template-areas:
 			'user'
 			'project'

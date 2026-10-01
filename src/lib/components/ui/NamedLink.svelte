@@ -25,7 +25,7 @@
 		href={url}
 		target="_blank"
 		rel="noopener noreferrer"
-		class="bg-white border border-border-input flex gap-2 h-10 items-center justify-center rounded-l-input shrink-0 px-5 hover:bg-surface transition-colors"
+		class="bg-white border border-border-input flex gap-2 h-10 items-center justify-center rounded-l-input shrink-0 px-5 max-md:px-3 hover:bg-surface transition-colors"
 	>
 		{#if icon}
 			<span class="size-[14px]">{@render icon()}</span>
@@ -38,7 +38,7 @@
 		href={url}
 		target="_blank"
 		rel="noopener noreferrer"
-		class="bg-white border-y border-border-input flex h-10 items-center px-4 flex-1 min-w-0 hover:bg-surface transition-colors"
+		class="bg-white border-y border-border-input flex h-10 items-center px-4 max-md:px-3 flex-1 min-w-0 hover:bg-surface transition-colors"
 	>
 		<span class="text-sm text-link truncate">{url}</span>
 	</a>

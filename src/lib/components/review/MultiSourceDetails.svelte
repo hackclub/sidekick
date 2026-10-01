@@ -329,7 +329,7 @@
 <div class="flex flex-col h-full border border-border-card rounded-card shadow-card overflow-hidden {className}">
 	<TabBar {tabs} active={activeTab} onchange={(id) => (activeTab = id)} />
 
-	<div class="flex-1 min-h-0 overflow-auto px-8 py-5">
+	<div class="flex-1 min-h-0 overflow-auto px-8 max-md:px-4 py-5 max-md:py-4">
 		{#if activeTab === 'github'}
 			{#if loading}
 				<div class="flex flex-col gap-0.5 animate-pulse">

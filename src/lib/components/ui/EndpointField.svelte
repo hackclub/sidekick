@@ -59,7 +59,7 @@
 
 <div class="flex flex-col gap-1.5">
 	<div class="flex items-center gap-2">
-		<div class="flex items-center gap-2.5 flex-1 border border-border-input rounded-input px-3 py-2.5 bg-page transition-colors focus-within:border-accent">
+		<div class="flex items-center gap-2.5 flex-1 max-md:min-w-0 border border-border-input rounded-input px-3 py-2.5 bg-page transition-colors focus-within:border-accent">
 			<Globe size={15} class="text-text-tertiary shrink-0" />
 			<input
 				{id}

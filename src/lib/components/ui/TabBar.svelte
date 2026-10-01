@@ -20,7 +20,7 @@
 	{#each tabs as tab (tab.id)}
 		{@const isActive = active === tab.id}
 		<button
-			class="flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium tracking-[-0.3px] transition-colors cursor-pointer border-b-2
+			class="flex-1 max-md:min-w-0 flex max-md:flex-col items-center justify-center gap-2 max-md:gap-1 px-4 max-md:px-1 py-3 max-md:py-2 text-sm max-md:text-xs font-medium tracking-[-0.3px] transition-colors cursor-pointer border-b-2
 				{isActive
 				? `border-current bg-current/5 ${tab.color ?? 'text-text-primary'}`
 				: 'border-transparent text-text-secondary hover:text-text-primary hover:bg-surface/50'}"

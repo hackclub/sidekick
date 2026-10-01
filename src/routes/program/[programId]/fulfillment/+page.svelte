@@ -835,11 +835,15 @@
 </svelte:head>
 
 <div class="flex h-full overflow-hidden {isDragging ? 'select-none' : ''}">
-	<div class="flex flex-col gap-3 p-6 min-w-0" style="width: {selectedOrder ? dividerX : 100}%">
+	<!-- Mobile is master/detail: the list takes the whole width, and gives way to the detail pane while an order is open. -->
+	<div
+		class="flex flex-col gap-3 p-6 max-md:p-3 min-w-0 max-md:w-full! {effectiveOrder && effectiveItem ? 'max-md:hidden' : ''}"
+		style="width: {selectedOrder ? dividerX : 100}%"
+	>
 		<div class="flex items-center justify-between flex-wrap gap-2">
-			<div class="flex gap-2 items-center flex-wrap min-w-0">
+			<div class="flex gap-2 items-center flex-wrap min-w-0 max-md:relative">
 				<form
-					class="border border-border-input rounded-tag flex gap-2 items-center px-3 py-1.5 w-[220px] min-w-0"
+					class="border border-border-input rounded-tag flex gap-2 items-center px-3 py-1.5 w-[220px] max-md:w-full min-w-0"
 					onsubmit={(e) => { e.preventDefault(); handleSearch(); }}
 				>
 					<UserSearch size={14} class="text-text-placeholder shrink-0" />
@@ -885,7 +889,7 @@
 					{/if}
 				</div>
 				{#if data.allShopItems.length > 0}
-					<div class="relative" data-filter-item>
+					<div class="relative max-md:static" data-filter-item>
 						<button
 							class="border border-border-input rounded-tag flex gap-2 items-center px-3 py-1.5 cursor-pointer hover:bg-surface min-w-0 max-w-[200px]"
 							onclick={() => (itemDropdownOpen = !itemDropdownOpen)}
@@ -895,7 +899,7 @@
 							<ChevronDown size={12} class="text-text-dim shrink-0" />
 						</button>
 						{#if itemDropdownOpen}
-							<div class="absolute top-full left-0 mt-1 bg-page border border-border-card rounded-input shadow-lg z-30 w-[420px] max-h-[400px] flex flex-col">
+							<div class="absolute top-full left-0 mt-1 bg-page border border-border-card rounded-input shadow-lg z-30 w-[420px] max-md:w-full max-h-[400px] max-md:max-h-[60dvh] flex flex-col">
 								<div class="px-2 py-2 border-b border-border-card">
 									<div class="flex items-center gap-2 px-2 py-1 border border-border-input rounded-tag">
 										<Search size={13} class="text-text-placeholder shrink-0" />
@@ -950,8 +954,8 @@
 					</div>
 				{/if}
 			</div>
-			<div class="flex items-center gap-2 shrink-0">
-				<span class="font-medium text-sm text-text-muted whitespace-nowrap">
+			<div class="flex items-center gap-2 shrink-0 max-md:w-full">
+				<span class="font-medium text-sm text-text-muted whitespace-nowrap max-md:mr-auto">
 					{data.orders.length} of {data.totalCount}
 				</span>
 				{#if data.canViewAddressData}
@@ -1029,19 +1033,22 @@
 
 		<div class="flex-1 min-h-0 flex flex-col border border-border-table rounded-input overflow-clip">
 			<div bind:this={scrollContainerEl} class="flex-1 min-h-0 overflow-auto">
-				<table bind:this={tableEl} class="w-full border-collapse table-fixed">
+				<!-- Mobile: the table is un-tabled into a list of cards (see OrderTableRow),
+				     and the header row becomes a scrollable strip of sort chips. -->
+				<table bind:this={tableEl} class="w-full border-collapse table-fixed max-md:block">
 					<colgroup>
 						{#each colWidths as w, i (i)}
 							<col style="width: {w}px" />
 						{/each}
 					</colgroup>
-					<thead class="sticky top-0 bg-page z-10 shadow-[0_1px_0_0_var(--color-border-table)]">
-						<tr>
+					<thead class="sticky top-0 bg-page z-10 shadow-[0_1px_0_0_var(--color-border-table)] max-md:block">
+						<tr class="max-md:flex max-md:gap-1.5 max-md:overflow-x-auto max-md:px-3 max-md:py-2">
 							{#each columns as col, i (col.key)}
 								<th
 									class="text-left text-sm font-bold px-3 py-2 select-none relative
+										max-md:block max-md:shrink-0 max-md:border max-md:border-border-table max-md:rounded-tag max-md:px-2.5 max-md:py-1 max-md:text-xs max-md:font-medium
 										{i < columns.length - 1 ? 'border-r border-border-table' : ''}
-										{sortKey === col.key ? 'text-accent' : ''}"
+										{sortKey === col.key ? 'text-accent max-md:border-accent max-md:bg-accent-bg' : ''}"
 								>
 									<button
 										class="flex items-center gap-1.5 w-full cursor-pointer"
@@ -1059,7 +1066,7 @@
 									{#if i < columns.length - 1}
 										<!-- svelte-ignore a11y_no_static_element_interactions -->
 										<div
-											class="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-accent/30 z-20"
+											class="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-accent/30 z-20 max-md:hidden"
 											onmousedown={(e) => startColResize(i, e)}
 										></div>
 									{/if}
@@ -1067,7 +1074,7 @@
 							{/each}
 						</tr>
 					</thead>
-					<tbody>
+					<tbody class="max-md:block">
 						{#each data.orders as order (order.id)}
 							{@const item = data.items[order.itemId]}
 							<OrderTableRow
@@ -1123,7 +1130,7 @@
 	{#if effectiveOrder && effectiveItem}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
-			class="relative flex-shrink-0 w-5 cursor-col-resize group"
+			class="relative flex-shrink-0 w-5 cursor-col-resize group max-md:hidden"
 			onmousedown={startDividerDrag}
 		>
 			<div class="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-px bg-border-card"></div>
@@ -1136,7 +1143,18 @@
 			</div>
 		</div>
 
-		<div class="flex-1 min-w-[480px] overflow-auto">
+		<div class="flex-1 min-w-[480px] max-md:min-w-0 overflow-auto">
+			<!-- Mobile only: the list is hidden behind the pane, so offer a way back. -->
+			<div class="md:hidden sticky top-0 z-20 bg-page border-b border-border-input flex h-11 items-center gap-3 px-3">
+				<button
+					class="shrink-0 border border-border-button rounded-md flex gap-1.5 h-8 items-center justify-center px-3 hover:bg-surface transition-colors cursor-pointer"
+					onclick={() => (selectedOrder = null)}
+				>
+					<ChevronLeft size={14} />
+					<span class="font-medium text-sm text-text-subtle tracking-[-0.3px]">Orders</span>
+				</button>
+				<span class="text-sm text-text-secondary tracking-[-0.3px] truncate" title={isUuid(effectiveOrder.id) ? effectiveOrder.id : undefined}>#{shortenId(effectiveOrder.id)}</span>
+			</div>
 			<OrderDetailPane
 				order={effectiveOrder}
 				item={effectiveItem}
@@ -1284,7 +1302,7 @@
 		class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center"
 		onmousedown={(e) => { if (e.target === e.currentTarget && massFulfillStep !== 'matching' && massFulfillStep !== 'executing') closeMassFulfill(); }}
 	>
-		<div class="bg-page border border-border-card rounded-card shadow-xl w-[700px] xl:w-[900px] max-h-[80vh] flex flex-col">
+		<div class="bg-page border border-border-card rounded-card shadow-xl w-[700px] max-md:w-[calc(100vw-1.5rem)] xl:w-[900px] max-h-[80vh] max-md:max-h-[85dvh] flex flex-col">
 			<div class="flex items-center justify-between px-5 py-4 border-b border-border-card">
 				<div class="flex items-center gap-2">
 					<ListChecks size={16} class="text-text-primary" />

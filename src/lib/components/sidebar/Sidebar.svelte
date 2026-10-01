@@ -3,6 +3,7 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { sidebarExpanded } from '$lib/stores/sidebar.js';
+	import type { Snippet } from 'svelte';
 	import type { ProgramSummary, SessionUser } from '$lib/types.js';
 	import SidebarButton from './SidebarButton.svelte';
 	import ProgramSwitcher from './ProgramSwitcher.svelte';
@@ -52,8 +53,22 @@
 	}
 </script>
 
+{#snippet userMenuItems()}
+	<div class="px-3 py-2.5 border-b border-border-card">
+		<p class="text-sm font-medium text-text-primary truncate">{user.name}</p>
+		<p class="text-[11px] text-text-tertiary truncate">{user.email}</p>
+	</div>
+	<a
+		href={resolve('/auth/logout')}
+		class="flex items-center gap-2 px-3 py-2.5 text-sm text-check-fail hover:bg-check-fail/5 transition-colors cursor-pointer"
+	>
+		<LogOut size={14} />
+		<span>Log out</span>
+	</a>
+{/snippet}
+
 <aside
-	class="bg-sidebar border-r border-sidebar-border flex flex-col justify-between shrink-0 h-screen sticky top-0 transition-all duration-200 overflow-hidden
+	class="bg-sidebar border-r border-sidebar-border flex max-md:hidden flex-col justify-between shrink-0 h-screen sticky top-0 transition-all duration-200 overflow-hidden
 		{$sidebarExpanded ? 'w-[var(--sidebar-expanded-width)] px-3 py-4' : 'w-[var(--sidebar-collapsed-width)] px-1.5 py-4'}"
 >
 	<!-- Top section -->
@@ -181,17 +196,7 @@
 	<div class="relative {$sidebarExpanded ? '' : 'flex justify-center'}">
 		{#if showUserMenu}
 			<div class="absolute bottom-full left-0 right-0 mb-1.5 bg-white border border-border-card rounded-sidebar-btn shadow-lg overflow-hidden z-50">
-				<div class="px-3 py-2.5 border-b border-border-card">
-					<p class="text-sm font-medium text-text-primary truncate">{user.name}</p>
-					<p class="text-[11px] text-text-tertiary truncate">{user.email}</p>
-				</div>
-				<a
-					href={resolve('/auth/logout')}
-					class="flex items-center gap-2 px-3 py-2.5 text-sm text-check-fail hover:bg-check-fail/5 transition-colors cursor-pointer"
-				>
-					<LogOut size={14} />
-					<span>Log out</span>
-				</a>
+				{@render userMenuItems()}
 			</div>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="fixed inset-0 z-40" onclick={() => (showUserMenu = false)} onkeydown={() => {}}></div>
@@ -217,6 +222,63 @@
 		{/if}
 	</div>
 </aside>
+
+<!-- Mobile: the sidebar becomes a bottom tab bar -->
+<nav
+	class="md:hidden order-last shrink-0 relative z-40 bg-sidebar border-t border-sidebar-border flex items-stretch px-1 pb-[env(safe-area-inset-bottom)]"
+	aria-label="Main"
+>
+	{#snippet mobileTab(label: string, active: boolean, enabled: boolean, onclick: () => void, icon: Snippet)}
+		<button
+			class="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 h-14 text-[10px] tracking-[-0.2px] transition-colors
+				{!enabled ? 'opacity-40' : active ? 'font-semibold text-text-primary' : 'text-text-secondary cursor-pointer'}"
+			disabled={!enabled}
+			aria-current={active ? 'page' : undefined}
+			{onclick}
+		>
+			<span class="flex items-center justify-center h-7 w-12 rounded-sidebar-btn {active ? 'bg-white shadow-sidebar-active' : ''}">
+				{@render icon()}
+			</span>
+			<span class="truncate max-w-full px-0.5">{label}</span>
+		</button>
+	{/snippet}
+
+	{#snippet programIcon()}
+		{#if currentProgram?.iconUrl}
+			<img src={currentProgram.iconUrl} alt="" class="size-5 object-cover rounded" />
+		{:else if currentProgram}
+			<div class="size-5 bg-accent rounded flex items-center justify-center text-white font-bold text-[10px]">
+				{currentProgram.name.charAt(0)}
+			</div>
+		{:else}
+			<Plus size={18} />
+		{/if}
+	{/snippet}
+	{#snippet homeIcon()}<House size={18} strokeWidth={currentProgram && isActive(programBase) ? 2.2 : 1.8} />{/snippet}
+	{#snippet reviewIcon()}<Scale size={18} strokeWidth={isActive(`${programBase}/review`) ? 2.2 : 1.8} />{/snippet}
+	{#snippet fulfillmentIcon()}<Package size={18} strokeWidth={isActive(`${programBase}/fulfillment`) ? 2.2 : 1.8} />{/snippet}
+	{#snippet adminIcon()}<ShieldCheck size={18} strokeWidth={$page.url.pathname.startsWith('/admin') ? 2.2 : 1.8} />{/snippet}
+	{#snippet userIcon()}<Avatar name={user.name} url={user.avatarUrl} size="sm" />{/snippet}
+
+	{@render mobileTab(currentProgram?.name ?? 'Programs', false, true, () => { showUserMenu = false; showProgramSwitcher = !showProgramSwitcher; }, programIcon)}
+	{#if currentProgram}
+		{@render mobileTab('Home', isActive(programBase), true, () => navigateTo(programBase), homeIcon)}
+		{@render mobileTab('Review', isActive(`${programBase}/review`), canReview, () => navigateTo(`${programBase}/review`), reviewIcon)}
+		{@render mobileTab('Fulfillment', isActive(`${programBase}/fulfillment`), canFulfill, () => navigateTo(`${programBase}/fulfillment`), fulfillmentIcon)}
+	{/if}
+	{#if user.isSuperAdmin}
+		{@render mobileTab('Admin', $page.url.pathname.startsWith('/admin'), true, () => navigateTo('/admin'), adminIcon)}
+	{/if}
+	{@render mobileTab('Account', showUserMenu, true, () => (showUserMenu = !showUserMenu), userIcon)}
+
+	{#if showUserMenu}
+		<div class="absolute bottom-full right-2 mb-1.5 w-56 bg-white border border-border-card rounded-sidebar-btn shadow-lg overflow-hidden z-50">
+			{@render userMenuItems()}
+		</div>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="fixed inset-0 -z-10" onclick={() => (showUserMenu = false)} onkeydown={() => {}}></div>
+	{/if}
+</nav>
 
 {#if showProgramSwitcher}
 	<ProgramSwitcher

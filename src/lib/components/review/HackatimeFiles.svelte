@@ -86,7 +86,7 @@
 	const totalSeconds = $derived(computeTrackedTime(heartbeats));
 </script>
 
-<div class="px-6 py-5">
+<div class="px-6 max-md:px-4 py-5">
 	<div class="border border-border-card rounded-section overflow-hidden">
 		<div class="max-h-[400px] overflow-y-auto scrollbar-thin">
 			<table class="w-full text-[12px]">
@@ -107,7 +107,7 @@
 								: 'bg-surface/30'} hover:bg-accent-bg/50 transition-colors"
 						>
 							<td
-								class="px-3 py-1.5 font-mono text-text-primary max-w-[360px] truncate"
+								class="px-3 py-1.5 font-mono text-text-primary max-w-[360px] max-md:max-w-[180px] truncate"
 								title={row.entity}>{row.displayName}</td
 							>
 							<td class="px-3 py-1.5 text-text-secondary">{row.language}</td>

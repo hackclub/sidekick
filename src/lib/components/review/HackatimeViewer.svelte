@@ -1046,7 +1046,7 @@
 <div
 	class="border border-border-card rounded-card shadow-card overflow-hidden flex flex-col {className}"
 >
-	<div class="flex items-center px-6 py-4 border-b border-border-card">
+	<div class="flex items-center px-6 max-md:px-4 py-4 border-b border-border-card">
 		<div class="flex items-center gap-2.5">
 			<Activity size={18} class="text-text-secondary" />
 			<div class="flex flex-col gap-0.5">
@@ -1074,7 +1074,7 @@
 	</div>
 
 	<div
-		class="flex items-center justify-between px-6 py-2.5 border-b border-border-card bg-surface/30"
+		class="flex max-md:flex-col items-center max-md:items-stretch justify-between max-md:gap-2 px-6 max-md:px-4 py-2.5 border-b border-border-card bg-surface/30"
 	>
 		<div class="flex items-center gap-2 min-w-0">
 			<FolderCode size={14} class="text-text-tertiary shrink-0" />
@@ -1111,7 +1111,7 @@
 				{/if}
 			</div>
 		</div>
-		<div class="flex items-center shrink-0 ml-4">
+		<div class="flex max-md:flex-wrap items-center max-md:gap-y-1.5 shrink-0 ml-4 max-md:ml-0">
 			<input
 				bind:this={historyInput}
 				type="file"
@@ -1141,7 +1141,7 @@
 				{localHistory ? 'Local history loaded' : 'Upload VS Code history'}
 			</button>
 			<button
-				class="flex items-center gap-1 text-[11px] px-2 py-1 rounded-tag cursor-pointer transition-colors shrink-0 bg-page border border-border-card text-text-secondary hover:text-text-primary disabled:opacity-50 disabled:cursor-default"
+				class="flex items-center gap-1 text-[11px] px-2 py-1 rounded-tag cursor-pointer transition-colors shrink-0 max-md:mr-2 bg-page border border-border-card text-text-secondary hover:text-text-primary disabled:opacity-50 disabled:cursor-default"
 				onclick={refreshHackatimeData}
 				disabled={refreshing}
 				title="Drop cached Hackatime data and refetch live"
@@ -1150,7 +1150,7 @@
 				Refresh data
 			</button>
 			<button
-				class="flex items-center gap-1 text-[11px] px-2 py-1 rounded-tag cursor-pointer transition-colors shrink-0 ml-2 {telescreenCopied
+				class="flex items-center gap-1 text-[11px] px-2 py-1 rounded-tag cursor-pointer transition-colors shrink-0 ml-2 max-md:ml-0 {telescreenCopied
 					? 'bg-check-pass/10 text-check-pass border border-check-pass/30'
 					: 'bg-page border border-border-card text-text-secondary hover:text-text-primary'}"
 				onclick={copyTelescreenLink}
@@ -1280,14 +1280,14 @@
 				{/each}
 			</div>
 		{:else}
-			<div class="px-6 py-4 text-[12px] text-text-tertiary text-center">
+			<div class="px-6 max-md:px-4 py-4 text-[12px] text-text-tertiary text-center">
 				No activity found for these projects.
 			</div>
 		{/if}
 	</div>
 
 	{#if error}
-		<div class="px-6 py-8">
+		<div class="px-6 max-md:px-4 py-8">
 			<div
 				class="border border-check-fail/30 bg-check-fail/5 rounded-section px-4 py-3 text-sm text-check-fail"
 			>
@@ -1318,7 +1318,7 @@
 			/>
 
 			{#if ridiculousCount > 0}
-				<div class="flex items-center gap-1.5 px-6 py-2.5 border-t border-border-card">
+				<div class="flex items-center gap-1.5 px-6 max-md:px-4 py-2.5 border-t border-border-card max-md:relative">
 					<Checkbox
 						checked={excludeRidiculous}
 						onchange={() => (excludeRidiculous = !excludeRidiculous)}
@@ -1327,7 +1327,7 @@
 							Exclude {ridiculousCount} ridiculous heartbeat{ridiculousCount === 1 ? '' : 's'}
 						</span>
 					</Checkbox>
-					<span class="relative flex items-center">
+					<span class="relative max-md:static flex items-center">
 						<button
 							type="button"
 							class="flex items-center cursor-pointer"
@@ -1438,7 +1438,7 @@
 				onselectday={selectDay}
 			/>
 		{:else if activeTab === 'breakdown' || activeTab === 'files'}
-			<div class="flex items-center gap-1 px-6 pt-4">
+			<div class="flex items-center gap-1 px-6 max-md:px-4 pt-4">
 				<button
 					class="text-[12px] font-medium rounded-tag px-2.5 py-1 cursor-pointer transition-colors
 						{breakdownScope === 'day'
@@ -1624,6 +1624,18 @@
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 		z-index: 50;
 		cursor: default;
+	}
+
+	/* Mobile: 440px from the icon's left edge runs off-screen, so the dropdown
+	   is anchored to the whole checkbox row instead (see max-md:relative /
+	   max-md:static in the markup) and spans it. */
+	@media (max-width: 767px) {
+		.ridiculous-help-dropdown {
+			left: 16px;
+			right: 16px;
+			top: calc(100% - 4px);
+			width: auto;
+		}
 	}
 
 	.mini-th {

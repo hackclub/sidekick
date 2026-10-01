@@ -22,7 +22,7 @@
 </svelte:head>
 
 <ManageLayout programs={data.programs} isCreateNew>
-	<div class="border border-border-card rounded-bento px-8 py-8">
+	<div class="border border-border-card rounded-bento px-8 max-md:px-4 py-8 max-md:py-5">
 		<div class="flex flex-col gap-6">
 			<div class="flex items-center gap-4">
 				<div class="size-12 bg-accent rounded-section flex items-center justify-center text-white shrink-0">

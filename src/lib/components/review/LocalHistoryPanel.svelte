@@ -163,10 +163,10 @@
 />
 
 {#if !history}
-	<div class="px-6 py-6">
+	<div class="px-6 max-md:px-4 py-6">
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
-			class="flex flex-col items-center gap-3 rounded-section border-2 border-dashed px-6 py-10 text-center transition-colors
+			class="flex flex-col items-center gap-3 rounded-section border-2 border-dashed px-6 max-md:px-4 py-10 text-center transition-colors
 				{dragOver ? 'border-accent bg-accent-bg' : 'border-border-card'}"
 			ondragover={(e) => {
 				e.preventDefault();
@@ -209,7 +209,7 @@
 		</div>
 	</div>
 {:else}
-	<div class="flex items-center gap-2 px-6 py-2.5 border-b border-border-card">
+	<div class="flex max-md:flex-wrap items-center gap-2 px-6 max-md:px-4 py-2.5 border-b border-border-card">
 		<FileArchive size={14} class="text-text-tertiary shrink-0" />
 		<span class="text-[12px] font-mono text-text-primary truncate">{history.fileName}</span>
 		<span class="text-[11px] text-text-tertiary shrink-0">
@@ -296,7 +296,7 @@
 			</div>
 		</div>
 
-		<div class="flex flex-col gap-2 px-6 py-3 border-b border-border-card">
+		<div class="flex flex-col gap-2 px-6 max-md:px-4 py-3 border-b border-border-card">
 			{#if matchedFileCount === 0}
 				<div class="note note-fail">
 					<TriangleAlert size={14} class="shrink-0 mt-px" />
@@ -341,7 +341,7 @@
 
 		{#if sortedFlags.length > 0}
 			<div class="border-b border-border-card">
-				<div class="px-6 pt-3 pb-1.5 text-[12px] font-semibold text-text-primary">
+				<div class="px-6 max-md:px-4 pt-3 pb-1.5 text-[12px] font-semibold text-text-primary">
 					Coding sessions with no history behind them
 				</div>
 				<div class="flex flex-col">
@@ -349,7 +349,7 @@
 						{@const date = dayOf(s.start)}
 						<button
 							type="button"
-							class="flex items-center gap-3 px-6 py-1.5 text-left cursor-pointer hover:bg-surface/50 transition-colors {date ===
+							class="flex items-center gap-3 px-6 max-md:px-4 py-1.5 text-left cursor-pointer hover:bg-surface/50 transition-colors {date ===
 							currentDate
 								? 'bg-accent-bg/60'
 								: ''}"
@@ -384,7 +384,7 @@
 				{#if sortedFlags.length > 5}
 					<button
 						type="button"
-						class="px-6 py-1.5 text-[11px] text-text-secondary hover:text-text-primary cursor-pointer"
+						class="px-6 max-md:px-4 py-1.5 text-[11px] text-text-secondary hover:text-text-primary cursor-pointer"
 						onclick={() => (showAllFlags = !showAllFlags)}
 					>
 						{showAllFlags ? 'Show fewer' : `Show all ${sortedFlags.length}`}
@@ -394,7 +394,7 @@
 		{/if}
 	{/if}
 
-	<div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-3 border-b border-border-card">
+	<div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-6 max-md:px-4 py-3 border-b border-border-card">
 		<div class="flex items-center gap-1">
 			{#each [['day', 'Selected day'], ['all', 'All time']] as [id, label] (id)}
 				<button
@@ -437,7 +437,7 @@
 				{/if}
 			{/each}
 			{#if listedEntries.length > LIST_LIMIT}
-				<div class="px-6 py-2 text-[11px] text-text-tertiary">
+				<div class="px-6 max-md:px-4 py-2 text-[11px] text-text-tertiary">
 					Showing the newest {LIST_LIMIT} of {listedEntries.length}.
 				</div>
 			{/if}
@@ -452,7 +452,7 @@
 		<div class="border-t border-border-card">
 			<button
 				type="button"
-				class="w-full flex items-center gap-1.5 px-6 py-2.5 text-[12px] font-semibold text-text-primary cursor-pointer hover:bg-surface/50"
+				class="w-full flex items-center gap-1.5 px-6 max-md:px-4 py-2.5 text-[12px] font-semibold text-text-primary cursor-pointer hover:bg-surface/50"
 				onclick={() => (showUnmatchedWrites = !showUnmatchedWrites)}
 			>
 				{#if showUnmatchedWrites}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if}
@@ -461,7 +461,7 @@
 					: 's'} with no snapshot
 			</button>
 			{#if showUnmatchedWrites}
-				<div class="max-h-64 overflow-auto scrollbar-thin px-6 pb-3">
+				<div class="max-h-64 overflow-auto scrollbar-thin px-6 max-md:px-4 pb-3">
 					{#each analysis.writes.unmatched.slice(0, 200) as w, i (i)}
 						<div class="flex items-center gap-3 py-0.5 text-[11px]">
 							<span class="font-mono text-text-tertiary w-[140px] shrink-0">
@@ -483,14 +483,14 @@
 		<div class="border-t border-border-card">
 			<button
 				type="button"
-				class="w-full flex items-center gap-1.5 px-6 py-2.5 text-[12px] font-semibold text-text-primary cursor-pointer hover:bg-surface/50"
+				class="w-full flex items-center gap-1.5 px-6 max-md:px-4 py-2.5 text-[12px] font-semibold text-text-primary cursor-pointer hover:bg-surface/50"
 				onclick={() => (showOtherFiles = !showOtherFiles)}
 			>
 				{#if showOtherFiles}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if}
 				{otherFiles.length} file{otherFiles.length === 1 ? '' : 's'} in the history outside this project
 			</button>
 			{#if showOtherFiles}
-				<div class="max-h-64 overflow-auto scrollbar-thin px-6 pb-3">
+				<div class="max-h-64 overflow-auto scrollbar-thin px-6 max-md:px-4 pb-3">
 					{#each otherFiles as f (f.key)}
 						<div class="flex items-center gap-3 py-0.5 text-[11px]">
 							<span class="font-mono text-text-primary truncate" title={f.displayPath}

@@ -131,7 +131,7 @@
 	}
 </script>
 
-<div class="@container border border-border-card rounded-card p-8 flex flex-col gap-4 {className}">
+<div class="@container border border-border-card rounded-card p-8 max-md:p-4 flex flex-col gap-4 {className}">
 	<div class="flex gap-2 items-center">
 		<MapPin size={14} class="text-text-primary" />
 		<span class="font-bold text-[15px] text-text-primary tracking-[-0.4px]">Shipping Address</span>

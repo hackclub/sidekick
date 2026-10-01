@@ -11,7 +11,7 @@
 	let { title, description, icon, children }: Props = $props();
 </script>
 
-<div class="px-8 py-6 flex flex-col gap-4">
+<div class="px-8 max-md:px-4 py-6 max-md:py-5 flex flex-col gap-4">
 	<div class="flex items-center gap-3">
 		<div class="size-8 bg-surface rounded-lg flex items-center justify-center shrink-0">
 			{@render icon()}

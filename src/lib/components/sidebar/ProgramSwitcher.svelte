@@ -34,7 +34,8 @@
 <div class="fixed inset-0 z-50" onclick={close}>
 	<div
 		class="absolute left-3 top-14 bg-white border border-border-input rounded-section shadow-card p-1.5 w-56
-			transition-all duration-150 origin-top-left
+			max-md:top-auto max-md:left-2 max-md:bottom-[calc(4rem+env(safe-area-inset-bottom))] max-md:w-64 max-md:max-h-[70dvh] max-md:overflow-y-auto
+			transition-all duration-150 origin-top-left max-md:origin-bottom-left
 			{visible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}"
 		onclick={(e) => e.stopPropagation()}
 		role="dialog"
@@ -60,7 +61,7 @@
 				</button>
 				<button
 					class="p-1.5 mr-1 rounded-tag cursor-pointer shrink-0 transition-opacity hover:bg-white/70
-						{program.isPinned ? 'text-accent' : 'text-text-tertiary opacity-0 group-hover:opacity-100 focus-visible:opacity-100'}"
+						{program.isPinned ? 'text-accent' : 'text-text-tertiary opacity-0 max-md:opacity-100 group-hover:opacity-100 focus-visible:opacity-100'}"
 					title={program.isPinned ? 'Unpin' : 'Pin (open this program by default)'}
 					aria-label={program.isPinned ? `Unpin ${program.name}` : `Pin ${program.name}`}
 					onclick={() => onpin(program, !program.isPinned)}

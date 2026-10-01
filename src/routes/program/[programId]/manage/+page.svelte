@@ -882,7 +882,7 @@
 
 <ManageLayout programs={data.programs} activeProgramId={data.program.id}>
 	<div class="border border-border-card rounded-bento overflow-hidden">
-			<div class="flex items-center gap-4 px-8 pt-8 pb-6">
+			<div class="flex items-center gap-4 px-8 max-md:px-4 pt-8 max-md:pt-5 pb-6">
 				<label class="relative group cursor-pointer shrink-0">
 					{#if iconUrl}
 						<img
@@ -912,7 +912,7 @@
 
 			<ManageSection title="General" description="Basic program configuration.">
 				{#snippet icon()}<Settings size={16} class="text-text-secondary" />{/snippet}
-				<div class="border border-dashed border-border-card rounded-section p-6">
+				<div class="border border-dashed border-border-card rounded-section p-6 max-md:p-4">
 					<LabeledField label="Unified YSWS name" description="Set this to what you see in the Airtable ID of your unified DB records.">
 						{#snippet icon()}<Table2 size={16} />{/snippet}
 						<form
@@ -934,7 +934,7 @@
 								name="yswsName"
 								bind:value={yswsName}
 								placeholder={data.program.name}
-								class="flex-1 h-9 px-3 rounded-input border border-border-input text-sm text-text-input tracking-[-0.3px] placeholder:text-text-placeholder focus:outline-none focus:border-border-active transition-colors"
+								class="flex-1 max-md:min-w-0 h-9 px-3 rounded-input border border-border-input text-sm text-text-input tracking-[-0.3px] placeholder:text-text-placeholder focus:outline-none focus:border-border-active transition-colors"
 							/>
 							<button
 								type="submit"
@@ -1162,7 +1162,7 @@
 
 			<ManageSection title="Quick Rejections" description="Pre-filled rejection message templates.">
 				{#snippet icon()}<CircleX size={16} class="text-text-secondary" />{/snippet}
-				<div class="border border-dashed border-border-card rounded-section p-6 flex flex-col gap-2">
+				<div class="border border-dashed border-border-card rounded-section p-6 max-md:p-4 flex flex-col gap-2">
 					{#each data.rejectionTemplates as tpl (tpl.id)}
 						<div class="border border-border-card rounded-section bg-page overflow-hidden">
 							<button
@@ -1293,7 +1293,7 @@
 
 			<ManageSection title="Project Tags" description="Custom tags reviewers can assign to projects and filter the review queue by.">
 				{#snippet icon()}<Tag size={16} class="text-text-secondary" />{/snippet}
-				<div class="border border-dashed border-border-card rounded-section p-6 flex flex-col gap-2">
+				<div class="border border-dashed border-border-card rounded-section p-6 max-md:p-4 flex flex-col gap-2">
 					{#each data.projectTags as tag (tag.id)}
 						<div class="border border-border-card rounded-section bg-page overflow-hidden">
 							<button
@@ -1388,7 +1388,7 @@
 			<ManageSection title="Shop Items" description="Configure fulfillment templates for shop items — either HCB card grants or Theseus warehouse orders.">
 				{#snippet icon()}<Store size={16} class="text-text-secondary" />{/snippet}
 				<div class="flex flex-col gap-4">
-					<div class="border border-dashed border-border-card rounded-section p-6">
+					<div class="border border-dashed border-border-card rounded-section p-6 max-md:p-4">
 						<LabeledField label="HCB Organization" description="Link an HCB organization to enable card grant distribution.">
 							{#snippet icon()}<CreditCard size={16} />{/snippet}
 							{#if data.program.hcbOrganizationId}
@@ -1417,7 +1417,7 @@
 								<div class="flex gap-2">
 									<select
 										bind:value={selectedOrgId}
-										class="flex-1 h-9 px-3 rounded-input border border-border-input text-sm text-text-input tracking-[-0.3px] focus:outline-none focus:border-border-active transition-colors"
+										class="flex-1 max-md:min-w-0 h-9 px-3 rounded-input border border-border-input text-sm text-text-input tracking-[-0.3px] focus:outline-none focus:border-border-active transition-colors"
 									>
 										{#each hcbOrgs as org (org.id)}
 											<option value={org.id}>{org.name} ({org.slug})</option>
@@ -1449,7 +1449,7 @@
 						</LabeledField>
 					</div>
 
-					<div class="border border-dashed border-border-card rounded-section p-6">
+					<div class="border border-dashed border-border-card rounded-section p-6 max-md:p-4">
 						<LabeledField label="Theseus API Key" description="Set a Theseus API key to enable warehouse order fulfillment.">
 							{#snippet icon()}<Package size={16} />{/snippet}
 							{#if data.hasTheseusApiKey}
@@ -1486,7 +1486,7 @@
 											type="password"
 											bind:value={theseusApiKeyInput}
 											placeholder="th_api_live_..."
-											class="flex-1 h-9 px-3 rounded-input border border-border-input text-sm text-text-input tracking-[-0.3px] font-mono focus:outline-none focus:border-border-active transition-colors"
+											class="flex-1 max-md:min-w-0 h-9 px-3 rounded-input border border-border-input text-sm text-text-input tracking-[-0.3px] font-mono focus:outline-none focus:border-border-active transition-colors"
 										/>
 										<button
 											class="h-9 px-4 rounded-input bg-accent text-white text-sm font-medium hover:opacity-90 cursor-pointer disabled:opacity-50"
@@ -1582,7 +1582,7 @@
 
 											{#if selectedType === 'card_grant'}
 												{@const form = templateForms[item.id]}
-												<div class="grid grid-cols-2 gap-3">
+												<div class="grid grid-cols-2 max-md:grid-cols-1 gap-3">
 													<div class="flex flex-col gap-1">
 														<label for="amount-{item.id}" class="text-xs font-semibold text-text-secondary">Amount ($)</label>
 														<div class="relative">
@@ -1645,7 +1645,7 @@
 															type="text"
 															bind:value={form.merchantLock}
 															placeholder="Comma-separated merchant IDs"
-															class="flex-1 h-9 px-3 rounded-input border border-border-input text-sm font-mono text-text-input focus:outline-none focus:border-border-active"
+															class="flex-1 max-md:min-w-0 h-9 px-3 rounded-input border border-border-input text-sm font-mono text-text-input focus:outline-none focus:border-border-active"
 														/>
 														<button
 															type="button"
@@ -1666,7 +1666,7 @@
 															type="text"
 															bind:value={form.categoryLock}
 															placeholder="Comma-separated categories"
-															class="flex-1 h-9 px-3 rounded-input border border-border-input text-sm font-mono text-text-input focus:outline-none focus:border-border-active"
+															class="flex-1 max-md:min-w-0 h-9 px-3 rounded-input border border-border-input text-sm font-mono text-text-input focus:outline-none focus:border-border-active"
 														/>
 														<button
 															type="button"
@@ -1773,7 +1773,7 @@
 																type="text"
 																bind:value={row.sku}
 																placeholder="SKU"
-																class="flex-1 h-9 px-3 rounded-input border border-border-input text-sm font-mono text-text-input focus:outline-none focus:border-border-active"
+																class="flex-1 max-md:min-w-0 h-9 px-3 rounded-input border border-border-input text-sm font-mono text-text-input focus:outline-none focus:border-border-active"
 															/>
 															<input
 																type="number"
@@ -1846,7 +1846,7 @@
 							setTimeout(() => { apiConfigSaved = false; }, 2000);
 						};
 					}}
-					class="border border-dashed border-border-card rounded-section p-6 flex flex-col gap-6"
+					class="border border-dashed border-border-card rounded-section p-6 max-md:p-4 flex flex-col gap-6"
 				>
 					<LabeledField label="Master endpoint" description="This endpoint should follow the Sidekick communication protocol.">
 						{#snippet icon()}<Globe size={16} />{/snippet}
@@ -1897,7 +1897,7 @@
 			{#if data.currentMembership.isRoot}
 			<ManageSection title="Danger Zone" description="Irreversible and destructive actions.">
 				{#snippet icon()}<AlertTriangle size={16} class="text-check-fail" />{/snippet}
-				<div class="border border-check-fail/30 rounded-section p-6 flex items-center justify-between gap-4">
+				<div class="border border-check-fail/30 rounded-section p-6 max-md:p-4 flex max-md:flex-col items-center max-md:items-start justify-between gap-4">
 					<div class="flex flex-col gap-0.5">
 						<span class="text-sm font-semibold text-text-primary">Delete this program</span>
 						<span class="text-xs text-text-tertiary">Permanently removes the program along with all of its members, templates, audit logs, and review data. This cannot be undone.</span>

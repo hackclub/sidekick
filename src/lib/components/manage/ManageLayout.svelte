@@ -20,7 +20,7 @@
 </script>
 
 <div class="flex-1 overflow-auto h-full">
-	<div class="flex gap-6 items-start max-w-[1020px] mx-auto min-h-full px-4 md:px-8 py-14">
+	<div class="flex gap-6 items-start max-w-[1020px] mx-auto min-h-full px-4 max-md:px-3 md:px-8 py-14 max-md:py-4">
 		<div class="w-[240px] shrink-0 flex flex-col gap-1 sticky top-8 hidden md:flex">
 			{#each programs as prog (prog.id)}
 				<a

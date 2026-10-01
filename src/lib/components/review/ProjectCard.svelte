@@ -40,16 +40,16 @@
 	}
 </script>
 
-<div class="border border-border-card rounded-card shadow-card p-10 flex flex-col gap-3 {className}">
+<div class="border border-border-card rounded-card shadow-card p-10 max-md:p-4 flex flex-col gap-3 {className}">
 	<div class="flex flex-col gap-4">
-		<div class="flex items-start gap-3">
+		<div class="flex max-md:flex-col-reverse items-start gap-3">
 			{#if screenshotUrl}
 				<button class="cursor-zoom-in shrink-0" onclick={() => (lightboxOpen = true)}>
 					<img src={screenshotUrl} alt="Project screenshot" class="rounded-section w-full max-w-[243px] h-auto object-cover" />
 				</button>
 			{/if}
 
-			<div class="shrink-0 ml-auto flex gap-2">
+			<div class="shrink-0 ml-auto max-md:ml-0 flex max-md:flex-wrap gap-2">
 				{#if isSafeLinkUrl(platformUrl)}
 					<!-- eslint-disable svelte/no-navigation-without-resolve -->
 					<a
@@ -83,9 +83,9 @@
 		</div>
 
 		<div class="flex flex-col gap-2">
-			<div class="flex gap-1.5 items-end text-[24px] tracking-[-0.72px]">
+			<div class="flex max-md:flex-wrap gap-1.5 max-md:gap-x-1.5 max-md:gap-y-0 items-end max-md:items-baseline text-[24px] max-md:text-[20px] max-md:leading-tight tracking-[-0.72px]">
 				<span class="text-text-secondary" title={isUuid(id) ? id : undefined}>#{shortenId(id)}</span>
-				<span class="font-bold text-text-primary">{title}</span>
+				<span class="font-bold text-text-primary max-md:min-w-0 max-md:break-words">{title}</span>
 			</div>
 			{#if tags.length > 0 || tagPicker}
 				<div class="flex flex-wrap items-center gap-1">

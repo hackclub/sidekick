@@ -182,8 +182,8 @@
 	});
 </script>
 
-<div class="flex flex-col gap-5 px-6 py-5 overflow-y-auto">
-	<div class="grid grid-cols-2 gap-4">
+<div class="flex flex-col gap-5 px-6 max-md:px-4 py-5 overflow-y-auto">
+	<div class="grid grid-cols-2 max-md:grid-cols-1 gap-4">
 		<div class="border border-border-card rounded-section bg-surface/40">
 			<div bind:this={editorChartEl} class="w-full h-[220px]"></div>
 		</div>
@@ -192,7 +192,7 @@
 		</div>
 	</div>
 
-	<div class="grid grid-cols-2 gap-4">
+	<div class="grid grid-cols-2 max-md:grid-cols-1 gap-4">
 		<section>
 			<h3 class="text-[13px] font-bold text-text-primary tracking-[-0.39px] mb-2">IPs</h3>
 			<div class="border border-border-card rounded-section overflow-hidden">

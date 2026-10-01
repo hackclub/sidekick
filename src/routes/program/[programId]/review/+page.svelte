@@ -273,11 +273,11 @@
 	<title>Review - {data.program.name} - Sidekick</title>
 </svelte:head>
 
-<div class="px-10 py-8 flex flex-col gap-8 max-w-full overflow-hidden">
+<div class="px-10 max-md:px-4 py-8 max-md:py-5 flex flex-col gap-8 max-md:gap-6 max-w-full overflow-hidden">
 	<div class="flex items-center justify-between flex-wrap gap-2">
 		<div class="flex gap-2 items-center flex-wrap min-w-0">
 			<form
-				class="border border-border-input rounded-tag flex gap-2 items-center px-3 py-1.5 w-[260px] min-w-0"
+				class="border border-border-input rounded-tag flex gap-2 items-center px-3 py-1.5 w-[260px] max-md:w-full min-w-0"
 				onsubmit={(e) => e.preventDefault()}
 			>
 				<Search size={14} class="text-text-placeholder shrink-0" />
@@ -350,8 +350,8 @@
 				{/if}
 			</div>
 		</div>
-		<div class="flex items-center gap-2 shrink-0">
-			<span class="font-medium text-sm text-text-muted whitespace-nowrap">
+		<div class="flex items-center gap-2 shrink-0 max-md:shrink max-md:w-full max-md:justify-between">
+			<span class="font-medium text-sm text-text-muted whitespace-nowrap max-md:whitespace-normal">
 				{#if filtersActive}
 					{filteredProjects.length + filteredHqProjects.length} of {data.projects.length + data.hqProjects.length} shown
 				{:else}
@@ -408,7 +408,7 @@
 				{@const reviewer = data.actors[pa.reviewerId]}
 				<a
 					href={resolve(`/program/${data.program.id}/review/${pa.projectId}`)}
-					class="border-2 border-dashed border-amber-300 bg-amber-50/30 rounded-section p-4 flex items-center gap-4 hover:border-amber-400 hover:bg-amber-50/50 transition-colors"
+					class="border-2 border-dashed border-amber-300 bg-amber-50/30 rounded-section p-4 max-md:p-3 flex items-center gap-4 max-md:gap-3 hover:border-amber-400 hover:bg-amber-50/50 transition-colors"
 				>
 					{#if project?.screenshotUrl}
 						<img src={project.screenshotUrl} alt="" class="w-16 h-10 rounded-tag object-cover shrink-0" />
@@ -416,10 +416,10 @@
 						<div class="w-16 h-10 rounded-tag bg-surface shrink-0"></div>
 					{/if}
 					<div class="flex-1 min-w-0">
-						<div class="flex items-center gap-1.5 mb-0.5">
+						<div class="flex max-md:flex-wrap items-center gap-1.5 mb-0.5">
 							<span class="text-text-tertiary text-xs font-mono" title={isUuid(pa.projectId) ? pa.projectId : undefined}>#{shortenId(pa.projectId)}</span>
-							<span class="font-bold text-sm tracking-[-0.3px] truncate">{project?.title ?? shortenId(pa.projectId)}</span>
-							<ProjectTags tags={[...(project?.tags ?? []), ...customTagsFor(pa.projectId)]} class="shrink-0" />
+							<span class="font-bold text-sm tracking-[-0.3px] truncate max-md:flex-1 max-md:min-w-0">{project?.title ?? shortenId(pa.projectId)}</span>
+							<ProjectTags tags={[...(project?.tags ?? []), ...customTagsFor(pa.projectId)]} class="shrink-0 max-md:basis-full" />
 						</div>
 						<div class="flex items-center gap-1.5 text-xs text-text-secondary tracking-[-0.24px]">
 							<Avatar name={reviewer?.name ?? pa.reviewerId} url={reviewer?.avatarUrl} size="xs" />
@@ -449,7 +449,7 @@
 				{@const actor = data.actors[project.authorId]}
 				<a
 					href={resolve(`/program/${data.program.id}/review/${project.id}`)}
-					class="border-2 border-dashed border-violet-300 bg-violet-50/30 rounded-section p-4 flex items-center gap-4 hover:border-violet-400 hover:bg-violet-50/50 transition-colors"
+					class="border-2 border-dashed border-violet-300 bg-violet-50/30 rounded-section p-4 max-md:p-3 flex items-center gap-4 max-md:gap-3 hover:border-violet-400 hover:bg-violet-50/50 transition-colors"
 				>
 					{#if project.screenshotUrl}
 						<img src={project.screenshotUrl} alt="" class="w-16 h-10 rounded-tag object-cover shrink-0" />
@@ -457,10 +457,10 @@
 						<div class="w-16 h-10 rounded-tag bg-surface shrink-0"></div>
 					{/if}
 					<div class="flex-1 min-w-0">
-						<div class="flex items-center gap-1.5 mb-0.5">
+						<div class="flex max-md:flex-wrap items-center gap-1.5 mb-0.5">
 							<span class="text-text-tertiary text-xs font-mono" title={isUuid(project.id) ? project.id : undefined}>#{shortenId(project.id)}</span>
-							<span class="font-bold text-sm tracking-[-0.3px] truncate">{project.title}</span>
-							<ProjectTags tags={[...(project.tags ?? []), ...customTagsFor(project.id)]} class="shrink-0" />
+							<span class="font-bold text-sm tracking-[-0.3px] truncate max-md:flex-1 max-md:min-w-0">{project.title}</span>
+							<ProjectTags tags={[...(project.tags ?? []), ...customTagsFor(project.id)]} class="shrink-0 max-md:basis-full" />
 						</div>
 						<div class="flex items-center gap-1.5 text-xs text-text-secondary tracking-[-0.24px]">
 							<Avatar name={actor?.name ?? project.authorId} url={actor?.avatarUrl} size="xs" />
@@ -475,7 +475,7 @@
 							</span>
 						</div>
 					</div>
-					<div class="flex items-center gap-4 shrink-0 text-xs text-text-secondary">
+					<div class="flex max-md:flex-col items-center max-md:items-end gap-4 max-md:gap-1 shrink-0 text-xs text-text-secondary">
 						{#if hqShip}
 							<div class="flex items-center gap-1" title="Reported hours (this ship)">
 								<Hourglass size={12} class="text-text-tertiary" />
@@ -517,7 +517,7 @@
 				{@const actor = data.actors[project.authorId]}
 				<a
 					href={resolve(`/program/${data.program.id}/review/${project.id}`)}
-					class="border border-border-card rounded-section p-4 flex items-center gap-4 hover:border-accent hover:bg-accent-bg transition-colors"
+					class="border border-border-card rounded-section p-4 max-md:p-3 flex items-center gap-4 max-md:gap-3 hover:border-accent hover:bg-accent-bg transition-colors"
 				>
 					{#if project.screenshotUrl}
 						<img src={project.screenshotUrl} alt="" class="w-16 h-10 rounded-tag object-cover shrink-0" />
@@ -525,10 +525,10 @@
 						<div class="w-16 h-10 rounded-tag bg-surface shrink-0"></div>
 					{/if}
 					<div class="flex-1 min-w-0">
-						<div class="flex items-center gap-1.5 mb-0.5">
+						<div class="flex max-md:flex-wrap items-center gap-1.5 mb-0.5">
 							<span class="text-text-tertiary text-xs font-mono" title={isUuid(project.id) ? project.id : undefined}>#{shortenId(project.id)}</span>
-							<span class="font-bold text-sm tracking-[-0.3px] truncate">{project.title}</span>
-							<ProjectTags tags={[...(project.tags ?? []), ...customTagsFor(project.id)]} class="shrink-0" />
+							<span class="font-bold text-sm tracking-[-0.3px] truncate max-md:flex-1 max-md:min-w-0">{project.title}</span>
+							<ProjectTags tags={[...(project.tags ?? []), ...customTagsFor(project.id)]} class="shrink-0 max-md:basis-full" />
 						</div>
 						<div class="flex items-center gap-1.5 text-xs text-text-secondary tracking-[-0.24px]">
 							<Avatar name={actor?.name ?? project.authorId} url={actor?.avatarUrl} size="xs" />
@@ -543,7 +543,7 @@
 							</span>
 						</div>
 					</div>
-					<div class="flex items-center gap-4 shrink-0 text-xs text-text-secondary">
+					<div class="flex max-md:flex-col items-center max-md:items-end gap-4 max-md:gap-1 shrink-0 text-xs text-text-secondary">
 						{#if pendingShip}
 							<div class="flex items-center gap-1" title="Reported hours (this ship)">
 								<Hourglass size={12} class="text-text-tertiary" />

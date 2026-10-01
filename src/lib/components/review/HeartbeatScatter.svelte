@@ -107,6 +107,11 @@
 			}
 			chart = echarts.init(plotRoot);
 
+			// Mobile layout (< md): thin out the time labels, and leave one-finger
+			// drags to the page so the chart isn't a scroll trap (pinch and the
+			// slider below still zoom/pan).
+			const narrow = window.matchMedia('(max-width: 767px)').matches;
+
 			const option = {
 				tooltip: {
 					trigger: 'axis',
@@ -123,6 +128,7 @@
 					type: 'time',
 					axisLabel: {
 						color: '#737373',
+						hideOverlap: narrow,
 						formatter: (value: number) =>
 							new Date(value).toLocaleTimeString('en-US', {
 								hour: '2-digit', minute: '2-digit', hour12: false, timeZone: timezone
@@ -188,7 +194,11 @@
 					selectedMode: true
 				},
 				dataZoom: [
-					{ type: 'inside', xAxisIndex: 0 },
+					{
+						type: 'inside',
+						xAxisIndex: 0,
+						...(narrow ? { moveOnMouseMove: false, preventDefaultMouseMove: false } : {})
+					},
 					{
 						type: 'slider',
 						xAxisIndex: 0,

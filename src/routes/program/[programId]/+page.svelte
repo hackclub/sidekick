@@ -58,7 +58,7 @@
 	<title>{data.program.name} - Sidekick</title>
 </svelte:head>
 
-<div class="px-6 lg:px-12 xl:px-16 py-10 flex flex-col gap-8 max-w-full overflow-hidden">
+<div class="px-6 max-md:px-4 lg:px-12 xl:px-16 py-10 max-md:py-6 flex flex-col gap-8 max-md:gap-5 max-w-full overflow-hidden">
 	<div class="flex items-center justify-between flex-wrap gap-4">
 		<div class="flex gap-5 items-center">
 			{#if data.program.iconUrl}

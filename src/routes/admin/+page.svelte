@@ -39,7 +39,7 @@
 	<title>Admin - Sidekick</title>
 </svelte:head>
 
-<div class="flex flex-col gap-6 p-10 max-w-[720px] mx-auto">
+<div class="flex flex-col gap-6 p-10 max-md:px-4 max-md:py-6 max-w-[720px] mx-auto">
 	<div class="flex items-center gap-4">
 		<div class="size-10 rounded-section bg-accent-bg flex items-center justify-center">
 			<ShieldCheck size={18} class="text-accent" />
@@ -64,8 +64,8 @@
 
 	<div class="flex flex-col gap-2">
 		{#each data.users as u (u.id)}
-			<div class="border border-border-card rounded-section bg-white px-4 py-3 flex items-center gap-3">
-				<div class="flex items-center gap-2.5 flex-1 min-w-0">
+			<div class="border border-border-card rounded-section bg-white px-4 py-3 flex max-md:flex-wrap items-center gap-3">
+				<div class="flex items-center gap-2.5 flex-1 max-md:basis-full min-w-0">
 					<Avatar name={u.name} url={u.avatarUrl} size="lg" />
 					<div class="flex flex-col min-w-0">
 						<span class="text-sm font-semibold text-text-primary truncate">{u.name}</span>
@@ -73,7 +73,7 @@
 					</div>
 				</div>
 
-				<span class="text-xs text-text-tertiary shrink-0 w-20 text-right">
+				<span class="text-xs text-text-tertiary shrink-0 w-20 max-md:w-auto max-md:mr-auto text-right">
 					{u.programCount} program{u.programCount === 1 ? '' : 's'}
 				</span>
 

@@ -584,8 +584,8 @@
 		{/if}
 
 		{#if event.type === 'rejection'}
-			<div class="flex gap-1.5 w-full">
-				<div class="bg-surface rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
+			<div class="flex max-md:flex-col gap-1.5 w-full">
+				<div class="bg-surface rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 max-md:basis-auto min-w-0">
 					<p class="font-bold text-sm tracking-[-0.3px]">Reviewer message</p>
 					{#if editing}
 						<textarea
@@ -598,7 +598,7 @@
 					{/if}
 				</div>
 				{#if displayInternal || editing}
-					<div class="bg-accent-bg-warm border border-dashed border-accent rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
+					<div class="bg-accent-bg-warm border border-dashed border-accent rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 max-md:basis-auto min-w-0">
 						<p class="font-bold text-sm tracking-[-0.3px]">Internal note</p>
 						{#if editing}
 							<textarea
@@ -614,20 +614,20 @@
 			</div>
 			{@render fieldValues(event.fields)}
 		{:else if event.type === 'authorized_approval'}
-			<div class="flex gap-1.5 w-full">
-				<div class="bg-surface rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
+			<div class="flex max-md:flex-col gap-1.5 w-full">
+				<div class="bg-surface rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 max-md:basis-auto min-w-0">
 					<p class="font-bold text-sm tracking-[-0.3px]">Reviewer message</p>
 					{@render markdownText(displayFeedback)}
 				</div>
-				<div class="bg-accent-bg-warm border border-dashed border-accent rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
+				<div class="bg-accent-bg-warm border border-dashed border-accent rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 max-md:basis-auto min-w-0">
 					<p class="font-bold text-sm tracking-[-0.3px]">Justification</p>
 					{@render markdownText(displayInternal)}
 				</div>
 			</div>
 			{@render fieldValues(event.fields)}
 		{:else if event.type === 'approval'}
-			<div class="flex gap-1.5 w-full">
-				<div class="bg-surface rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
+			<div class="flex max-md:flex-col gap-1.5 w-full">
+				<div class="bg-surface rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 max-md:basis-auto min-w-0">
 					<p class="font-bold text-sm tracking-[-0.3px]">Reviewer message</p>
 					{#if editing}
 						<textarea
@@ -639,7 +639,7 @@
 						{@render markdownText(displayFeedback)}
 					{/if}
 				</div>
-				<div class="bg-accent-bg-warm border border-dashed border-accent rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
+				<div class="bg-accent-bg-warm border border-dashed border-accent rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 max-md:basis-auto min-w-0">
 					<p class="font-bold text-sm tracking-[-0.3px]">Justification</p>
 					{#if editing}
 						<textarea
@@ -655,7 +655,7 @@
 			{@render fieldValues(event.fields)}
 		{:else if event.type === 'pending_approval'}
 			{#if isEditing}
-				<div class="flex gap-3 w-full mt-2">
+				<div class="flex max-md:flex-col gap-3 w-full mt-2">
 					<div class="flex flex-col gap-1 flex-1 min-w-0">
 						<label class="font-bold text-sm tracking-[-0.3px]" for="pending-hours-{event.id}">Hours to assign</label>
 						<input
@@ -737,12 +737,12 @@
 			{/if}
 			{@render fieldValues(event.fields)}
 		{:else if event.type === 'discarded_approval'}
-			<div class="flex gap-1.5 w-full opacity-50">
-				<div class="border border-border-card bg-surface/50 rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
+			<div class="flex max-md:flex-col gap-1.5 w-full opacity-50">
+				<div class="border border-border-card bg-surface/50 rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 max-md:basis-auto min-w-0">
 					<p class="font-bold text-sm tracking-[-0.3px] text-text-tertiary">Reviewer message</p>
 					<p class="text-sm tracking-[-0.3px] text-text-tertiary break-words">{@render linkedText(event.feedbackMessage)}</p>
 				</div>
-				<div class="border border-border-card bg-surface/50 rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 min-w-0">
+				<div class="border border-border-card bg-surface/50 rounded-tag p-3 flex flex-col gap-1.5 flex-1 basis-0 max-md:basis-auto min-w-0">
 					<p class="font-bold text-sm tracking-[-0.3px] text-text-tertiary">Justification</p>
 					<p class="text-sm tracking-[-0.3px] text-text-tertiary break-words">{@render linkedText(event.justification)}</p>
 				</div>

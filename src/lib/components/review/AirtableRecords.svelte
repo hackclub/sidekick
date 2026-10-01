@@ -60,7 +60,7 @@
 </script>
 
 <div class="border border-border-card rounded-card shadow-card overflow-hidden {className}">
-	<div class="flex items-center justify-between px-8 py-4 border-b border-border-card">
+	<div class="flex items-center justify-between px-8 max-md:px-4 py-4 border-b border-border-card">
 		<div class="flex items-center gap-2">
 			<AirtableIcon size={16} class="shrink-0" />
 
@@ -78,7 +78,7 @@
 
 	<div class="max-h-[240px] overflow-auto">
 		{#if loading}
-			<div class="flex flex-col animate-pulse px-8 py-4 gap-1">
+			<div class="flex flex-col animate-pulse px-8 max-md:px-4 py-4 gap-1">
 				<!-- eslint-disable-next-line @typescript-eslint/no-unused-vars -->
 				{#each Array(3) as _, i (i)}
 					<div class="flex items-center justify-between h-9 gap-3">
@@ -91,11 +91,11 @@
 				{/each}
 			</div>
 		{:else if records.length === 0}
-			<div class="px-8 py-6">
+			<div class="px-8 max-md:px-4 py-6">
 				<p class="text-sm text-text-tertiary tracking-[-0.3px]">No matching records found</p>
 			</div>
 		{:else}
-			<div class="flex flex-col px-8 py-3">
+			<div class="flex flex-col px-8 max-md:px-4 py-3">
 				<!-- The index in the key guards against duplicate URLs: a key collision
 				     throws mid-flush and silently freezes this whole section (records
 				     stop rendering and the fuzzy checkbox stops reflecting its state). -->
@@ -145,7 +145,7 @@
 	</div>
 
 	{#if !loading && fuzzyRecords.length > 0}
-		<div class="px-8 py-3 border-t border-border-card">
+		<div class="px-8 max-md:px-4 py-3 border-t border-border-card">
 			<Checkbox checked={countFuzzy} onchange={() => (countFuzzy = !countFuzzy)}>
 				<span class="text-xs text-text-tertiary">
 					Count {fuzzyRecords.length} fuzzy {fuzzyRecords.length === 1 ? 'match' : 'matches'}

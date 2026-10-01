@@ -131,7 +131,7 @@
 </script>
 
 <div
-	class="@container border border-border-card rounded-card shadow-card p-8 flex flex-col gap-4 {className}"
+	class="@container border border-border-card rounded-card shadow-card p-8 max-md:p-4 flex flex-col gap-4 {className}"
 >
 	<div class="flex gap-2 items-center w-full">
 		<div class="flex flex-1 gap-2.5 items-center min-w-0">

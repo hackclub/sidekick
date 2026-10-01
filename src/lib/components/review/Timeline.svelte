@@ -65,10 +65,11 @@
 	});
 </script>
 
-<div class="border border-border-card rounded-card shadow-card p-8 flex flex-col gap-4 relative {className}">
-	<!-- Vertical stem — aligned to avatar center: p-8(32) + icon(24) + gap(12) + avatar/2(14) = 82px -->
+<div class="border border-border-card rounded-card shadow-card p-8 max-md:p-4 flex flex-col gap-4 relative {className}">
+	<!-- Vertical stem — aligned to avatar center: p-8(32) + icon(24) + gap(12) + avatar/2(14) = 82px
+	     (mobile: p-4(16) instead of p-8, so 66px) -->
 	{#if events.length > 1}
-		<div class="absolute left-[81px] top-[46px] bottom-[46px] w-[2px] bg-border-card z-0"></div>
+		<div class="absolute left-[81px] max-md:left-[65px] top-[46px] max-md:top-[30px] bottom-[46px] max-md:bottom-[30px] w-[2px] bg-border-card z-0"></div>
 	{/if}
 
 	{#each events as event, i (i)}

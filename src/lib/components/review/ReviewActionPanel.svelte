@@ -436,9 +436,9 @@
 <div class="border border-border-card rounded-card overflow-hidden">
 	<TabBar {tabs} active={selectedAction} onchange={(id) => (selectedAction = id as ActionType)} />
 
-	<div class="p-5 flex flex-col gap-4">
+	<div class="p-5 max-md:p-3.5 flex flex-col gap-4">
 		{#if selectedAction === 'approve'}
-			<div class="flex gap-3 items-start">
+			<div class="flex max-md:flex-col gap-3 items-start max-md:items-stretch">
 				<div class="flex flex-col gap-1.5 flex-1 min-w-0">
 					<label class="font-bold text-sm tracking-[-0.3px]" for="hours">
 						Hours to assign
@@ -465,12 +465,12 @@
 
 				{#if supportsRewardedOverride}
 					<div class="flex flex-col gap-1.5 flex-1 min-w-0">
-						<label class="font-bold text-sm tracking-[-0.3px] flex items-center gap-1.5" for="rewarded-override">
+						<label class="font-bold text-sm tracking-[-0.3px] flex items-center gap-1.5 max-md:relative" for="rewarded-override">
 							Rewarded hours override
 							<span class="font-normal text-text-secondary">(optional)</span>
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<span
-								class="relative inline-flex"
+								class="relative max-md:static inline-flex"
 								onmouseenter={() => (showOverrideHelp = true)}
 								onmouseleave={() => (showOverrideHelp = false)}
 							>
@@ -611,7 +611,7 @@
 								/>
 							</div>
 						{:else}
-							<div class="flex items-baseline gap-3">
+							<div class="flex max-md:flex-col items-baseline max-md:items-stretch gap-3 max-md:gap-1.5">
 								<label class="font-bold text-sm tracking-[-0.3px] shrink-0" for="field-{fieldDef.name}">
 									{fieldDef.label}
 									{#if !fieldDef.required}
@@ -683,7 +683,7 @@
 
 		{:else if selectedAction === 'reject'}
 			<div class="flex flex-col gap-1.5">
-				<div class="flex items-center justify-between">
+				<div class="flex max-md:flex-wrap items-center justify-between max-md:gap-1.5">
 					<label class="font-bold text-sm tracking-[-0.3px]" for="reject-feedback">
 						Rejection message
 						<span class="font-normal text-text-secondary">(visible to author)</span>
@@ -797,7 +797,7 @@
 								/>
 							</div>
 						{:else}
-							<div class="flex items-baseline gap-3">
+							<div class="flex max-md:flex-col items-baseline max-md:items-stretch gap-3 max-md:gap-1.5">
 								<label class="font-bold text-sm tracking-[-0.3px] shrink-0" for="field-{fieldDef.name}">
 									{fieldDef.label}
 									{#if !fieldDef.required}
@@ -861,7 +861,7 @@
 			</div>
 		{/if}
 
-		<div class="flex items-center justify-end gap-2">
+		<div class="flex max-md:flex-wrap items-center justify-end gap-2">
 			{#if selectedAction === 'approve' && changelog}
 				<button
 					type="button"
@@ -931,5 +931,16 @@
 		letter-spacing: -0.24px;
 		line-height: 1.4;
 		color: var(--color-text-secondary, #737373);
+	}
+
+	/* Mobile: the help icon can sit anywhere along the row, so the tooltip is
+	   anchored to the whole label (see max-md:relative / max-md:static in the
+	   markup) and spans its width instead of hanging off the icon. */
+	@media (max-width: 767px) {
+		.override-help-tooltip {
+			left: 0;
+			right: 0;
+			width: auto;
+		}
 	}
 </style>

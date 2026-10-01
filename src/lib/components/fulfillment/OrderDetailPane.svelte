@@ -614,7 +614,7 @@
 	});
 </script>
 
-<div class="@container flex flex-col gap-6 pb-8 pt-12 px-8">
+<div class="@container flex flex-col gap-6 pb-8 pt-12 max-md:pt-5 px-8 max-md:px-4">
 	<div class="flex items-start justify-between">
 		<div class="flex flex-col gap-4 flex-1 min-w-0">
 			<div class="flex gap-3 items-center">
@@ -764,7 +764,7 @@
 							<Pencil size={12} class="text-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity" />
 						</div>
 					{:else}
-						<span class="text-sm text-text-placeholder">Tracking ID/URL/HCB grant link/etc...</span>
+						<span class="text-sm text-text-placeholder max-md:truncate">Tracking ID/URL/HCB grant link/etc...</span>
 						<Pencil size={12} class="text-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
 					{/if}
 				</button>
