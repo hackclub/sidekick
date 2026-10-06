@@ -18,6 +18,7 @@
 	import HackatimeViewer from '$lib/components/review/HackatimeViewer.svelte';
 	import OtherProjects from '$lib/components/review/OtherProjects.svelte';
 	import ProjectTags from '$lib/components/review/ProjectTags.svelte';
+	import ReviewViewers from '$lib/components/review/ReviewViewers.svelte';
 	import { ChevronLeft } from 'lucide-svelte';
 	import type { TimelineEvent as TEvent, ReviewFieldDefinition } from '$lib/server/protocol/types.js';
 	import { isUuid, shortenId } from '$lib/utils/id';
@@ -701,6 +702,11 @@
 		</div>
 
 		<div class="flex gap-4 items-center shrink-0 ml-4">
+			<ReviewViewers
+				programId={data.program.id}
+				projectId={data.project.id}
+				currentUserId={data.user?.id ?? null}
+			/>
 			<span class="text-sm tracking-[-0.3px] hidden lg:inline">
 				<span class="font-bold">{data.pendingCount}</span> projects left in queue.
 			</span>

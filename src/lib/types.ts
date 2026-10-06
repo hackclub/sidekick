@@ -10,6 +10,13 @@ export interface SessionUser {
 	isProgramAuthor: boolean;
 }
 
+/** A user currently viewing a review page (see `$lib/server/presence`). */
+export interface PresenceViewer {
+	id: string;
+	name: string;
+	avatarUrl: string | null;
+}
+
 export interface ProgramSummary {
 	id: string;
 	name: string;
