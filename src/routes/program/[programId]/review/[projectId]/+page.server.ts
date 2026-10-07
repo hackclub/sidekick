@@ -11,6 +11,7 @@ import { getLapseTimelapses } from '$lib/server/integrations/lapse.js';
 import { getLookoutSessions } from '$lib/server/integrations/lookout.js';
 import { CHECKS } from '$lib/server/checks/registry.js';
 import { enqueueChecks } from '$lib/server/queue/checks.js';
+import { enqueueLapseAfkAnalyses } from '$lib/server/queue/lapse-afk.js';
 import { createLogger } from '$lib/server/logger.js';
 import type { CheckContext } from '$lib/server/checks/types.js';
 import type { SubmitReviewActionInput } from '$lib/server/protocol/types.js';
@@ -276,6 +277,8 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		try {
 			const timelapses = await getLapseTimelapses(hackatimeUser, project.hackatimeProjectKeys);
 			log.debug('lapse data loaded', { timelapseCount: timelapses.length });
+			// Awaited so the jobs exist by the time the client polls for them.
+			await enqueueLapseAfkAnalyses(timelapses).catch((e) => log.error('Lapse AFK enqueue failed', e));
 			return { lapseTimelapses: timelapses.map((t) => ({ ...t })) };
 		} catch (e) {
 			log.error('lapse integration failed', e);

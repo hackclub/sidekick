@@ -11,7 +11,8 @@ RUN npx prisma generate
 RUN npm run build
 
 FROM base AS production
-RUN apk add --no-cache git
+# ffmpeg: Lapse AFK detection (integrations/lapse-afk.ts)
+RUN apk add --no-cache git ffmpeg
 COPY --from=build /app/build ./build
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./

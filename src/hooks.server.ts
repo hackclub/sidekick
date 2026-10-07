@@ -17,6 +17,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 		const { ensureWorkerStarted } = await import('$lib/server/queue/checks.js');
 		ensureWorkerStarted();
 		log.info('checks worker started');
+		const { ensureLapseAfkWorkerStarted } = await import('$lib/server/queue/lapse-afk.js');
+		ensureLapseAfkWorkerStarted();
 	}
 
 	log.trace('incoming request', {

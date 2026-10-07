@@ -269,6 +269,19 @@ model HackatimeCache {
   @@index([hackatimeUserId])
 }
 
+// Cached AFK (no visual change) spans for a Lapse timelapse, keyed by Lapse's
+// timelapse ID. Analyses are program-independent, so any reviewer who opens
+// the same timelapse reuses them. See integrations/lapse-afk.ts.
+model LapseAfkAnalysis {
+  timelapseId       String   @id
+  algorithmVersion  Int
+  videoDuration     Float
+  recordingDuration Float
+  intervals         Json
+  totalAfkSeconds   Float
+  analyzedAt        DateTime @default(now())
+}
+
 model WarehouseTemplate {
   id             String   @id @default(cuid())
   programId      String

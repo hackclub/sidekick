@@ -6,6 +6,8 @@
 	import LapseIcon from '$lib/components/icons/LapseIcon.svelte';
 	import LookoutIcon from '$lib/components/icons/LookoutIcon.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
+	import LapseAfkPlayer from '$lib/components/review/LapseAfkPlayer.svelte';
+	import type { LapseAfkStatus } from '$lib/review/lapseAfk.js';
 
 	interface CommitFile {
 		filename: string;
@@ -96,6 +98,41 @@
 	}: Props = $props();
 
 	let activeTab = $state('github');
+	let selectedTimelapseId = $state<string | null>(null);
+	const selectedTimelapse = $derived(timelapses.find((t) => t.id === selectedTimelapseId && t.playbackUrl) ?? null);
+	// AFK analysis runs in the background (queued when the review page loads),
+	// so poll its status while the Lapse tab is open and anything is unfinished.
+	const afkStatuses = new SvelteMap<string, LapseAfkStatus>();
+	const AFK_POLL_MS = 3000;
+
+	$effect(() => {
+		if (activeTab !== 'lapse' || !programId || timelapses.length === 0) return;
+		const ids = timelapses.filter((t) => t.playbackUrl).map((t) => t.id);
+		if (ids.length === 0) return;
+
+		let timer: ReturnType<typeof setTimeout> | null = null;
+		let stopped = false;
+		const poll = async () => {
+			try {
+				const res = await fetch(`/api/programs/${programId}/lapse/afk?ids=${encodeURIComponent(ids.join(','))}`);
+				if (res.ok) {
+					const { statuses }: { statuses: Record<string, LapseAfkStatus> } = await res.json();
+					if (stopped) return;
+					for (const [id, status] of Object.entries(statuses)) afkStatuses.set(id, status);
+				}
+			} catch {
+				// Transient; try again next tick.
+			}
+			if (!stopped && ids.some((id) => afkStatuses.get(id)?.state === 'pending' || !afkStatuses.has(id))) {
+				timer = setTimeout(poll, AFK_POLL_MS);
+			}
+		};
+		poll();
+		return () => {
+			stopped = true;
+			if (timer) clearTimeout(timer);
+		};
+	});
 	let hoveredCommit: GitCommit | null = $state(null);
 	let popupPos: { x: number; y: number } | null = $state(null);
 	let popupVisible = $state(false);
@@ -479,50 +516,82 @@
 			</div>
 			{/if}
 		{:else if activeTab === 'lapse'}
+			{#if selectedTimelapse?.playbackUrl}
+				<LapseAfkPlayer
+					timelapse={{ ...selectedTimelapse, playbackUrl: selectedTimelapse.playbackUrl }}
+					lapseUrl={lapseUrl(selectedTimelapse.id)}
+					status={afkStatuses.get(selectedTimelapse.id)}
+					onclose={() => (selectedTimelapseId = null)}
+				/>
+				<div class="h-3"></div>
+			{/if}
+			{#snippet lapseCard(tl: LapseTimelapse)}
+				{@const afkStatus = afkStatuses.get(tl.id)}
+				{@const afk = afkStatus?.state === 'complete' ? afkStatus.analysis : null}
+				<div class="relative aspect-video bg-surface flex items-center justify-center">
+					{#if tl.thumbnailUrl}
+						<img src={tl.thumbnailUrl} alt="" class="w-full h-full object-cover" />
+					{:else}
+						<LapseIcon size={24} />
+					{/if}
+					{#if afk && afk.intervals.length > 0}
+						<div
+							class="absolute top-1.5 left-1.5 bg-check-fail text-white text-[10px] font-medium px-1.5 py-0.5 rounded"
+							title="{afk.intervals.length} {afk.intervals.length === 1 ? 'span' : 'spans'} of over a minute without visible change on screen"
+						>
+							{fmtDuration(afk.totalAfkSeconds)} inactive
+						</div>
+					{:else if afkStatus?.state === 'pending'}
+						<div class="absolute top-1.5 left-1.5 bg-black/70 text-white text-[10px] font-medium px-1.5 py-0.5 rounded">
+							Checking inactivity…
+						</div>
+					{/if}
+					{#if tl.duration}
+						<div class="absolute bottom-1.5 right-1.5 bg-black/70 text-white text-[10px] font-medium px-1.5 py-0.5 rounded">
+							{fmtDuration(tl.duration)}
+						</div>
+					{/if}
+				</div>
+				<div class="px-3 py-2.5 flex flex-col gap-0.5 text-left">
+					<div class="flex items-center justify-between gap-2">
+						<p class="font-semibold text-sm text-text-primary truncate">{tl.name}</p>
+						{#if !tl.playbackUrl}
+							<ExternalLink size={12} class="shrink-0 text-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity" />
+						{/if}
+					</div>
+					{#if tl.hackatimeProject}
+						<p class="text-xs text-text-tertiary font-mono truncate">{tl.hackatimeProject}</p>
+					{/if}
+					{#if tl.description}
+						<p class="text-xs text-text-secondary line-clamp-2">{tl.description}</p>
+					{/if}
+					{#if tl.visibility === 'UNLISTED'}
+						<p class="text-[10px] text-text-faint italic">Unlisted</p>
+					{/if}
+				</div>
+			{/snippet}
 			<div class="grid grid-cols-2 gap-3">
 				{#each timelapses as tl (tl.id)}
-					{@const url = lapseUrl(tl.id)}
+					{#if tl.playbackUrl}
+						<button
+							type="button"
+							onclick={() => (selectedTimelapseId = tl.id)}
+							class="group border rounded-section overflow-hidden transition-colors cursor-pointer {selectedTimelapseId === tl.id ? 'border-accent' : 'border-border-card hover:border-accent'}"
+						>
+							{@render lapseCard(tl)}
+						</button>
+					{:else}
 						<!-- eslint-disable svelte/no-navigation-without-resolve -->
 						<a
-						href={url}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="group border border-border-card rounded-section overflow-hidden transition-colors hover:border-accent"
-					>
-						{#if tl.thumbnailUrl}
-							<div class="relative aspect-video bg-surface">
-								<img src={tl.thumbnailUrl} alt="" class="w-full h-full object-cover" />
-								<div class="absolute bottom-1.5 right-1.5 bg-black/70 text-white text-[10px] font-medium px-1.5 py-0.5 rounded">
-									{fmtDuration(tl.duration)}
-								</div>
-							</div>
-						{:else}
-							<div class="relative aspect-video bg-surface flex items-center justify-center">
-								<LapseIcon size={24} />
-								{#if tl.duration}
-									<div class="absolute bottom-1.5 right-1.5 bg-black/70 text-white text-[10px] font-medium px-1.5 py-0.5 rounded">
-										{fmtDuration(tl.duration)}
-									</div>
-								{/if}
-							</div>
-						{/if}
-						<div class="px-3 py-2.5 flex flex-col gap-0.5">
-							<div class="flex items-center justify-between gap-2">
-								<p class="font-semibold text-sm text-text-primary truncate">{tl.name}</p>
-								<ExternalLink size={12} class="shrink-0 text-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity" />
-							</div>
-							{#if tl.hackatimeProject}
-								<p class="text-xs text-text-tertiary font-mono truncate">{tl.hackatimeProject}</p>
-							{/if}
-							{#if tl.description}
-								<p class="text-xs text-text-secondary line-clamp-2">{tl.description}</p>
-							{/if}
-							{#if tl.visibility === 'UNLISTED'}
-								<p class="text-[10px] text-text-faint italic">Unlisted</p>
-							{/if}
-						</div>
-					</a>
-					<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							href={lapseUrl(tl.id)}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="group border border-border-card rounded-section overflow-hidden transition-colors hover:border-accent"
+						>
+							{@render lapseCard(tl)}
+						</a>
+						<!-- eslint-enable svelte/no-navigation-without-resolve -->
+					{/if}
 				{/each}
 			</div>
 		{:else if activeTab === 'lookout'}
