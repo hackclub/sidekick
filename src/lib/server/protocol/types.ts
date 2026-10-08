@@ -175,10 +175,13 @@ export interface Ship {
   hoursSubmitted: number;
   submittedAt: string; // ISO 8601
   status: "pending" | "pending_hq" | "approved" | "rejected";
+  // The review form and the program's checks are only read from the project
+  // FETCH_PROJECT_DETAIL returns; the lists (FETCH_PROJECTS,
+  // FETCH_AUTHOR_PROJECTS) may leave them off, and programs with a large
+  // select do. Never read them from a listed ship.
   approveFields?: ReviewFieldDefinition[];
   rejectFields?: ReviewFieldDefinition[];
-  // The program's own checks for this ship, shown alongside Sidekick's. Only
-  // read from the ship under review.
+  // The program's own checks for this ship, shown alongside Sidekick's.
   checks?: ProgramCheck[];
   // Advertises that the program accepts `rewardedHoursOverride` on approvals of
   // this ship. When true, Sidekick offers reviewers an optional override of the

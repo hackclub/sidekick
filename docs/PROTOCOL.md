@@ -145,6 +145,8 @@ A **ship** is a submission event - each time a participant submits their project
 
 Ships are always embedded inside their parent project - they're never returned as standalone objects.
 
+`approveFields`, `rejectFields` and `checks` are only read from the project returned by `FETCH_PROJECT_DETAIL`. A program may leave them off the ships in `FETCH_PROJECTS` and `FETCH_AUTHOR_PROJECTS`, and should when they are large: a select with every card a project can move to is tens of kilobytes, identical on every pending ship, and a queue of a hundred projects carrying it is megabytes per load. Sidekick's queue and overview pages read ids, statuses, hours and tags from the lists, nothing more.
+
 A project can accumulate **consecutive pending ships** when a participant re-ships (changes something and submits again) before the previous submission was reviewed. Sidekick always reviews the *most recent* pending ship — a review decision covers all work up to it. Keep superseded ships in the `ships` array (and their `"ship"` events in the timeline) so reviewers can see the full history.
 
 #### Rewarded Hours Override
@@ -622,6 +624,8 @@ Return a paginated list of projects with their embedded ships.
 
 `totalCount` is the total number of matching projects (not just this page). `nextCursor` is present only if there are more pages.
 
+The ships in a list may omit `approveFields`, `rejectFields` and `checks` (see Ships): Sidekick reads those from `FETCH_PROJECT_DETAIL` alone.
+
 #### Sort Hints
 
 By default Sidekick sorts each queue by earliest pending-ship submission date, so the longest-waiting projects float to the top. If your program already orders projects the way it wants them reviewed (a custom priority, a triage score, round-robin across reviewers, …), set `explicitlySorted: true` and Sidekick will **preserve the order you return** instead of applying its own sort.
@@ -642,6 +646,8 @@ Return a single project by ID, with all its ships.
 ```
 
 **Response:** A full `Project` object. Return HTTP 404 if not found.
+
+This is the one response whose pending ships must carry their `approveFields`, `rejectFields` and `checks`: the review page is built from it.
 
 ### `FETCH_PROJECT_TIMELINE`
 
@@ -691,7 +697,7 @@ This action is **optional** - if your program doesn't implement it, return the u
 }
 ```
 
-`projects` contains full `Project` objects (same shape as `FETCH_PROJECTS`), ships included. Return an empty array if the author has no other projects.
+`projects` contains full `Project` objects (same shape as `FETCH_PROJECTS`), ships included, and as with `FETCH_PROJECTS` the ships may omit `approveFields`, `rejectFields` and `checks`. Return an empty array if the author has no other projects.
 
 ### `FETCH_USER_NOTE` (optional)
 
