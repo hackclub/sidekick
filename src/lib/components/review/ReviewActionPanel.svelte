@@ -554,6 +554,7 @@
 					value={justification}
 					onchange={(v) => setDraft('justification', v)}
 					variant="internal"
+					fullscreenTitle="Internal justification"
 					placeholder="Why are we approving this? What did you verify?"
 				/>
 			</div>
