@@ -3,6 +3,7 @@ import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient } from '$lib/server/protocol/client.js';
 import { createLogger } from '$lib/server/logger.js';
+import { programIconUrl } from '$lib/server/icons.js';
 import type { ShopItem } from '$lib/server/protocol/types.js';
 import type { PageServerLoad, Actions } from './$types.js';
 
@@ -135,7 +136,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			id: program.id,
 			name: program.name,
 			yswsName: program.yswsName ?? '',
-			iconUrl: program.iconUrl,
+			iconUrl: programIconUrl(program),
 			description: program.description,
 			masterEndpoint: program.masterEndpoint,
 			secretKey: program.secretKey,

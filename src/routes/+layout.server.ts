@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import { getSessionUser } from '$lib/server/auth.js';
 import { getUserPrograms } from '$lib/server/rbac.js';
+import { programIconUrl } from '$lib/server/icons.js';
 import { createLogger } from '$lib/server/logger.js';
 import type { LayoutServerLoad } from './$types.js';
 
@@ -39,7 +40,7 @@ export const load: LayoutServerLoad = async ({ cookies, url }) => {
 			.map((p) => ({
 				id: p.id,
 				name: p.name,
-				iconUrl: p.iconUrl,
+				iconUrl: programIconUrl(p),
 				description: p.description,
 				isMember: p.isMember,
 				isPinned: p.id === user.pinnedProgramId

@@ -1,6 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { getMembership, trackAccess } from '$lib/server/rbac.js';
+import { programIconUrl } from '$lib/server/icons.js';
 import type { LayoutServerLoad } from './$types.js';
 
 export const load: LayoutServerLoad = async ({ params, parent }) => {
@@ -26,7 +27,7 @@ export const load: LayoutServerLoad = async ({ params, parent }) => {
 		program: {
 			id: program.id,
 			name: program.name,
-			iconUrl: program.iconUrl,
+			iconUrl: programIconUrl(program),
 			description: program.description
 		},
 		permissions: {
