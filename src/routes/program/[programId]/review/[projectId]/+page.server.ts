@@ -2,6 +2,7 @@ import { redirect, error, fail } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
+import { redactAuthorIdentity } from '$lib/server/protocol/redact.js';
 import { resolveActorIds } from '$lib/server/actors.js';
 import { getProjectHackatimeStats, getTrustLogs, getUserInfo } from '$lib/server/integrations/hackatime.js';
 import type { TrustLog, UserInfo } from '$lib/server/integrations/hackatime.js';
@@ -242,7 +243,9 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 				excludeProjectId: project.id
 			});
 			// Defensive: exclude the current project even if the endpoint ignored excludeProjectId.
-			const projects = result.projects.filter((p) => p.id !== project.id);
+			const projects = result.projects
+				.filter((p) => p.id !== project.id)
+				.map((p) => (membership.canViewHeartbeats ? p : redactAuthorIdentity(p)));
 			log.debug('author projects loaded', { count: projects.length });
 			return { supported: true, projects };
 		} catch (e) {
@@ -543,18 +546,20 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	]);
 
 	return {
-		project,
+		project: membership.canViewHeartbeats ? project : redactAuthorIdentity(project),
 		tagDefinitions,
 		assignedTagIds: tagAssignments.map((a) => a.tagId),
 		pendingShip: pendingShip ?? null,
 		rejectionTemplates,
 		author: {
 			name: author.name,
-			email: author.email,
+			// Real-world identity (email, HCA name) is limited to canViewHeartbeats,
+			// i.e. HQ and fraud reviewers — community reviewers see the Slack name only.
+			email: membership.canViewHeartbeats ? author.email : null,
 			avatarUrl: author.avatarUrl,
 			slackId: author.slackId,
 			// Supplied by the program (from its own HCA sign-in records), not resolved here.
-			hcaName: project.authorHcaName?.trim() || null,
+			hcaName: membership.canViewHeartbeats ? project.authorHcaName?.trim() || null : null,
 			hackatimeId: authorUser?.hackatimeId ?? project.hackatimeId ?? null,
 			joinDate: authorUser ? formatJoinDate(authorUser.createdAt) : ''
 		},

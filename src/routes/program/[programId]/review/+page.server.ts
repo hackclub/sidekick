@@ -2,6 +2,7 @@ import { redirect } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient } from '$lib/server/protocol/client.js';
+import { redactAuthorIdentity } from '$lib/server/protocol/redact.js';
 import type { Project } from '$lib/server/protocol/types.js';
 import { resolveActorIds } from '$lib/server/actors.js';
 import { createLogger } from '$lib/server/logger.js';
@@ -145,9 +146,11 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	});
 	tLoad.end();
 
+	const visible = (p: Project) => (membership.canViewHeartbeats ? p : redactAuthorIdentity(p));
+
 	return {
-		projects: projectsResult.projects,
-		hqProjects,
+		projects: projectsResult.projects.map(visible),
+		hqProjects: hqProjects.map(visible),
 		actors: actorsObj,
 		nextCursor: null,
 		totalCount: projectsResult.totalCount,

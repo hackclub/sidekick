@@ -116,7 +116,7 @@
 		{ key: 'canViewReviews', label: 'View reviews', description: 'Shows the Review tab to the user.' },
 		{ key: 'canCreateReviews', label: 'Create reviews', description: 'Allows the user to approve, reject, and comment on pending reviews.' },
 		{ key: 'canAuthorizeReviews', label: 'Authorize reviews', description: 'Users without this permission will be forced to have all approvals to be authorized by a user with this permission. Usually given to trusted/HQ reviewers.' },
-		{ key: 'canViewHeartbeats', label: 'View Hackatime heartbeats', description: 'Shows heartbeat-level Hackatime data: activity timelines, files, editors, machines, and IPs. Without it, Hackatime Details only shows rough daily time estimates. Heartbeats are confidential fraud-detection data, so only give this to HQ and fraud reviewers.' },
+		{ key: 'canViewHeartbeats', label: 'View Hackatime heartbeats', description: 'Shows heartbeat-level Hackatime data (activity timelines, files, editors, machines, and IPs) and authors\' real identity: their Hack Club Auth name and email. Without it, Hackatime Details only shows rough daily time estimates and authors appear by Slack name only. Only give this to HQ and fraud reviewers.' },
 		{ key: 'canViewFulfillments', label: 'View fulfillments', description: 'Shows the Fulfillment tab to the user. This alone doesn\'t grant them access to see detailed user data.' },
 		{ key: 'canViewAddressData', label: 'View address data', description: 'Shows detailed address information needed for fulfillment. Use with caution.' },
 		{ key: 'canUpdateFulfillments', label: 'Update fulfillments', description: 'Allows the user to update the status, reference numbers, and other editable fields of all fulfillments.' },
