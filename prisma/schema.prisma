@@ -97,6 +97,7 @@ model ProgramMembership {
   canViewReviews        Boolean   @default(false)
   canCreateReviews      Boolean   @default(false)
   canAuthorizeReviews   Boolean   @default(false)
+  canViewHeartbeats     Boolean   @default(false)
   canViewFulfillments   Boolean   @default(false)
   canViewAddressData    Boolean   @default(false)
   canUpdateFulfillments Boolean   @default(false)

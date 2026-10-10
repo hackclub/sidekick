@@ -919,11 +919,18 @@
 			{/if}
 
 			{#if data.hackatimeUser && data.project.hackatimeProjectKeys.length > 0}
-				<div style="grid-area: heartbeats">
+				<!-- With only estimates, the card takes the GitHub column's 32rem
+				     instead of sizing the row, and scrolls inside (see the multi wrapper). -->
+				<div
+					class={data.canViewHeartbeats ? '' : 'relative min-h-[32rem]'}
+					style="grid-area: heartbeats"
+				>
 					<HackatimeViewer
+						class={data.canViewHeartbeats ? '' : 'absolute inset-0'}
 						hackatimeUser={data.hackatimeUser}
 						hackatimeProjectKeys={data.project.hackatimeProjectKeys}
 						programId={data.program.id}
+						canViewHeartbeats={data.canViewHeartbeats}
 						defaultDate={data.pendingShip?.submittedAt
 							? new Date(data.pendingShip.submittedAt).toLocaleDateString('sv-SE', {
 									timeZone: data.authorTimezone

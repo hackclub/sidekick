@@ -47,6 +47,7 @@ export const actions: Actions = {
 						canViewReviews: true,
 						canCreateReviews: true,
 						canAuthorizeReviews: true,
+						canViewHeartbeats: true,
 						canViewFulfillments: true,
 						canViewAddressData: true,
 						canUpdateFulfillments: true,

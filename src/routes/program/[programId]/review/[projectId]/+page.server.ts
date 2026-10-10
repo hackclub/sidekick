@@ -579,6 +579,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		})),
 		canReview: membership.canCreateReviews,
 		canAuthorize: membership.canAuthorizeReviews,
+		canViewHeartbeats: membership.canViewHeartbeats,
 		programYswsName: program.yswsName || program.name,
 		hackatimeUser: hackatimeUser && project.hackatimeProjectKeys.length > 0 ? hackatimeUser : null,
 		authorTimezone

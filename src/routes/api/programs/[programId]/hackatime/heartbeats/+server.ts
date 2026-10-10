@@ -33,7 +33,7 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 	const user = locals.user;
 	if (!user) throw error(401);
 
-	await requirePermission(user.id, params.programId, 'canViewReviews', {
+	await requirePermission(user.id, params.programId, 'canViewHeartbeats', {
 		isSuperAdmin: user.isSuperAdmin
 	});
 

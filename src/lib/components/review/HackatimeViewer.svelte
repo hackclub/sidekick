@@ -21,6 +21,9 @@
 		Sparkles,
 		TriangleAlert,
 		FileArchive,
+		Lock,
+		CalendarDays,
+		LayoutGrid,
 		LoaderCircle as Spinner
 	} from 'lucide-svelte';
 	import { tick } from 'svelte';
@@ -35,6 +38,8 @@
 	import HackatimeBreakdown from './HackatimeBreakdown.svelte';
 	import HackatimeFiles from './HackatimeFiles.svelte';
 	import LocalHistoryPanel from './LocalHistoryPanel.svelte';
+	import ActivityCalendar from './ActivityCalendar.svelte';
+	import HackatimeShares, { type Shares } from './HackatimeShares.svelte';
 	import {
 		parseLocalHistoryZip,
 		analyzeLocalHistory,
@@ -66,12 +71,16 @@
 		source_type: number | string;
 	}
 
+	// Without canViewHeartbeats the server sends `date`, `active`, a rounded
+	// `totalSeconds` and language/editor/category `shares` — no line/cursor
+	// sparkline paths.
 	interface DayActivity {
 		date: string;
-		count: number;
+		active: boolean;
 		totalSeconds: number;
-		lineNoPath: string;
-		cursorPath: string;
+		lineNoPath?: string;
+		cursorPath?: string;
+		shares?: Shares;
 	}
 
 	interface ProjectBreakdown {
@@ -104,6 +113,8 @@
 		hackatimeUser: string;
 		hackatimeProjectKeys: string[];
 		programId: string;
+		/** Without this, only rough per-day time estimates are shown — no heartbeat-level data. */
+		canViewHeartbeats: boolean;
 		defaultDate?: string;
 		projectBreakdown?: ProjectBreakdown[];
 		markers?: ReviewMarker[];
@@ -120,6 +131,7 @@
 		hackatimeUser,
 		hackatimeProjectKeys,
 		programId,
+		canViewHeartbeats,
 		defaultDate,
 		projectBreakdown = [],
 		markers = [],
@@ -203,6 +215,14 @@
 		{ id: 'files', label: 'Files', icon: FileCode },
 		{ id: 'history', label: 'Local history', icon: HistoryIcon }
 	];
+
+	// Without canViewHeartbeats there's no per-day drill-down, so the card
+	// switches between the day cards and a month calendar instead.
+	const estimateTabs = [
+		{ id: 'days', label: 'Days', icon: LayoutGrid },
+		{ id: 'calendar', label: 'Calendar', icon: CalendarDays }
+	];
+	let estimateTab = $state('days');
 
 	const effectiveProjectKeys = $derived(selectedProject ? [selectedProject] : hackatimeProjectKeys);
 
@@ -334,7 +354,7 @@
 
 				for (const entries of Object.values(activityCache)) {
 					for (const d of entries) {
-						if (d.count > 0) {
+						if (d.active) {
 							days.push(d);
 						}
 					}
@@ -374,7 +394,7 @@
 		const days: DayActivity[] = [];
 		for (const entries of Object.values(activityCache)) {
 			for (const d of entries) {
-				if (d.count > 0) {
+				if (d.active) {
 					days.push(d);
 				}
 			}
@@ -525,7 +545,7 @@
 		const date = currentDate;
 		const user = hackatimeUser;
 		const keys = effectiveProjectKeys;
-		if (!user || keys.length === 0) return;
+		if (!canViewHeartbeats || !user || keys.length === 0) return;
 
 		loading = true;
 		error = null;
@@ -743,6 +763,7 @@
 
 	$effect(() => {
 		if (
+			canViewHeartbeats &&
 			(breakdownScope === 'all' || localHistory) &&
 			!allHeartbeats &&
 			!allHeartbeatsLoading &&
@@ -800,7 +821,7 @@
 	// (100k, oldest-first), which would silently drop recent heartbeats and report
 	// every recent commit as a bogus ~400-day gap.
 	async function ensureCommitGaps(group: MarkerGroup) {
-		if (group.type !== 'commit') return;
+		if (!canViewHeartbeats || group.type !== 'commit') return;
 
 		const pending = group.items.filter(
 			(it) => commitGaps[it.timestamp] === undefined && !commitGapsLoading[it.timestamp]
@@ -1004,6 +1025,48 @@
 		)
 	);
 
+	const longestDaySeconds = $derived(Math.max(0, ...allActiveDays.map((d) => d.totalSeconds)));
+
+	// Day strings are already in the author's timezone, so format in UTC to keep
+	// the month from shifting.
+	function monthLabel(ym: string): string {
+		const [y, m] = ym.split('-').map(Number);
+		return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-US', {
+			month: 'short',
+			year: 'numeric',
+			timeZone: 'UTC'
+		});
+	}
+
+	const selectedDay = $derived(allActiveDays.find((d) => d.date === currentDate) ?? null);
+
+	// Each day's shares weighted by its (rounded) time. The floor keeps days
+	// that round to 0 from vanishing when every day is that short.
+	const allTimeShares = $derived.by((): Shares | null => {
+		if (allActiveDays.length === 0) return null;
+		const out: Shares = { language: {}, editor: {}, category: {} };
+		let weightSum = 0;
+		for (const d of allActiveDays) {
+			if (!d.shares) continue;
+			const weight = Math.max(d.totalSeconds, 1);
+			weightSum += weight;
+			for (const field of ['language', 'editor', 'category'] as const) {
+				for (const [name, share] of Object.entries(d.shares[field])) {
+					out[field][name] = (out[field][name] ?? 0) + share * weight;
+				}
+			}
+		}
+		if (weightSum === 0) return null;
+		for (const field of ['language', 'editor', 'category'] as const) {
+			for (const name of Object.keys(out[field])) out[field][name] /= weightSum;
+		}
+		return out;
+	});
+
+	function formatEstimate(seconds: number): string {
+		return seconds > 0 ? `~${formatDuration(seconds)}` : '<15m';
+	}
+
 	function handleFocusChange(timestamp: number) {
 		focusedTimestamp = timestamp;
 		animationKey++;
@@ -1044,7 +1107,9 @@
 />
 
 <div
-	class="border border-border-card rounded-card shadow-card overflow-hidden flex flex-col {className}"
+	class="border border-border-card rounded-card shadow-card overflow-hidden flex flex-col {canViewHeartbeats
+		? ''
+		: 'h-full'} {className}"
 >
 	<div class="flex items-center px-6 max-md:px-4 py-4 border-b border-border-card">
 		<div class="flex items-center gap-2.5">
@@ -1054,7 +1119,10 @@
 					Hackatime Details
 				</h2>
 				<p class="text-[12px] text-text-secondary tracking-[-0.24px] flex items-center gap-1.5">
-					{#if codingHeartbeats}
+					{#if !canViewHeartbeats}
+						<Lock size={11} class="text-text-tertiary" />
+						Rough estimates only
+					{:else if codingHeartbeats}
 						{codingHeartbeats.length} heartbeat{codingHeartbeats.length === 1 ? '' : 's'}
 						{#if heartbeatsFromCache}
 							<span
@@ -1112,6 +1180,7 @@
 			</div>
 		</div>
 		<div class="flex max-md:flex-wrap items-center max-md:gap-y-1.5 shrink-0 ml-4 max-md:ml-0">
+			{#if canViewHeartbeats}
 			<input
 				bind:this={historyInput}
 				type="file"
@@ -1140,6 +1209,7 @@
 				{/if}
 				{localHistory ? 'Local history loaded' : 'Upload VS Code history'}
 			</button>
+			{/if}
 			<button
 				class="flex items-center gap-1 text-[11px] px-2 py-1 rounded-tag cursor-pointer transition-colors shrink-0 max-md:mr-2 bg-page border border-border-card text-text-secondary hover:text-text-primary disabled:opacity-50 disabled:cursor-default"
 				onclick={refreshHackatimeData}
@@ -1149,6 +1219,7 @@
 				<RefreshCw size={12} class={refreshing ? 'animate-spin' : ''} />
 				Refresh data
 			</button>
+			{#if canViewHeartbeats}
 			<button
 				class="flex items-center gap-1 text-[11px] px-2 py-1 rounded-tag cursor-pointer transition-colors shrink-0 ml-2 max-md:ml-0 {telescreenCopied
 					? 'bg-check-pass/10 text-check-pass border border-check-pass/30'
@@ -1163,130 +1234,240 @@
 					Copy Telescreen link
 				{/if}
 			</button>
+			{/if}
 		</div>
 	</div>
 
-	<div class="border-b border-border-card bg-surface/20 relative">
-		{#if allActiveDays.length > 0}
-			<div bind:this={scrollContainer} class="overflow-x-auto scrollbar-thin">
-				<div class="flex px-4 py-3 gap-0" style="min-width: max-content;">
-					{#each monthGroups as group (group.ym)}
-						<div class="flex flex-col shrink-0">
-							<div
-								class="text-[10px] font-bold text-text-tertiary uppercase tracking-wide px-1 pb-1.5 sticky left-0"
-							>
-								{group.label}
-							</div>
-							<div class="flex gap-1.5">
-								{#each group.days as day (day.date)}
-									{#if day.date === cutoffBoundaryDate}
-										<div class="relative flex items-center shrink-0 px-1" title={cutoffTitle}>
-											<div
-												class="self-stretch border-l-2 border-dashed"
-												style="border-color: #f59e0b"
-											></div>
-											<div
-												class="absolute left-1/2 -translate-x-1/2 -top-1.5 z-10 flex items-center rounded-full h-3.5 px-1.5 shadow-sm ring-1 ring-page/40"
-												style="background-color: #f59e0b"
-											>
-												<CalendarOff size={9} color="white" strokeWidth={2.5} />
-											</div>
-										</div>
-									{/if}
-									<div class="relative shrink-0">
-										<button
-											class="flex flex-col gap-0.5 rounded-section p-1 cursor-pointer transition-all border w-[140px] shrink-0
-											{day.date === currentDate
-												? 'border-accent bg-accent-bg ring-1 ring-accent'
-												: 'border-transparent hover:border-border-card hover:bg-surface/50'}
-											{isPreCutoff(day.date) && day.date !== currentDate ? 'opacity-45' : ''}"
-											data-selected={day.date === currentDate}
-											title={isPreCutoff(day.date)
-												? "Before the Hackatime cutoff — doesn't count toward totals"
-												: undefined}
-											onclick={() => selectDay(day.date)}
-										>
-											<svg viewBox="0 0 400 100" class="w-full aspect-[4/1] bg-surface rounded-tag">
-												<path
-													d={day.lineNoPath}
-													stroke="#06b6d4"
-													stroke-width="10"
-													stroke-linecap="round"
-													fill="none"
-												/>
-												<path
-													d={day.cursorPath}
-													stroke="#e33062"
-													stroke-width="10"
-													stroke-linecap="round"
-													fill="none"
-												/>
-											</svg>
-											<div class="flex items-center justify-between px-0.5">
-												<span class="text-[10px] text-text-secondary">
-													{new Date(day.date + 'T12:00:00Z').toLocaleDateString('en-US', {
-														month: 'short',
-														day: 'numeric',
-														timeZone: authorTimezone
-													})}
-												</span>
-												<span class="text-[10px] font-mono text-text-tertiary">
-													{formatDuration(day.totalSeconds)}
-												</span>
-											</div>
-										</button>
-										{#if dayMarkers[day.date]}
-											<div
-												class="absolute left-1/2 -translate-x-1/2 -top-1.5 z-10 flex items-center gap-0.5"
-											>
-												{#each dayMarkers[day.date] as group (group.type)}
-													{@const Icon = MARKER_CONFIG[group.type].icon}
-													<!-- svelte-ignore a11y_no_static_element_interactions -->
-													<div
-														class="flex items-center gap-1 rounded-full h-3.5 px-1.5 shadow-sm cursor-default ring-1 ring-page/40"
-														style="background-color: {MARKER_CONFIG[group.type].color}"
-														onmouseenter={(e) => showMarkerTooltip(e, group)}
-														onmouseleave={scheduleHideMarker}
-													>
-														<Icon size={9} color="white" strokeWidth={2.5} />
-														{#if group.items.length > 1}
-															<span class="text-[8px] font-bold text-white leading-none"
-																>{group.items.length}</span
-															>
-														{/if}
-													</div>
-												{/each}
-											</div>
-										{/if}
-									</div>
-								{/each}
-							</div>
-						</div>
-						<div class="w-3 shrink-0"></div>
-					{/each}
-				</div>
+	{#snippet cutoffDivider()}
+		<div class="relative flex items-center shrink-0 px-1" title={cutoffTitle}>
+			<div class="self-stretch border-l-2 border-dashed" style="border-color: #f59e0b"></div>
+			<div
+				class="absolute left-1/2 -translate-x-1/2 -top-1.5 z-10 flex items-center rounded-full h-3.5 px-1.5 shadow-sm ring-1 ring-page/40"
+				style="background-color: #f59e0b"
+			>
+				<CalendarOff size={9} color="white" strokeWidth={2.5} />
 			</div>
-		{:else if overviewLoading}
-			<div class="flex gap-1.5 px-4 py-3">
-				<!-- eslint-disable-next-line @typescript-eslint/no-unused-vars -->
-				{#each Array(6) as _, i (i)}
-					<div class="animate-pulse w-[140px] shrink-0">
-						<div class="w-full aspect-[4/1] bg-surface rounded-tag"></div>
-						<div class="flex justify-between mt-1 px-0.5">
-							<div class="h-2.5 w-10 bg-surface rounded"></div>
-							<div class="h-2.5 w-6 bg-surface rounded"></div>
-						</div>
+		</div>
+	{/snippet}
+
+	{#snippet markerPills(date: string)}
+		{#if dayMarkers[date]}
+			<div class="absolute left-1/2 -translate-x-1/2 -top-1.5 z-10 flex items-center gap-0.5">
+				{#each dayMarkers[date] as group (group.type)}
+					{@const Icon = MARKER_CONFIG[group.type].icon}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div
+						class="flex items-center gap-1 rounded-full h-3.5 px-1.5 shadow-sm cursor-default ring-1 ring-page/40"
+						style="background-color: {MARKER_CONFIG[group.type].color}"
+						onmouseenter={(e) => showMarkerTooltip(e, group)}
+						onmouseleave={scheduleHideMarker}
+					>
+						<Icon size={9} color="white" strokeWidth={2.5} />
+						{#if group.items.length > 1}
+							<span class="text-[8px] font-bold text-white leading-none">{group.items.length}</span>
+						{/if}
 					</div>
 				{/each}
 			</div>
-		{:else}
-			<div class="px-6 max-md:px-4 py-4 text-[12px] text-text-tertiary text-center">
-				No activity found for these projects.
-			</div>
 		{/if}
-	</div>
+	{/snippet}
 
-	{#if error}
+	{#snippet dayCardSkeletons()}
+		<!-- eslint-disable-next-line @typescript-eslint/no-unused-vars -->
+		{#each Array(6) as _, i (i)}
+			<div class="animate-pulse w-[140px] shrink-0">
+				<div class="w-full aspect-[4/1] bg-surface rounded-tag"></div>
+				<div class="flex justify-between mt-1 px-0.5">
+					<div class="h-2.5 w-10 bg-surface rounded"></div>
+					<div class="h-2.5 w-6 bg-surface rounded"></div>
+				</div>
+			</div>
+		{/each}
+	{/snippet}
+
+	{#if canViewHeartbeats}
+		<div class="border-b border-border-card bg-surface/20 relative">
+			{#if allActiveDays.length > 0}
+				<div bind:this={scrollContainer} class="overflow-x-auto scrollbar-thin">
+					<div class="flex px-4 py-3 gap-0" style="min-width: max-content;">
+						{#each monthGroups as group (group.ym)}
+							<div class="flex flex-col shrink-0">
+								<div
+									class="text-[10px] font-bold text-text-tertiary uppercase tracking-wide px-1 pb-1.5 sticky left-0"
+								>
+									{group.label}
+								</div>
+								<div class="flex gap-1.5">
+									{#each group.days as day (day.date)}
+										{#if day.date === cutoffBoundaryDate}
+											{@render cutoffDivider()}
+										{/if}
+										<div class="relative shrink-0">
+											<button
+												class="flex flex-col gap-0.5 rounded-section p-1 cursor-pointer transition-all border w-[140px] shrink-0
+												{day.date === currentDate
+													? 'border-accent bg-accent-bg ring-1 ring-accent'
+													: 'border-transparent hover:border-border-card hover:bg-surface/50'}
+												{isPreCutoff(day.date) && day.date !== currentDate ? 'opacity-45' : ''}"
+												data-selected={day.date === currentDate}
+												title={isPreCutoff(day.date)
+													? "Before the Hackatime cutoff — doesn't count toward totals"
+													: undefined}
+												onclick={() => selectDay(day.date)}
+											>
+												<svg viewBox="0 0 400 100" class="w-full aspect-[4/1] bg-surface rounded-tag">
+													<path
+														d={day.lineNoPath}
+														stroke="#06b6d4"
+														stroke-width="10"
+														stroke-linecap="round"
+														fill="none"
+													/>
+													<path
+														d={day.cursorPath}
+														stroke="#e33062"
+														stroke-width="10"
+														stroke-linecap="round"
+														fill="none"
+													/>
+												</svg>
+												<div class="flex items-center justify-between px-0.5">
+													<span class="text-[10px] text-text-secondary">
+														{new Date(day.date + 'T12:00:00Z').toLocaleDateString('en-US', {
+															month: 'short',
+															day: 'numeric',
+															timeZone: authorTimezone
+														})}
+													</span>
+													<span class="text-[10px] font-mono text-text-tertiary">
+														{formatDuration(day.totalSeconds)}
+													</span>
+												</div>
+											</button>
+											{@render markerPills(day.date)}
+										</div>
+									{/each}
+								</div>
+							</div>
+							<div class="w-3 shrink-0"></div>
+						{/each}
+					</div>
+				</div>
+			{:else if overviewLoading}
+				<div class="flex gap-1.5 px-4 py-3">
+					{@render dayCardSkeletons()}
+				</div>
+			{:else}
+				<div class="px-6 max-md:px-4 py-4 text-[12px] text-text-tertiary text-center">
+					No activity found for these projects.
+				</div>
+			{/if}
+		</div>
+	{/if}
+
+	{#if !canViewHeartbeats}
+		<!-- Estimates only: with no per-day drill-down, the day list is the main
+		     view, so it wraps instead of scrolling. -->
+		<!-- Fixed height (set by the review page): on desktop the days and the
+		     breakdown scroll separately; stacked on mobile, they scroll as one. -->
+		<div
+			class="flex-1 min-h-0 flex max-md:flex-col max-md:overflow-y-auto scrollbar-thin border-b border-border-card"
+		>
+		<div class="flex-1 min-w-0 md:min-h-0 flex flex-col">
+		<TabBar tabs={estimateTabs} active={estimateTab} onchange={(id) => (estimateTab = id)} />
+		<div
+			class="flex-1 md:min-h-0 md:overflow-y-auto scrollbar-thin flex flex-col gap-5 px-6 max-md:px-4 py-4 bg-surface/20"
+		>
+			{#if allActiveDays.length > 0 && estimateTab === 'calendar'}
+				<ActivityCalendar
+					days={allActiveDays}
+					cutoffDate={hackatimeStartDate}
+					formatTime={formatEstimate}
+					selected={currentDate}
+					onselect={selectDay}
+				/>
+			{:else if allActiveDays.length > 0}
+				{#each monthGroups as group (group.ym)}
+					<div class="flex flex-col gap-1.5">
+						<div class="text-[10px] font-bold text-text-tertiary uppercase tracking-wide px-1">
+							{monthLabel(group.ym)}
+						</div>
+						<div class="flex flex-wrap gap-x-1.5 gap-y-3">
+							{#each group.days as day (day.date)}
+								{#if day.date === cutoffBoundaryDate}
+									{@render cutoffDivider()}
+								{/if}
+								<div class="relative shrink-0">
+									<button
+										class="flex flex-col gap-0.5 rounded-section p-1 w-[140px] cursor-pointer transition-all border
+										{day.date === currentDate
+											? 'border-accent bg-accent-bg ring-1 ring-accent'
+											: 'border-transparent hover:border-border-card hover:bg-surface/50'}
+										{isPreCutoff(day.date) && day.date !== currentDate ? 'opacity-45' : ''}"
+										title={isPreCutoff(day.date)
+											? "Before the Hackatime cutoff — doesn't count toward totals"
+											: undefined}
+										onclick={() => selectDay(day.date)}
+									>
+										<div
+											class="w-full aspect-[4/1] bg-surface rounded-tag flex items-end overflow-hidden"
+										>
+											<div
+												class="w-full bg-accent/40"
+												style="height: {longestDaySeconds > 0
+													? Math.max(4, (day.totalSeconds / longestDaySeconds) * 100)
+													: 4}%"
+											></div>
+										</div>
+										<div class="flex items-center justify-between px-0.5">
+											<span class="text-[10px] text-text-secondary">
+												{new Date(day.date + 'T12:00:00Z').toLocaleDateString('en-US', {
+													month: 'short',
+													day: 'numeric',
+													timeZone: 'UTC'
+												})}
+											</span>
+											<span class="text-[10px] font-mono text-text-tertiary">
+												{formatEstimate(day.totalSeconds)}
+											</span>
+										</div>
+									</button>
+									{@render markerPills(day.date)}
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/each}
+			{:else if overviewLoading}
+				<div class="flex flex-wrap gap-1.5">
+					{@render dayCardSkeletons()}
+				</div>
+			{:else}
+				<div class="py-4 text-[12px] text-text-tertiary text-center">
+					No activity found for these projects.
+				</div>
+			{/if}
+		</div>
+		</div>
+		<aside
+			class="w-[340px] max-md:w-auto shrink-0 md:overflow-y-auto scrollbar-thin border-l max-md:border-l-0 max-md:border-t border-border-card"
+		>
+			<HackatimeShares
+				dayLabel={selectedDay ? formatDateLabel(selectedDay.date) : null}
+				day={selectedDay?.shares ?? null}
+				allTime={allTimeShares}
+			/>
+		</aside>
+		</div>
+		<p class="flex items-start gap-1.5 px-6 max-md:px-4 py-2.5 text-[11px] text-text-tertiary leading-snug">
+			<Lock size={12} class="shrink-0 mt-px" />
+			<span>
+				Daily times are rounded to the nearest 15 minutes. Heartbeat-level data (activity timelines,
+				files, editors, machines) needs the “View Hackatime heartbeats” permission. If something
+				looks off, escalate to the fraud team.
+			</span>
+		</p>
+	{:else if error}
 		<div class="px-6 max-md:px-4 py-8">
 			<div
 				class="border border-check-fail/30 bg-check-fail/5 rounded-section px-4 py-3 text-sm text-check-fail"
@@ -1555,7 +1736,9 @@
 								{/if}
 								<span class="text-[11px] text-text-secondary truncate">{item.subtitle}</span>
 							</div>
-							{#if gap === undefined}
+							{#if !canViewHeartbeats}
+								<!-- The commit↔heartbeat gap is itself heartbeat-derived. -->
+							{:else if gap === undefined}
 								<span class="text-[10px] text-text-tertiary shrink-0">checking…</span>
 							{:else}
 								<span

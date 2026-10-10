@@ -11,6 +11,36 @@ const WIDTH = 400;
 const HEIGHT = 100;
 const PADDING = 2;
 
+// Members without canViewHeartbeats get day totals rounded to this, and no
+// per-heartbeat paths — the line/cursor sparklines are the same flatline and
+// linear-pattern signals fraud review looks for, so they stay restricted.
+const ESTIMATE_GRANULARITY_S = 15 * 60;
+
+type ShareField = 'language' | 'editor' | 'category';
+
+// Each value's share of the day's coding time, to the nearest percent. Shares
+// rather than seconds so they can't be summed back into an exact day total.
+function timeShares(heartbeats: RawHeartbeat[], field: ShareField): Record<string, number> {
+	const groups = new Map<string, RawHeartbeat[]>();
+	for (const hb of heartbeats) {
+		const key = hb[field] || 'Unknown';
+		let group = groups.get(key);
+		if (!group) groups.set(key, (group = []));
+		group.push(hb);
+	}
+
+	const seconds = [...groups].map(([name, hbs]) => [name, sumCappedGaps(hbs)] as const);
+	const total = seconds.reduce((sum, [, s]) => sum + s, 0);
+	if (total === 0) return {};
+
+	const shares: Record<string, number> = {};
+	for (const [name, s] of seconds) {
+		const share = Math.round((s / total) * 100) / 100;
+		if (share > 0) shares[name] = share;
+	}
+	return shares;
+}
+
 type Point = { time: number; pos: number };
 
 function createRlePath(
@@ -78,9 +108,10 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 	const user = locals.user;
 	if (!user) throw error(401);
 
-	await requirePermission(user.id, params.programId, 'canViewReviews', {
+	const membership = await requirePermission(user.id, params.programId, 'canViewReviews', {
 		isSuperAdmin: user.isSuperAdmin
 	});
+	const estimate = !membership.canViewHeartbeats;
 
 	const userId = url.searchParams.get('userId');
 	const projects = url.searchParams.get('projects');
@@ -143,10 +174,12 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 
 	const days: {
 		date: string;
-		count: number;
+		active: boolean;
+		count?: number;
 		totalSeconds: number;
-		lineNoPath: string;
-		cursorPath: string;
+		lineNoPath?: string;
+		cursorPath?: string;
+		shares?: Record<ShareField, Record<string, number>>;
 	}[] = [];
 
 	for (const [date, heartbeats] of dayBuckets) {
@@ -154,14 +187,31 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
 
 		const totalSeconds = sumCappedGaps(sorted);
 
+		if (estimate) {
+			days.push({
+				date,
+				active: sorted.length > 0,
+				totalSeconds: Math.round(totalSeconds / ESTIMATE_GRANULARITY_S) * ESTIMATE_GRANULARITY_S,
+				shares:
+					sorted.length > 0
+						? {
+								language: timeShares(sorted, 'language'),
+								editor: timeShares(sorted, 'editor'),
+								category: timeShares(sorted, 'category')
+							}
+						: undefined
+			});
+			continue;
+		}
+
 		const { cursorPath, lineNoPath } = sorted.length > 0
 			? generateSvgPaths(sorted)
 			: { cursorPath: '', lineNoPath: '' };
 
-		days.push({ date, count: sorted.length, totalSeconds, lineNoPath, cursorPath });
+		days.push({ date, active: sorted.length > 0, count: sorted.length, totalSeconds, lineNoPath, cursorPath });
 	}
 
 	days.sort((a, b) => a.date.localeCompare(b.date));
 
-	return json({ days });
+	return json({ days, estimate });
 };

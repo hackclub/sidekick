@@ -157,6 +157,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			canViewReviews: m.canViewReviews,
 			canCreateReviews: m.canCreateReviews,
 			canAuthorizeReviews: m.canAuthorizeReviews,
+			canViewHeartbeats: m.canViewHeartbeats,
 			canViewFulfillments: m.canViewFulfillments,
 			canViewAddressData: m.canViewAddressData,
 			canUpdateFulfillments: m.canUpdateFulfillments,
@@ -330,7 +331,7 @@ export const actions: Actions = {
 		logger.info('togglePermission action', { programId: params.programId, membershipId, permission });
 
 		const validPermissions = [
-			'canViewReviews', 'canCreateReviews', 'canAuthorizeReviews',
+			'canViewReviews', 'canCreateReviews', 'canAuthorizeReviews', 'canViewHeartbeats',
 			'canViewFulfillments', 'canViewAddressData', 'canUpdateFulfillments',
 			'canUpdateProgram', 'isRoot'
 		];
