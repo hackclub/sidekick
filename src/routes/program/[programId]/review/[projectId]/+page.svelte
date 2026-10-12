@@ -42,6 +42,7 @@
 	// Hour-breakdown toggles: which deductions the reviewer counts toward the
 	// remaining hours. Airtable records are keyed by their record URL.
 	let excludeAi = $state(true);
+	let partialAi = $state(false);
 	let excludeBrowsers = $state(false);
 	let uncountedAirtableShips = $state<Record<string, boolean>>({});
 	// GitHub-tab user filter, shared with the Hackatime day-marker commit tooltips.
@@ -421,14 +422,18 @@
 		const ht = hackatime.hackatime;
 		const totalH = ht.totalSeconds / 3600;
 		const baseH = delta != null ? Math.min(totalH, delta) : totalH;
-		const excludedSeconds =
-			excludeAi && excludeBrowsers
-				? ht.aiAndBrowserSeconds
-				: excludeAi
-					? ht.aiSeconds
-					: excludeBrowsers
-						? ht.browserSeconds
-						: 0;
+		// AI deduction: full exclusion, 2/3 (keep 1/3), or none. Browser deduction is
+		// incremental over any AI removal so the two never double-count their overlap.
+		const aiExcludedSeconds = excludeAi
+			? ht.aiSeconds
+			: partialAi
+				? Math.round(ht.aiSeconds * (2 / 3))
+				: 0;
+		const anyAiExcluded = excludeAi || partialAi;
+		const browserExcludedSeconds = excludeBrowsers
+			? Math.max(0, anyAiExcluded ? ht.aiAndBrowserSeconds - ht.aiSeconds : ht.browserSeconds)
+			: 0;
+		const excludedSeconds = aiExcludedSeconds + browserExcludedSeconds;
 		const exclRatio = totalH > 0 ? excludedSeconds / 3600 / totalH : 0;
 		return Math.max(0, baseH - baseH * exclRatio - externalPreviousHours);
 	});
@@ -778,6 +783,7 @@
 							url: r.url
 						}))}
 					bind:excludeAi
+					bind:partialAi
 					bind:excludeBrowsers
 					bind:uncountedShips={uncountedAirtableShips}
 					loading={!hackatime}

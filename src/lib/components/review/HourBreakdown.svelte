@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Hourglass, Asterisk, BotOff, Globe, Ship, Anchor, AlertTriangle } from 'lucide-svelte';
+	import { Hourglass, Asterisk, BotOff, Bot, Globe, Ship, Anchor, AlertTriangle } from 'lucide-svelte';
 	import Checkbox from '$lib/components/ui/Checkbox.svelte';
 
 	interface PreviousShip {
@@ -23,6 +23,8 @@
 		aiAndBrowserSeconds: number;
 		previousShips: PreviousShip[];
 		excludeAi?: boolean;
+		/** Deduct only 2/3 of AI time, keeping 1/3 (per the standard AI deflation). Mutually exclusive with excludeAi. */
+		partialAi?: boolean;
 		excludeBrowsers?: boolean;
 		/** Ship keys the reviewer has unchecked, i.e. excluded from the deductions. */
 		uncountedShips?: Record<string, boolean>;
@@ -39,6 +41,7 @@
 		aiAndBrowserSeconds,
 		previousShips,
 		excludeAi = $bindable(true),
+		partialAi = $bindable(false),
 		excludeBrowsers = $bindable(false),
 		uncountedShips = $bindable({}),
 		loading = false,
@@ -67,15 +70,32 @@
 	const ratio = $derived(aggregatedSeconds > 0 ? baseSeconds / aggregatedSeconds : 0);
 
 	const scaledAiSeconds = $derived(Math.round(aiSeconds * ratio));
-	// When AI is also excluded, the browser row shows the *incremental* removal on
+	// Partial mode keeps 1/3 of AI time, so it deducts the other 2/3.
+	const scaledAiPartialSeconds = $derived(Math.round(aiSeconds * (2 / 3) * ratio));
+
+	// The active AI deduction: full exclusion, 2/3 (keep 1/3), or none.
+	const anyAiExcluded = $derived(excludeAi || partialAi);
+	const aiDeduction = $derived(excludeAi ? scaledAiSeconds : partialAi ? scaledAiPartialSeconds : 0);
+
+	// When any AI is excluded, the browser row shows the *incremental* removal on
 	// top of AI, so the two rows sum to the exact combined exclusion instead of
 	// double-counting overlap.
 	const scaledBrowserSeconds = $derived(
-		Math.round(Math.max(0, excludeAi ? aiAndBrowserSeconds - aiSeconds : browserSeconds) * ratio)
+		Math.round(Math.max(0, anyAiExcluded ? aiAndBrowserSeconds - aiSeconds : browserSeconds) * ratio)
 	);
 
-	const afterAi = $derived(baseSeconds - (excludeAi ? scaledAiSeconds : 0));
+	const afterAi = $derived(baseSeconds - aiDeduction);
 	const afterBrowsers = $derived(afterAi - (excludeBrowsers ? scaledBrowserSeconds : 0));
+
+	// The two AI toggles are alternatives, not additive.
+	function toggleExcludeAi() {
+		excludeAi = !excludeAi;
+		if (excludeAi) partialAi = false;
+	}
+	function togglePartialAi() {
+		partialAi = !partialAi;
+		if (partialAi) excludeAi = false;
+	}
 
 	function isCounted(ship: PreviousShip): boolean {
 		return !uncountedShips[ship.key];
@@ -162,7 +182,21 @@
 						<span class="font-bold">{fmt(afterAi)}</span>
 						<span class="text-xs {excludeAi ? '' : 'line-through opacity-50'}"> ({fmtDelta(scaledAiSeconds)})</span>
 					</span>
-					<Checkbox checked={excludeAi} onchange={() => (excludeAi = !excludeAi)} />
+					<Checkbox checked={excludeAi} onchange={toggleExcludeAi} />
+				</div>
+			</div>
+
+			<div class="flex items-center justify-between w-full">
+				<div class="flex gap-2 items-center {partialAi ? '' : 'opacity-50'}">
+					<span class="relative z-10 flex items-center justify-center w-[14px] rounded-sm bg-white"><Bot size={14} class="text-text-primary" /></span>
+					<span class="text-sm text-text-primary tracking-[-0.3px]">Keep 1/3 of AI</span>
+				</div>
+				<div class="flex items-center gap-2">
+					<span class="text-sm text-text-primary tracking-[-0.3px]">
+						<span class="font-bold">{fmt(afterAi)}</span>
+						<span class="text-xs {partialAi ? '' : 'line-through opacity-50'}"> ({fmtDelta(scaledAiPartialSeconds)})</span>
+					</span>
+					<Checkbox checked={partialAi} onchange={togglePartialAi} />
 				</div>
 			</div>
 		{/if}
