@@ -134,17 +134,18 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	);
 	const reviewLogsAllTime = aggregateByUser(reviewLogs);
 
-	// Acceptance rate over the recorded review decisions: approvals vs rejections.
-	// Only outright approve/reject actions count as a decision — comments, edits and
-	// the pre-approve/authorize/deauthorize reversals are left out so a single ship
-	// isn't counted twice. Null when there are no decisions yet to divide by.
+	// Acceptance rate over the recorded review decisions. A decision is binary:
+	// approved, or not. Rejections and sent-back ("changes needed") both count as
+	// not-approved. Comments and edits aren't decisions and are ignored. Null when
+	// there are no decisions yet to divide by.
+	const NOT_APPROVED_ACTIONS = new Set(['review_reject', 'review_discard_pending']);
 	let approveCount = 0;
-	let rejectCount = 0;
+	let notApprovedCount = 0;
 	for (const l of reviewLogs) {
 		if (l.action === 'review_approve') approveCount++;
-		else if (l.action === 'review_reject') rejectCount++;
+		else if (NOT_APPROVED_ACTIONS.has(l.action)) notApprovedCount++;
 	}
-	const reviewDecisionCount = approveCount + rejectCount;
+	const reviewDecisionCount = approveCount + notApprovedCount;
 	const acceptanceRate = reviewDecisionCount > 0 ? approveCount / reviewDecisionCount : null;
 
 	const fulfillmentVolume = buildDailySeries(snapshots, 'pendingFulfillmentCount');

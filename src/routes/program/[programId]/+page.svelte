@@ -92,7 +92,7 @@
 
 			<div
 				class="bg-surface flex flex-col gap-1 items-end justify-center overflow-clip pl-4 pr-8 py-3 rounded-section"
-				title="Share of recorded review decisions that were approvals (approvals ÷ approvals + rejections)"
+				title="Share of recorded review decisions that were approvals. Rejections and changes-needed both count as not approved."
 			>
 				<div class="flex gap-2 items-center">
 					<Percent size={15} class="text-text-primary" />
