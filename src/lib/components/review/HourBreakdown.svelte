@@ -179,7 +179,7 @@
 				</div>
 				<div class="flex items-center gap-2">
 					<span class="text-sm text-text-primary tracking-[-0.3px]">
-						<span class="font-bold">{fmt(afterAi)}</span>
+						<span class="font-bold">{fmt(baseSeconds - scaledAiSeconds)}</span>
 						<span class="text-xs {excludeAi ? '' : 'line-through opacity-50'}"> ({fmtDelta(scaledAiSeconds)})</span>
 					</span>
 					<Checkbox checked={excludeAi} onchange={toggleExcludeAi} />
@@ -193,7 +193,7 @@
 				</div>
 				<div class="flex items-center gap-2">
 					<span class="text-sm text-text-primary tracking-[-0.3px]">
-						<span class="font-bold">{fmt(afterAi)}</span>
+						<span class="font-bold">{fmt(baseSeconds - scaledAiPartialSeconds)}</span>
 						<span class="text-xs {partialAi ? '' : 'line-through opacity-50'}"> ({fmtDelta(scaledAiPartialSeconds)})</span>
 					</span>
 					<Checkbox checked={partialAi} onchange={togglePartialAi} />
