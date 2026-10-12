@@ -134,6 +134,19 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	);
 	const reviewLogsAllTime = aggregateByUser(reviewLogs);
 
+	// Acceptance rate over the recorded review decisions: approvals vs rejections.
+	// Only outright approve/reject actions count as a decision — comments, edits and
+	// the pre-approve/authorize/deauthorize reversals are left out so a single ship
+	// isn't counted twice. Null when there are no decisions yet to divide by.
+	let approveCount = 0;
+	let rejectCount = 0;
+	for (const l of reviewLogs) {
+		if (l.action === 'review_approve') approveCount++;
+		else if (l.action === 'review_reject') rejectCount++;
+	}
+	const reviewDecisionCount = approveCount + rejectCount;
+	const acceptanceRate = reviewDecisionCount > 0 ? approveCount / reviewDecisionCount : null;
+
 	const fulfillmentVolume = buildDailySeries(snapshots, 'pendingFulfillmentCount');
 	const reviewVolume = buildDailySeries(snapshots, 'pendingReviewCount');
 
@@ -232,6 +245,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		pendingReviewCount: stats.pendingReviewCount,
 		pendingFulfillmentCount: stats.pendingFulfillmentCount,
 		pendingWps,
+		acceptanceRate,
 		fulfillmentLeaderboardWeekly: fulfillmentLogsByUser,
 		fulfillmentLeaderboardAllTime: fulfillmentLogsAllTime,
 		reviewLeaderboardWeekly: reviewLogsByUser,
