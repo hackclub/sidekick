@@ -4,7 +4,7 @@
 	import BentoLeaderboard from '$lib/components/ui/BentoLeaderboard.svelte';
 	import BentoBox from '$lib/components/ui/BentoBox.svelte';
 	import UserMention from '$lib/components/ui/UserMention.svelte';
-	import { Scale, Package, Trophy, Clock, Hourglass } from 'lucide-svelte';
+	import { Scale, Package, Trophy, Clock, Hourglass, Percent, Target } from 'lucide-svelte';
 
 	interface Props {
 		data: PageData;
@@ -74,15 +74,45 @@
 			</div>
 		</div>
 
-		<div
-			class="bg-surface flex flex-col gap-1 items-end justify-center overflow-clip pl-4 pr-8 py-3 rounded-section"
-			title="Total hours of pending projects, divided by 10"
-		>
-			<div class="flex gap-2 items-center">
-				<Hourglass size={15} class="text-text-primary" />
-				<span class="text-[14px] tracking-[-0.28px]">Pending WPs</span>
+		<div class="flex items-stretch gap-3 flex-wrap">
+			<div
+				class="bg-surface flex flex-col gap-1 items-end justify-center overflow-clip pl-4 pr-8 py-3 rounded-section"
+				title="Pending WPs multiplied by the average acceptance rate — the WPs expected to survive review"
+			>
+				<div class="flex gap-2 items-center">
+					<Target size={15} class="text-text-primary" />
+					<span class="text-[14px] tracking-[-0.28px]">Expected WPs</span>
+				</div>
+				<span class="font-bold text-[24px] tracking-[-0.96px]">
+					{data.acceptanceRate === null
+						? '—'
+						: Math.round(data.pendingWps * data.acceptanceRate * 10) / 10}
+				</span>
 			</div>
-			<span class="font-bold text-[24px] tracking-[-0.96px]">{Math.round(data.pendingWps * 10) / 10}</span>
+
+			<div
+				class="bg-surface flex flex-col gap-1 items-end justify-center overflow-clip pl-4 pr-8 py-3 rounded-section"
+				title="Share of recorded review decisions that were approvals. Rejections and changes-needed both count as not approved."
+			>
+				<div class="flex gap-2 items-center">
+					<Percent size={15} class="text-text-primary" />
+					<span class="text-[14px] tracking-[-0.28px]">Acceptance Rate</span>
+				</div>
+				<span class="font-bold text-[24px] tracking-[-0.96px]">
+					{data.acceptanceRate === null ? '—' : Math.round(data.acceptanceRate * 100) + '%'}
+				</span>
+			</div>
+
+			<div
+				class="bg-surface flex flex-col gap-1 items-end justify-center overflow-clip pl-4 pr-8 py-3 rounded-section"
+				title="Total hours of pending projects, divided by 10"
+			>
+				<div class="flex gap-2 items-center">
+					<Hourglass size={15} class="text-text-primary" />
+					<span class="text-[14px] tracking-[-0.28px]">Pending WPs</span>
+				</div>
+				<span class="font-bold text-[24px] tracking-[-0.96px]">{Math.round(data.pendingWps * 10) / 10}</span>
+			</div>
 		</div>
 	</div>
 
