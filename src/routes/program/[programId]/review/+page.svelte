@@ -127,7 +127,17 @@
 		return sorted;
 	}
 
-	const filteredProjects = $derived(sortProjects(data.projects.filter(matchesFilters), 'pending'));
+	// Ships awaiting authorization are shown in their own group, not in the review queue.
+	const pendingAuthShipIds = $derived(new Set(data.pendingApprovals.map((pa) => pa.shipId)));
+	const filteredProjects = $derived(
+		sortProjects(
+			data.projects.filter((p) => {
+				const ship = p.ships.find((s) => s.status === 'pending');
+				return !(ship && pendingAuthShipIds.has(ship.id)) && matchesFilters(p);
+			}),
+			'pending'
+		)
+	);
 	const filteredHqProjects = $derived(sortProjects(data.hqProjects.filter(matchesFilters), 'pending_hq'));
 	const filtersActive = $derived(searchInput.trim().length > 0 || selectedTagIds.size > 0);
 
@@ -367,7 +377,7 @@
 				{#if filtersActive}
 					{filteredProjects.length + filteredHqProjects.length} of {data.projects.length + data.hqProjects.length} shown
 				{:else}
-					{data.pendingCount} pending review{#if data.pendingHqCount > 0}, {data.pendingHqCount} under HQ review{/if}
+					{Math.max(0, data.pendingCount - data.pendingApprovals.length)} pending review{#if data.pendingHqCount > 0}, {data.pendingHqCount} under HQ review{/if}
 				{/if}
 			</span>
 		{#if allExportableProjects.length > 0}
@@ -408,7 +418,7 @@
 		</div>
 	</div>
 
-	{#if data.canAuthorize && data.pendingApprovals.length > 0}
+	{#if data.pendingApprovals.length > 0}
 		<div class="flex flex-col gap-2">
 			<button
 				type="button"

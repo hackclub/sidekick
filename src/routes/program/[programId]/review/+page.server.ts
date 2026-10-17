@@ -66,12 +66,10 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			where: { programId: params.programId },
 			select: { projectId: true, tagId: true }
 		}),
-		membership.canAuthorizeReviews
-			? db.pendingApproval.findMany({
-					where: { programId: params.programId, status: 'pending' },
-					orderBy: { createdAt: 'asc' }
-				})
-			: Promise.resolve([])
+		db.pendingApproval.findMany({
+			where: { programId: params.programId, status: 'pending' },
+			orderBy: { createdAt: 'asc' }
+		})
 	]);
 
 	const projectTagIds: Record<string, string[]> = {};
@@ -167,8 +165,8 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			shipId: pa.shipId,
 			reviewerId: pa.reviewerId,
 			hoursAssigned: pa.hoursAssigned,
-			feedbackMessage: pa.feedbackMessage,
-			justification: pa.justification,
+			feedbackMessage: membership.canAuthorizeReviews ? pa.feedbackMessage : '',
+			justification: membership.canAuthorizeReviews ? pa.justification : '',
 			createdAt: pa.createdAt.toISOString()
 		}))
 	};
