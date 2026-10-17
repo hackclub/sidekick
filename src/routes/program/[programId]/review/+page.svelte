@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { PageData } from './$types.js';
 	import { resolve } from '$app/paths';
+	import { browser } from '$app/environment';
 	import { Clock, CheckCircle, Hourglass, Scale, ShieldCheck, Download, Copy, ChevronDown, Check, Search, Tag, ArrowUpDown } from 'lucide-svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import CsvExportModal from '$lib/components/ui/CsvExportModal.svelte';
@@ -20,6 +21,17 @@
 		if (hours < 10)
 			return `${hours.toFixed(1)}h`;
 		return `${Math.round(hours)}h`;
+	}
+
+	const PENDING_AUTH_COLLAPSED_KEY = 'review-pending-auth-collapsed';
+
+	let pendingAuthCollapsed = $state(
+		browser && localStorage.getItem(PENDING_AUTH_COLLAPSED_KEY) === '1'
+	);
+
+	function togglePendingAuth() {
+		pendingAuthCollapsed = !pendingAuthCollapsed;
+		if (browser) localStorage.setItem(PENDING_AUTH_COLLAPSED_KEY, pendingAuthCollapsed ? '1' : '0');
 	}
 
 	const projectMap = $derived(
@@ -398,12 +410,18 @@
 
 	{#if data.canAuthorize && data.pendingApprovals.length > 0}
 		<div class="flex flex-col gap-2">
-			<div class="flex items-center gap-2">
+			<button
+				type="button"
+				class="flex items-center gap-2 text-left cursor-pointer"
+				aria-expanded={!pendingAuthCollapsed}
+				onclick={togglePendingAuth}
+			>
+				<ChevronDown size={16} class="transition-transform {pendingAuthCollapsed ? '-rotate-90' : ''}" />
 				<Clock size={16} />
 				<h2 class="font-bold text-sm tracking-[-0.3px]">Pending Authorization</h2>
 				<span class="text-xs text-text-tertiary">{data.pendingApprovals.length} approval{data.pendingApprovals.length === 1 ? '' : 's'} awaiting authorization</span>
-			</div>
-			{#each data.pendingApprovals as pa (pa.projectId)}
+			</button>
+			{#each pendingAuthCollapsed ? [] : data.pendingApprovals as pa (pa.projectId)}
 				{@const project = projectMap[pa.projectId]}
 				{@const reviewer = data.actors[pa.reviewerId]}
 				<a
