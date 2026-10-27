@@ -98,6 +98,9 @@ model ProgramMembership {
   canCreateReviews      Boolean   @default(false)
   canAuthorizeReviews   Boolean   @default(false)
   canViewHeartbeats     Boolean   @default(false)
+  // Fraud review queue experiment (see $lib/server/experiments/fraud-queue.ts).
+  routeToFraudQueue     Boolean   @default(false)
+  canReviewFraudQueue   Boolean   @default(false)
   canViewFulfillments   Boolean   @default(false)
   canViewAddressData    Boolean   @default(false)
   canUpdateFulfillments Boolean   @default(false)
@@ -178,6 +181,9 @@ model PendingApproval {
   justification   String
   fields          Json?
   status          String   @default("pending")
+  // Which authorization queue this sits in: "hq" (default) or "fraud" (the
+  // fraud-review experiment, see $lib/server/experiments/fraud-queue.ts).
+  queue           String   @default("hq")
   discardedById   String?
   createdAt       DateTime @default(now())
 

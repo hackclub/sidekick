@@ -3,7 +3,9 @@ import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
 import { createLogger } from '$lib/server/logger.js';
+import { FRAUD_QUEUE, isFraudQueueReviewer } from '$lib/server/experiments/fraud-queue.js';
 import type { RequestHandler } from './$types.js';
+import type { ProgramMembership } from '@prisma/client';
 
 const logger = createLogger('api:review:authorize');
 
@@ -12,6 +14,20 @@ const logger = createLogger('api:review:authorize');
 const DEFAULT_AUTHORIZE_JUSTIFICATION = 'Approved via Sidekick HQ authorization.';
 const DEFAULT_DEAUTHORIZE_MESSAGE =
 	'Your approval was sent back by HQ for another look. Please re-review this ship.';
+
+// Approvals held in the fraud queue may only be acted on by fraud reviewers
+// (who need not be HQ authorizers); everything else needs canAuthorizeReviews.
+function requireQueueAccess(membership: ProgramMembership, pending: { queue: string }) {
+	if (pending.queue === FRAUD_QUEUE) {
+		if (!isFraudQueueReviewer(membership)) throw error(403, 'This approval is awaiting fraud review.');
+		return;
+	}
+	requireHqAuthorizer(membership);
+}
+
+function requireHqAuthorizer(membership: ProgramMembership) {
+	if (!membership.canAuthorizeReviews) throw error(403, 'Missing permission: canAuthorizeReviews');
+}
 
 function parseProtocolError(e: ProtocolError): { status: number; body: { error: string; message: string } } {
 	try {
@@ -26,7 +42,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const user = locals.user;
 	if (!user) throw error(401);
 
-	await requirePermission(user.id, params.programId, 'canAuthorizeReviews', {
+	const membership = await requirePermission(user.id, params.programId, 'canViewReviews', {
 		isSuperAdmin: user.isSuperAdmin
 	});
 
@@ -44,6 +60,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 
 	try {
 		if (pendingApprovalId.startsWith('hq:')) {
+			requireHqAuthorizer(membership);
 			const shipId = pendingApprovalId.slice(3);
 			const reviewerId = user.slackId || user.hcaId;
 			logger.debug('Direct HQ authorization', { shipId, reviewerId });
@@ -78,6 +95,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		if (!pending || pending.programId !== params.programId) {
 			throw error(404, 'Pending approval not found');
 		}
+		requireQueueAccess(membership, pending);
 
 		try {
 			await client.submitReviewAction({
@@ -118,7 +136,8 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 					projectId: pending.projectId,
 					hoursAssigned: pending.hoursAssigned,
 					originalReviewerId: pending.reviewerId,
-					pendingApprovalId
+					pendingApprovalId,
+					queue: pending.queue
 				}
 			}
 		});
@@ -139,7 +158,7 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 	const user = locals.user;
 	if (!user) throw error(401);
 
-	await requirePermission(user.id, params.programId, 'canAuthorizeReviews', {
+	const membership = await requirePermission(user.id, params.programId, 'canViewReviews', {
 		isSuperAdmin: user.isSuperAdmin
 	});
 
@@ -151,6 +170,7 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 
 	try {
 		if (pendingApprovalId.startsWith('hq:')) {
+			requireHqAuthorizer(membership);
 			const shipId = pendingApprovalId.slice(3);
 			const reviewerId = user.slackId || user.hcaId;
 
@@ -189,6 +209,7 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 		if (!pending || pending.programId !== params.programId) {
 			throw error(404, 'Pending approval not found');
 		}
+		requireQueueAccess(membership, pending);
 
 		await db.pendingApproval.update({
 			where: { id: pendingApprovalId },
@@ -227,7 +248,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	const user = locals.user;
 	if (!user) throw error(401);
 
-	await requirePermission(user.id, params.programId, 'canAuthorizeReviews', {
+	const membership = await requirePermission(user.id, params.programId, 'canViewReviews', {
 		isSuperAdmin: user.isSuperAdmin
 	});
 
@@ -241,6 +262,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	logger.debug('PATCH pending approval', { programId: params.programId, pendingApprovalId });
 
 	if (pendingApprovalId.startsWith('hq:')) {
+		requireHqAuthorizer(membership);
 		if (!reviewerId) throw error(400, 'reviewerId is required for HQ pending approvals');
 		const shipId = pendingApprovalId.slice(3);
 
@@ -278,6 +300,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	if (!pending || pending.programId !== params.programId) {
 		throw error(404, 'Pending approval not found');
 	}
+	requireQueueAccess(membership, pending);
 
 	await db.pendingApproval.update({
 		where: { id: pendingApprovalId },

@@ -13,6 +13,7 @@ import { getLookoutSessions } from '$lib/server/integrations/lookout.js';
 import { CHECKS } from '$lib/server/checks/registry.js';
 import { enqueueChecks } from '$lib/server/queue/checks.js';
 import { enqueueLapseAfkAnalyses } from '$lib/server/queue/lapse-afk.js';
+import { FRAUD_QUEUE, isRoutedToFraudQueue, isFraudQueueReviewer } from '$lib/server/experiments/fraud-queue.js';
 import { createLogger } from '$lib/server/logger.js';
 import type { CheckContext } from '$lib/server/checks/types.js';
 import type { SubmitReviewActionInput } from '$lib/server/protocol/types.js';
@@ -484,7 +485,19 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			return true;
 		});
 
+	// Approvals held in the fraud queue are only shown to fraud reviewers and
+	// the reviewer who made them. Everyone else sees no trace of the approval,
+	// but the ship still counts as spoken for so they can't stack a verdict.
+	const fraudReviewer = isFraudQueueReviewer(membership);
+	const ownReviewerId = user.slackId || user.hcaId;
+	const hiddenFraudQueued = (pa: typeof pendingApprovals[number]) =>
+		pa.status === 'pending' && pa.queue === FRAUD_QUEUE && !fraudReviewer && pa.reviewerId !== ownReviewerId;
+	const fraudQueuedHidden = pendingApprovals.some(
+		(pa) => hiddenFraudQueued(pa) && pa.shipId === pendingShip?.id
+	);
+
 	for (const pa of pendingApprovals) {
+		if (hiddenFraudQueued(pa)) continue;
 		actorIds.add(pa.reviewerId);
 		if (pa.discardedById) actorIds.add(pa.discardedById);
 
@@ -519,6 +532,11 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	}
 
 	mergedTimeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+	// Fraud-queue approvals are only actionable by fraud reviewers, who need not
+	// be HQ authorizers — they can deflate hours and authorize or send back from
+	// the same form HQ uses. The reviewer who made one sees it but gets no form.
+	const hasFraudQueued = pendingApprovals.some((pa) => pa.status === 'pending' && pa.queue === FRAUD_QUEUE);
 
 	// Re-resolve actors if we added new ones from pending approvals
 	if (pendingApprovals.length > 0) {
@@ -583,8 +601,14 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			severity: c.severity
 		})),
 		canReview: membership.canCreateReviews,
-		canAuthorize: membership.canAuthorizeReviews,
+		canAuthorize: hasFraudQueued ? fraudReviewer : membership.canAuthorizeReviews,
 		canViewHeartbeats: membership.canViewHeartbeats,
+		// Experiment: this user's approvals are held for fraud review instead of
+		// going upstream (see $lib/server/experiments/fraud-queue.ts).
+		fraudQueueRouted: isRoutedToFraudQueue(membership),
+		// A fraud-queued approval exists on the pending ship that this viewer
+		// can't see — still blocks new verdicts.
+		fraudQueuedHidden,
 		programYswsName: program.yswsName || program.name,
 		hackatimeUser: hackatimeUser && project.hackatimeProjectKeys.length > 0 ? hackatimeUser : null,
 		authorTimezone
@@ -619,9 +643,12 @@ export const actions: Actions = {
 
 		const reviewerId = user.slackId || user.hcaId;
 
-		// Non-HQ approvals go to pending queue instead of master endpoint
-		if (action === 'approve' && !membership.canAuthorizeReviews) {
-			log.info('queuing pending approval (non-HQ user)', { shipId, projectId: params.projectId });
+		// Non-HQ approvals go to pending queue instead of master endpoint. So do
+		// approvals by users routed into the fraud-review experiment, which land
+		// in the separate "fraud" queue.
+		const queue = isRoutedToFraudQueue(membership) ? FRAUD_QUEUE : undefined;
+		if (action === 'approve' && (!membership.canAuthorizeReviews || queue)) {
+			log.info('queuing pending approval', { shipId, projectId: params.projectId, queue: queue ?? 'hq' });
 			await db.pendingApproval.upsert({
 				where: {
 					programId_shipId_reviewerId: {
@@ -639,14 +666,16 @@ export const actions: Actions = {
 					rewardedHoursOverride: rewardedHoursOverride ?? null,
 					feedbackMessage: formData.get('feedbackMessage') as string,
 					justification: formData.get('justification') as string,
-					fields: fields ?? undefined
+					fields: fields ?? undefined,
+					...(queue && { queue })
 				},
 				update: {
 					hoursAssigned: parseFloat(formData.get('hoursAssigned') as string),
 					rewardedHoursOverride: rewardedHoursOverride ?? null,
 					feedbackMessage: formData.get('feedbackMessage') as string,
 					justification: formData.get('justification') as string,
-					fields: fields ?? undefined
+					fields: fields ?? undefined,
+					...(queue && { queue })
 				}
 			});
 
@@ -660,12 +689,13 @@ export const actions: Actions = {
 					metadata: {
 						projectId: params.projectId,
 						hoursAssigned: (formData.get('hoursAssigned') as string) || null,
-						rewardedHoursOverride: rewardedHoursOverride ?? null
+						rewardedHoursOverride: rewardedHoursOverride ?? null,
+						...(queue && { queue })
 					}
 				}
 			});
 
-			log.info('review queued for hq approval', { shipId, projectId: params.projectId });
+			log.info('review queued for approval', { shipId, projectId: params.projectId, queue: queue ?? 'hq' });
 			return { success: true };
 		}
 
@@ -676,7 +706,8 @@ export const actions: Actions = {
 
 		switch (action) {
 			case 'approve':
-				// Only reachable for HQ users — non-HQ approvals were queued above.
+				// Only reachable for HQ users not routed to the fraud queue — everyone
+				// else's approvals were queued above.
 				input = {
 					...base,
 					action: 'approve',

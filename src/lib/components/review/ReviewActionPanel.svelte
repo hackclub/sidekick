@@ -65,9 +65,12 @@
 		// An approval on this ship is already awaiting HQ authorization — hide the
 		// Approve/Reject tabs so a second verdict can't be stacked on top of it.
 		hasPendingApproval?: boolean;
+		// Label for the approve submit button. The fraud-queue experiment uses
+		// this to make clear the approval is being handed off, not sent upstream.
+		approveLabel?: string;
 	}
 
-	let { remainingHours, onsubmit, submitting = false, prefill = null, changelog = null, overview = null, draftKey = '', approveFields = [], rejectFields = [], rejectionTemplates = [], supportsRewardedOverride = false, hasPendingApproval = false }: Props = $props();
+	let { remainingHours, onsubmit, submitting = false, prefill = null, changelog = null, overview = null, draftKey = '', approveFields = [], rejectFields = [], rejectionTemplates = [], supportsRewardedOverride = false, hasPendingApproval = false, approveLabel = 'Approve' }: Props = $props();
 
 	let selectedAction: ActionType = $state('approve');
 	let hoursAssigned = $state(0);
@@ -902,7 +905,7 @@
 				{#if submitting}
 					Submitting...
 				{:else if selectedAction === 'approve'}
-					Approve
+					{approveLabel}
 				{:else if selectedAction === 'reject'}
 					Reject
 				{:else}

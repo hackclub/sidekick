@@ -367,6 +367,7 @@
 	// second approval on top of the queued one.
 	const hasPendingApproval = $derived(
 		data.pendingShip?.status === 'pending_hq' ||
+			data.fraudQueuedHidden ||
 			data.timeline.some((e) => e.type === 'pending_approval' && e.shipId === data.pendingShip?.id)
 	);
 
@@ -857,6 +858,7 @@
 				{#if data.canReview && data.pendingShip}
 					<div bind:this={reviewPanelRef}>
 						<ReviewActionPanel
+							approveLabel={data.fraudQueueRouted ? 'Send to fraud review' : 'Approve'}
 							{remainingHours}
 							onsubmit={handleReviewSubmit}
 							{submitting}

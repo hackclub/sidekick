@@ -6,6 +6,7 @@ import { redactAuthorIdentity } from '$lib/server/protocol/redact.js';
 import type { Project } from '$lib/server/protocol/types.js';
 import { resolveActorIds } from '$lib/server/actors.js';
 import { createLogger } from '$lib/server/logger.js';
+import { FRAUD_QUEUE, isFraudQueueReviewer } from '$lib/server/experiments/fraud-queue.js';
 import type { PageServerLoad } from './$types.js';
 
 const log = createLogger('page:review-list');
@@ -53,7 +54,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 
 	const client = new ProtocolClient(program.masterEndpoint, program.secretKey);
 
-	const [projectsResult, hqProjectsResult, statsResult, tagDefinitions, tagAssignments, pendingApprovals] = await Promise.all([
+	const [projectsResult, hqProjectsResult, statsResult, tagDefinitions, tagAssignments, allPendingApprovals] = await Promise.all([
 		fetchAllProjects(client, 'pending'),
 		fetchAllProjects(client, 'pending_hq'),
 		client.getProgramStats({}),
@@ -71,6 +72,13 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			orderBy: { createdAt: 'asc' }
 		})
 	]);
+
+	// Approvals held for fraud review live in their own group, visible only to
+	// fraud reviewers. Everyone else still gets the ship IDs so those projects
+	// drop out of the main queue rather than being re-reviewed.
+	const fraudReviewer = isFraudQueueReviewer(membership);
+	const pendingApprovals = allPendingApprovals.filter((pa) => pa.queue !== FRAUD_QUEUE);
+	const fraudApprovals = allPendingApprovals.filter((pa) => pa.queue === FRAUD_QUEUE);
 
 	const projectTagIds: Record<string, string[]> = {};
 	for (const a of tagAssignments) {
@@ -125,7 +133,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		...projectsResult.projects.map((p) => p.authorId),
 		...hqProjects.map((p) => p.authorId)
 	])];
-	for (const pa of pendingApprovals) {
+	for (const pa of allPendingApprovals) {
 		authorIds.push(pa.reviewerId);
 	}
 	const actors = await resolveActorIds([...new Set(authorIds)]);
@@ -140,11 +148,22 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		projectCount: projectsResult.projects.length,
 		hqProjectCount: hqProjects.length,
 		pendingCount: statsResult.pendingReviewCount,
-		pendingApprovalCount: pendingApprovals.length
+		pendingApprovalCount: pendingApprovals.length,
+		fraudApprovalCount: fraudApprovals.length
 	});
 	tLoad.end();
 
 	const visible = (p: Project) => (membership.canViewHeartbeats ? p : redactAuthorIdentity(p));
+	const serializeApproval = (pa: typeof allPendingApprovals[number]) => ({
+		id: pa.id,
+		projectId: pa.projectId,
+		shipId: pa.shipId,
+		reviewerId: pa.reviewerId,
+		hoursAssigned: pa.hoursAssigned,
+		feedbackMessage: membership.canAuthorizeReviews ? pa.feedbackMessage : '',
+		justification: membership.canAuthorizeReviews ? pa.justification : '',
+		createdAt: pa.createdAt.toISOString()
+	});
 
 	return {
 		projects: projectsResult.projects.map(visible),
@@ -159,15 +178,8 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		projectTagIds,
 		shipApprovalDates,
 		canAuthorize: membership.canAuthorizeReviews,
-		pendingApprovals: pendingApprovals.map((pa) => ({
-			id: pa.id,
-			projectId: pa.projectId,
-			shipId: pa.shipId,
-			reviewerId: pa.reviewerId,
-			hoursAssigned: pa.hoursAssigned,
-			feedbackMessage: membership.canAuthorizeReviews ? pa.feedbackMessage : '',
-			justification: membership.canAuthorizeReviews ? pa.justification : '',
-			createdAt: pa.createdAt.toISOString()
-		}))
+		pendingApprovals: pendingApprovals.map(serializeApproval),
+		fraudApprovals: fraudReviewer ? fraudApprovals.map(serializeApproval) : [],
+		fraudQueuedShipIds: fraudApprovals.map((pa) => pa.shipId)
 	};
 };

@@ -2,7 +2,7 @@
 	import type { PageData } from './$types.js';
 	import { resolve } from '$app/paths';
 	import { browser } from '$app/environment';
-	import { Clock, CheckCircle, Hourglass, Scale, ShieldCheck, Download, Copy, ChevronDown, Check, Search, Tag, ArrowUpDown } from 'lucide-svelte';
+	import { Clock, CheckCircle, Hourglass, Scale, ShieldCheck, ShieldAlert, Download, Copy, ChevronDown, Check, Search, Tag, ArrowUpDown } from 'lucide-svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import CsvExportModal from '$lib/components/ui/CsvExportModal.svelte';
 	import ProjectTags from '$lib/components/review/ProjectTags.svelte';
@@ -127,8 +127,11 @@
 		return sorted;
 	}
 
-	// Ships awaiting authorization are shown in their own group, not in the review queue.
-	const pendingAuthShipIds = $derived(new Set(data.pendingApprovals.map((pa) => pa.shipId)));
+	// Ships awaiting authorization (HQ or fraud review) are shown in their own
+	// group, not in the review queue.
+	const pendingAuthShipIds = $derived(
+		new Set([...data.pendingApprovals.map((pa) => pa.shipId), ...data.fraudQueuedShipIds])
+	);
 	const filteredProjects = $derived(
 		sortProjects(
 			data.projects.filter((p) => {
@@ -377,7 +380,7 @@
 				{#if filtersActive}
 					{filteredProjects.length + filteredHqProjects.length} of {data.projects.length + data.hqProjects.length} shown
 				{:else}
-					{Math.max(0, data.pendingCount - data.pendingApprovals.length)} pending review{#if data.pendingHqCount > 0}, {data.pendingHqCount} under HQ review{/if}
+					{Math.max(0, data.pendingCount - data.pendingApprovals.length - data.fraudQueuedShipIds.length)} pending review{#if data.pendingHqCount > 0}, {data.pendingHqCount} under HQ review{/if}
 				{/if}
 			</span>
 		{#if allExportableProjects.length > 0}
@@ -417,6 +420,44 @@
 		{/if}
 		</div>
 	</div>
+
+	{#if data.fraudApprovals.length > 0}
+		<div class="flex flex-col gap-2">
+			<div class="flex items-center gap-2">
+				<ShieldAlert size={16} />
+				<h2 class="font-bold text-sm tracking-[-0.3px]">Fraud Review</h2>
+				<span class="text-xs text-text-tertiary">{data.fraudApprovals.length} approval{data.fraudApprovals.length === 1 ? '' : 's'} awaiting fraud check</span>
+			</div>
+			{#each data.fraudApprovals as pa (pa.projectId)}
+				{@const project = projectMap[pa.projectId]}
+				{@const reviewer = data.actors[pa.reviewerId]}
+				<a
+					href={resolve(`/program/${data.program.id}/review/${pa.projectId}`)}
+					class="border-2 border-dashed border-rose-300 bg-rose-50/30 rounded-section p-4 max-md:p-3 flex items-center gap-4 max-md:gap-3 hover:border-rose-400 hover:bg-rose-50/50 transition-colors"
+				>
+					{#if project?.screenshotUrl}
+						<img src={project.screenshotUrl} alt="" class="w-16 h-10 rounded-tag object-cover shrink-0" />
+					{:else}
+						<div class="w-16 h-10 rounded-tag bg-surface shrink-0"></div>
+					{/if}
+					<div class="flex-1 min-w-0">
+						<div class="flex max-md:flex-wrap items-center gap-1.5 mb-0.5">
+							<span class="text-text-tertiary text-xs font-mono" title={isUuid(pa.projectId) ? pa.projectId : undefined}>#{shortenId(pa.projectId)}</span>
+							<span class="font-bold text-sm tracking-[-0.3px] truncate max-md:flex-1 max-md:min-w-0">{project?.title ?? shortenId(pa.projectId)}</span>
+							<ProjectTags tags={[...(project?.tags ?? []), ...customTagsFor(pa.projectId)]} class="shrink-0 max-md:basis-full" />
+						</div>
+						<div class="flex items-center gap-1.5 text-xs text-text-secondary tracking-[-0.24px]">
+							<Avatar name={reviewer?.name ?? pa.reviewerId} url={reviewer?.avatarUrl} size="xs" />
+							<span class="truncate">
+								{reviewer?.name ?? shortenId(pa.reviewerId)} approved for {formatHours(pa.hoursAssigned)}
+								<span class="text-text-tertiary">&middot; {new Date(pa.createdAt).toLocaleDateString()}</span>
+							</span>
+						</div>
+					</div>
+				</a>
+			{/each}
+		</div>
+	{/if}
 
 	{#if data.pendingApprovals.length > 0}
 		<div class="flex flex-col gap-2">

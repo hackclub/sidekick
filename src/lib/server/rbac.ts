@@ -11,6 +11,8 @@ export type Permission = keyof Pick<
 	| 'canCreateReviews'
 	| 'canAuthorizeReviews'
 	| 'canViewHeartbeats'
+	| 'routeToFraudQueue'
+	| 'canReviewFraudQueue'
 	| 'canViewFulfillments'
 	| 'canViewAddressData'
 	| 'canUpdateFulfillments'
@@ -63,6 +65,8 @@ export async function requirePermission(
 			canCreateReviews: true,
 			canAuthorizeReviews: true,
 			canViewHeartbeats: true,
+			routeToFraudQueue: false,
+			canReviewFraudQueue: true,
 			canViewFulfillments: true,
 			canViewAddressData: true,
 			canUpdateFulfillments: true,

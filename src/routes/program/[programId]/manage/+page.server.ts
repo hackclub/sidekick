@@ -158,6 +158,8 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			canCreateReviews: m.canCreateReviews,
 			canAuthorizeReviews: m.canAuthorizeReviews,
 			canViewHeartbeats: m.canViewHeartbeats,
+			routeToFraudQueue: m.routeToFraudQueue,
+			canReviewFraudQueue: m.canReviewFraudQueue,
 			canViewFulfillments: m.canViewFulfillments,
 			canViewAddressData: m.canViewAddressData,
 			canUpdateFulfillments: m.canUpdateFulfillments,
@@ -332,7 +334,7 @@ export const actions: Actions = {
 
 		const validPermissions = [
 			'canViewReviews', 'canCreateReviews', 'canAuthorizeReviews', 'canViewHeartbeats',
-			'canViewFulfillments', 'canViewAddressData', 'canUpdateFulfillments',
+			'routeToFraudQueue', 'canReviewFraudQueue', 'canViewFulfillments', 'canViewAddressData', 'canUpdateFulfillments',
 			'canUpdateProgram', 'isRoot'
 		];
 		if (!validPermissions.includes(permission)) throw error(400, 'Invalid permission');
