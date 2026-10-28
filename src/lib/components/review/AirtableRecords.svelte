@@ -1,18 +1,9 @@
 <script lang="ts">
-	import { BadgeQuestionMark, Clock, ExternalLink } from 'lucide-svelte';
+	import { BadgeQuestionMark, ChevronRight, Clock } from 'lucide-svelte';
 	import AirtableIcon from '../icons/AirtableIcon.svelte';
 	import Checkbox from '../ui/Checkbox.svelte';
-
-	interface AirtableMatch {
-		id: string;
-		url: string;
-		hours: number;
-		approvedAt: string | null;
-		playableUrl: string | null;
-		codeUrl: string | null;
-		isExact: boolean;
-		mismatches: string[];
-	}
+	import AirtableRecordModal from './AirtableRecordModal.svelte';
+	import { programFromId, type AirtableMatch } from '$lib/review/airtable.js';
 
 	interface Props {
 		records: AirtableMatch[];
@@ -24,6 +15,7 @@
 	let { records, loading = false, countFuzzy = $bindable(false), class: className = '' }: Props = $props();
 
 	const fuzzyRecords = $derived(records.filter((r) => !r.isExact));
+	let selected = $state<AirtableMatch | null>(null);
 
 	function shortDate(iso: string): string {
 		return new Date(iso).toLocaleDateString('en-US', {
@@ -41,14 +33,6 @@
 			return `${Math.round(h * 60)}m`;
 
 		return `${h.toFixed(1).replace(/\.0$/, '')}h`;
-	}
-
-	function programFromId(id: string): string {
-		const dash = id.indexOf('–');
-		if (dash > 0)
-			return id.slice(0, dash).trim();
-
-		return id;
 	}
 
 	function truncateUrl(url: string): string {
@@ -96,16 +80,14 @@
 			</div>
 		{:else}
 			<div class="flex flex-col px-8 max-md:px-4 py-3">
-				<!-- The index in the key guards against duplicate URLs: a key collision
+				<!-- The index in the key guards against duplicate records: a key collision
 				     throws mid-flush and silently freezes this whole section (records
 				     stop rendering and the fuzzy checkbox stops reflecting its state). -->
-				{#each records as record, i (`${record.url}#${i}`)}
-					<!-- eslint-disable svelte/no-navigation-without-resolve -->
-					<a
-						href={record.url}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="flex flex-col gap-0.5 py-2.5 border-b border-border-table last:border-b-0 -mx-2 px-2 rounded-tag hover:bg-surface transition-colors group {record.isExact || countFuzzy ? '' : 'opacity-50'}"
+				{#each records as record, i (`${record.recordId}#${i}`)}
+					<button
+						type="button"
+						onclick={() => (selected = record)}
+						class="flex flex-col gap-0.5 py-2.5 border-b border-border-table last:border-b-0 -mx-2 px-2 rounded-tag text-left cursor-pointer hover:bg-surface transition-colors group {record.isExact || countFuzzy ? '' : 'opacity-50'}"
 					>
 						<div class="flex items-center justify-between gap-3">
 							<div class="flex items-center gap-1.5 min-w-0">
@@ -122,11 +104,11 @@
 									<span class="text-sm font-medium tracking-[-0.3px] text-text-primary">{fmtHours(record.hours)}</span>
 								</div>
 
-								{#if record.approvedAt}
-									<span class="text-xs text-text-faint">{shortDate(record.approvedAt)}</span>
+								{#if record.approvedAt || record.createdAt}
+									<span class="text-xs text-text-faint">{shortDate(record.approvedAt || record.createdAt || '')}</span>
 								{/if}
 
-								<ExternalLink size={12} class="text-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity" />
+								<ChevronRight size={12} class="text-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity" />
 							</div>
 						</div>
 						<div class="flex items-center gap-3 text-[11px] text-text-faint truncate">
@@ -137,8 +119,7 @@
 								<span class="truncate" title={record.codeUrl}>{truncateUrl(record.codeUrl)}</span>
 							{/if}
 						</div>
-					</a>
-					<!-- eslint-enable svelte/no-navigation-without-resolve -->
+					</button>
 				{/each}
 			</div>
 		{/if}
@@ -154,3 +135,7 @@
 		</div>
 	{/if}
 </div>
+
+{#if selected}
+	<AirtableRecordModal record={selected} onclose={() => (selected = null)} />
+{/if}

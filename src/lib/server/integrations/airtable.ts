@@ -23,9 +23,72 @@ export interface AirtableRecord {
 		'Code URL'?: string;
 		'Hours Spent'?: number;
 		'Override Hours Spent'?: number;
+		'Override Hours Spent Justification'?: string;
+		Description?: string;
+		Screenshot?: AirtableAttachment[];
+		'Address (Line 1)'?: string;
+		'Address (Line 2)'?: string;
+		City?: string;
+		'State / Province'?: string;
+		Country?: string;
+		'ZIP / Postal Code'?: string;
 		'Approved At'?: string;
 		Created?: string;
 	};
+}
+
+export interface AirtableAttachment {
+	url: string;
+	thumbnails?: { large?: { url: string } };
+}
+
+const PII_FIELDS = [
+	'First Name',
+	'Last Name',
+	'Email',
+	'Address (Line 1)',
+	'Address (Line 2)',
+	'City',
+	'State / Province',
+	'Country',
+	'ZIP / Postal Code'
+] as const;
+
+const EMAIL_PATTERN = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+const REDACTED = '[redacted]';
+
+function escapeRegExp(s: string): string {
+	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Strips the submitter's name, e-mail, and address (or any part of them) from
+ * free text written on their Airtable record, so it can be shown to reviewers
+ * who aren't cleared to see who the author is.
+ */
+export function redactPii(text: string, record: AirtableRecord): string {
+	// term -> case-sensitive? Values under 3 chars ("US", "CA") only match
+	// verbatim — case-insensitively they'd eat words like "us" and "ca".
+	const terms = new Map<string, boolean>();
+	for (const field of PII_FIELDS) {
+		const value = record.fields[field]?.trim();
+		if (!value) continue;
+		terms.set(value, value.length < 3);
+		// The e-mail's domain is not identifying (and splitting it would redact
+		// "com" everywhere) — only its local part is broken up.
+		const source = field === 'Email' ? value.split('@')[0] : value;
+		for (const part of source.split(/[\s,.+_-]+/)) {
+			if (part.length >= 3) terms.set(part, false);
+		}
+	}
+
+	let out = text.replace(EMAIL_PATTERN, REDACTED);
+	// Longest first, so a full value is replaced before any of its parts.
+	for (const [term, caseSensitive] of [...terms].sort((a, b) => b[0].length - a[0].length)) {
+		const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(term)}(?![\\p{L}\\p{N}])`, caseSensitive ? 'gu' : 'giu');
+		out = out.replace(pattern, REDACTED);
+	}
+	return out;
 }
 
 export function normalizeUrl(raw: string): string {

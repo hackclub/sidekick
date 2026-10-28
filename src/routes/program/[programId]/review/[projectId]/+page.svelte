@@ -15,6 +15,8 @@
 	import ReviewActionPanel from '$lib/components/review/ReviewActionPanel.svelte';
 	import MultiSourceDetails from '$lib/components/review/MultiSourceDetails.svelte';
 	import AirtableRecords from '$lib/components/review/AirtableRecords.svelte';
+	import AirtableApprovalWarning from '$lib/components/review/AirtableApprovalWarning.svelte';
+	import type { AirtableMatch } from '$lib/review/airtable.js';
 	import HackatimeViewer from '$lib/components/review/HackatimeViewer.svelte';
 	import OtherProjects from '$lib/components/review/OtherProjects.svelte';
 	import ProjectTags from '$lib/components/review/ProjectTags.svelte';
@@ -40,7 +42,7 @@
 	let protocolError = $state<string | null>(null);
 	let countFuzzyAirtable = $state(false);
 	// Hour-breakdown toggles: which deductions the reviewer counts toward the
-	// remaining hours. Airtable records are keyed by their record URL.
+	// remaining hours. Airtable records are keyed by their record id.
 	let excludeAi = $state(true);
 	let partialAi = $state(false);
 	let excludeBrowsers = $state(false);
@@ -413,7 +415,7 @@
 	const externalPreviousHours = $derived.by(() => {
 		if (!airtable?.airtableRecords) return 0;
 		return airtable.airtableRecords
-			.filter((r) => isExternalPreviousRecord(r) && !uncountedAirtableShips[r.url])
+			.filter((r) => isExternalPreviousRecord(r) && !uncountedAirtableShips[r.recordId])
 			.reduce((sum, r) => sum + r.hours, 0);
 	});
 
@@ -491,7 +493,18 @@
 				}
 			: null,
 		airtable: airtable
-			? { records: airtable.airtableRecords, previousHours: airtable.airtablePreviousHours }
+			? {
+					records: airtable.airtableRecords.map((r) => ({
+						id: r.id,
+						url: r.url,
+						hours: r.hours,
+						approvedAt: r.approvedAt ?? r.createdAt,
+						playableUrl: r.playableUrl,
+						codeUrl: r.codeUrl,
+						isExact: r.isExact
+					})),
+					previousHours: airtable.airtablePreviousHours
+				}
 			: null,
 		lapse: lapse ? { timelapses: lapse.lapseTimelapses } : null,
 		lookout: lookout ? { sessions: lookout.lookoutSessions } : null
@@ -538,6 +551,26 @@
 		}
 		await applyAction(result);
 		submitting = false;
+	}
+
+	// Set while the "existing Airtable records" warning is open; resolves with
+	// whether the reviewer chose to go ahead with the approval.
+	let airtableWarning = $state<{ records: AirtableMatch[]; resolve: (proceed: boolean) => void } | null>(null);
+
+	async function confirmApprove(): Promise<boolean> {
+		// The reviewer may approve before the streamed Airtable lookup lands.
+		const { airtableRecords } = await data.airtableData;
+		if (airtableRecords.length === 0) return true;
+
+		return new Promise((resolve) => {
+			airtableWarning = {
+				records: airtableRecords,
+				resolve: (proceed) => {
+					airtableWarning = null;
+					resolve(proceed);
+				}
+			};
+		});
 	}
 
 	// Save handlers resolve to null on success or an error message to display —
@@ -777,11 +810,11 @@
 					previousShips={(airtable?.airtableRecords ?? [])
 						.filter((r) => isExternalPreviousRecord(r))
 						.map((r) => ({
-							key: r.url,
+							key: r.recordId,
 							programName: r.id.split('–')[0]?.trim() || r.id,
 							date: '',
 							hours: r.hours,
-							url: r.url
+							url: r.url ?? undefined
 						}))}
 					bind:excludeAi
 					bind:partialAi
@@ -861,6 +894,7 @@
 							approveLabel={data.fraudQueueRouted ? 'Send to fraud review' : 'Approve'}
 							{remainingHours}
 							onsubmit={handleReviewSubmit}
+							beforeApprove={confirmApprove}
 							{submitting}
 							changelog={changelogContext}
 							overview={overviewContext}
@@ -955,6 +989,14 @@
 		</div>
 	</div>
 </div>
+
+{#if airtableWarning}
+	<AirtableApprovalWarning
+		records={airtableWarning.records}
+		onapprove={() => airtableWarning?.resolve(true)}
+		oncancel={() => airtableWarning?.resolve(false)}
+	/>
+{/if}
 
 <style>
 	.review-bento {

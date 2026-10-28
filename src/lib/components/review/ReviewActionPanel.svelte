@@ -68,9 +68,12 @@
 		// Label for the approve submit button. The fraud-queue experiment uses
 		// this to make clear the approval is being handed off, not sent upstream.
 		approveLabel?: string;
+		// Asked before an approval is submitted; resolving false cancels it and
+		// keeps the drafted form intact.
+		beforeApprove?: () => Promise<boolean>;
 	}
 
-	let { remainingHours, onsubmit, submitting = false, prefill = null, changelog = null, overview = null, draftKey = '', approveFields = [], rejectFields = [], rejectionTemplates = [], supportsRewardedOverride = false, hasPendingApproval = false, approveLabel = 'Approve' }: Props = $props();
+	let { remainingHours, onsubmit, submitting = false, prefill = null, changelog = null, overview = null, draftKey = '', approveFields = [], rejectFields = [], rejectionTemplates = [], supportsRewardedOverride = false, hasPendingApproval = false, approveLabel = 'Approve', beforeApprove }: Props = $props();
 
 	let selectedAction: ActionType = $state('approve');
 	let hoursAssigned = $state(0);
@@ -286,9 +289,22 @@
 		return Object.keys(values).length > 0 ? values : undefined;
 	}
 
-	function handleSubmit() {
-		if (!canSubmit)
+	let confirming = $state(false);
+
+	async function handleSubmit() {
+		if (!canSubmit || confirming)
 			return;
+		if (selectedAction === 'approve' && beforeApprove) {
+			confirming = true;
+			try {
+				if (!(await beforeApprove())) {
+					log.debug('Approval cancelled before submit');
+					return;
+				}
+			} finally {
+				confirming = false;
+			}
+		}
 		log.info('Submitting review action', { action: selectedAction });
 		const payload: Parameters<typeof onsubmit>[0] = { action: selectedAction };
 		if (selectedAction === 'approve') {
@@ -899,7 +915,7 @@
 						? 'bg-check-fail text-white hover:opacity-90'
 						: 'bg-accent text-white hover:opacity-90'}
 					disabled:opacity-50 disabled:cursor-not-allowed"
-				disabled={!canSubmit || submitting}
+				disabled={!canSubmit || submitting || confirming}
 				onclick={handleSubmit}
 			>
 				{#if submitting}
