@@ -108,6 +108,8 @@ const STATS_CACHE_MAX_ENTRIES = 1000;
 interface AuthFetchOpts {
 	/** Persist the parsed response in Postgres for this long; omit for memory-only caching. */
 	persistTtlMs?: number;
+	/** With `persistTtlMs`, read a row already in Postgres but never write one. */
+	persistReadOnly?: boolean;
 	/** Hackatime user the request is about, so invalidateHackatimeCache can target it. */
 	cacheUserId?: string;
 }
@@ -191,7 +193,7 @@ async function loadThroughPersistentCache(
 
 	const data = await fetchWithRetry(key, path, params, token);
 
-	if (opts?.persistTtlMs) {
+	if (opts?.persistTtlMs && !opts.persistReadOnly) {
 		const expiresAt = new Date(Date.now() + opts.persistTtlMs);
 		const payload = data as Prisma.InputJsonValue;
 		const hackatimeUserId = opts.cacheUserId ?? null;
@@ -720,8 +722,9 @@ export interface HeartbeatRangeResult {
  * pagination; hitting it means the result is incomplete, and callers must
  * treat the data as a lower bound (`truncated`), never as the full range.
  *
- * `persist: false` keeps the pages out of Postgres even for a finalized
- * window, for callers that persist something smaller derived from them.
+ * `persist: false` writes no pages to Postgres even for a finalized window,
+ * for callers that persist something smaller derived from them; pages already
+ * stored are still read, which beats refetching them from Hackatime.
  */
 export async function getRawHeartbeatRange(
 	userId: string,
@@ -734,10 +737,9 @@ export async function getRawHeartbeatRange(
 	const timer = log.time('getRawHeartbeatRange');
 	// A window that fully ended a while ago won't meaningfully change — persist
 	// its pages. Windows touching the present stay memory-only.
-	const cacheOpts =
-		persist && isFinalized(endTimestampS)
-			? { persistTtlMs: HEARTBEATS_TTL_MS, cacheUserId: userId }
-			: undefined;
+	const cacheOpts = isFinalized(endTimestampS)
+		? { persistTtlMs: HEARTBEATS_TTL_MS, persistReadOnly: !persist, cacheUserId: userId }
+		: undefined;
 	const BATCH_SIZE = 5000;
 	const MAX_FETCH = 500000;
 	const all: RawHeartbeat[] = [];
