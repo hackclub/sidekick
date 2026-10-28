@@ -7,7 +7,10 @@
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
 		%sveltekit.head%
 	</head>
-	<body data-sveltekit-preload-data="hover">
+	<!-- tap, not hover: a review page's load fans out to Hackatime, GitHub,
+	     Airtable, Lapse and the program and re-runs every check, so moving the
+	     cursor down the queue fired a full load per row and starved the server. -->
+	<body data-sveltekit-preload-data="tap">
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>
