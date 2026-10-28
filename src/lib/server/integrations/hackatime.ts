@@ -91,6 +91,20 @@ const METADATA_TTL_MS = 10 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 let lastCleanupMs = 0;
 
+function isFinalized(endTimestampS: number): boolean {
+	return endTimestampS * 1000 < Date.now() - FINALIZED_AFTER_MS;
+}
+
+// Computed project stats, cached in place of the heartbeats they come from.
+// Every review view needs them, and rebuilding them meant parsing up to tens
+// of thousands of heartbeats (from Hackatime, or as multi-MB JSON pages out of
+// Postgres) and aggregating them four times, most of a review's server CPU.
+// The tiers and TTLs match the heartbeat pages they replace.
+const STATS_KEY_PREFIX = 'stats:';
+const statsCache = new Map<string, { userId: string; stats: ProjectHackatimeStats; expiresAt: number }>();
+const statsInFlight = new Map<string, Promise<ProjectHackatimeStats>>();
+const STATS_CACHE_MAX_ENTRIES = 1000;
+
 interface AuthFetchOpts {
 	/** Persist the parsed response in Postgres for this long; omit for memory-only caching. */
 	persistTtlMs?: number;
@@ -219,6 +233,9 @@ export async function invalidateHackatimeCache(userId: string): Promise<number> 
 			responseCache.delete(key);
 		}
 	}
+	for (const [key, entry] of statsCache) {
+		if (entry.userId === userId) statsCache.delete(key);
+	}
 	const res = await db.hackatimeCache.deleteMany({ where: { hackatimeUserId: userId } });
 	log.info('hackatime cache invalidated', { userId, dbRows: res.count });
 	return res.count;
@@ -277,8 +294,18 @@ export function tzDayBounds(dateStr: string, tz: string): { startS: number; endS
 	return { startS, endS: startS + 86400 - 1 };
 }
 
+// toLocaleDateString builds a new Intl formatter on every call, which cost
+// about 30x the work of formatting itself; the activity endpoint calls this
+// once per heartbeat across a month, so the formatters are kept per zone.
+const dayFormatters = new Map<string, Intl.DateTimeFormat>();
+
 export function dateInTimezone(timestampS: number, tz: string): string {
-	return new Date(timestampS * 1000).toLocaleDateString('sv-SE', { timeZone: tz });
+	let formatter = dayFormatters.get(tz);
+	if (!formatter) {
+		formatter = new Intl.DateTimeFormat('sv-SE', { timeZone: tz });
+		dayFormatters.set(tz, formatter);
+	}
+	return formatter.format(new Date(timestampS * 1000));
 }
 
 function utcDateStr(timestampS: number): string {
@@ -428,8 +455,76 @@ export async function getProjectHackatimeStats(
 
 	const startS = Math.floor(new Date(firstDate + 'T00:00:00Z').getTime() / 1000);
 	const endS = Math.floor(new Date(lastDate + 'T23:59:59Z').getTime() / 1000);
+
+	// The result reports the caller's casing, so the key carries the caller's
+	// keys as well as the names they matched.
+	const key = `${STATS_KEY_PREFIX}${JSON.stringify([userId, startS, endS, [...matched.names].sort(), [...projectKeys].sort()])}`;
+	const cached = statsCache.get(key);
+	if (cached && cached.expiresAt > Date.now()) return cached.stats;
+	statsCache.delete(key);
+
+	const pending = statsInFlight.get(key);
+	if (pending) return pending;
+
+	const promise = loadProjectHackatimeStats(key, userId, projectKeys, matched.names, startS, endS);
+	statsInFlight.set(key, promise);
+	try {
+		const stats = await promise;
+		const ttlMs = isFinalized(endS) ? HEARTBEATS_TTL_MS : CACHE_TTL_MS;
+		statsCache.set(key, { userId, stats, expiresAt: Date.now() + ttlMs });
+		while (statsCache.size > STATS_CACHE_MAX_ENTRIES) {
+			statsCache.delete(statsCache.keys().next().value!);
+		}
+		return stats;
+	} finally {
+		statsInFlight.delete(key);
+	}
+}
+
+async function loadProjectHackatimeStats(
+	key: string,
+	userId: string,
+	projectKeys: string[],
+	names: string[],
+	startS: number,
+	endS: number
+): Promise<ProjectHackatimeStats> {
+	const finalized = isFinalized(endS);
+	if (finalized) {
+		try {
+			const row = await db.hackatimeCache.findUnique({ where: { key } });
+			if (row && row.expiresAt > new Date()) return row.payload as unknown as ProjectHackatimeStats;
+		} catch (err) {
+			log.warn('hackatime stats cache read failed; computing', { userId, error: String(err) });
+		}
+	}
+
+	const stats = await computeProjectHackatimeStats(userId, projectKeys, names, startS, endS);
+
+	if (finalized) {
+		const payload = stats as unknown as Prisma.InputJsonValue;
+		const expiresAt = new Date(Date.now() + HEARTBEATS_TTL_MS);
+		db.hackatimeCache
+			.upsert({
+				where: { key },
+				create: { key, payload, hackatimeUserId: userId, expiresAt },
+				update: { payload, hackatimeUserId: userId, expiresAt }
+			})
+			.catch((err) => log.warn('hackatime stats cache write failed', { userId, error: String(err) }));
+		maybeCleanupCache();
+	}
+	return stats;
+}
+
+async function computeProjectHackatimeStats(
+	userId: string,
+	projectKeys: string[],
+	names: string[],
+	startS: number,
+	endS: number
+): Promise<ProjectHackatimeStats> {
 	const results = await Promise.all(
-		matched.names.map((name) => getRawHeartbeatRange(userId, startS, endS, name))
+		names.map((name) => getRawHeartbeatRange(userId, startS, endS, name, { persist: false }))
 	);
 	const truncated = results.some((r) => r.truncated);
 	const scoped = results.flatMap((r) => r.heartbeats);
@@ -624,24 +719,28 @@ export interface HeartbeatRangeResult {
  * not a program-supplied key. The safety cap only guards against runaway
  * pagination; hitting it means the result is incomplete, and callers must
  * treat the data as a lower bound (`truncated`), never as the full range.
+ *
+ * `persist: false` keeps the pages out of Postgres even for a finalized
+ * window, for callers that persist something smaller derived from them.
  */
 export async function getRawHeartbeatRange(
 	userId: string,
 	startTimestampS: number,
 	endTimestampS: number,
-	project?: string
+	project?: string,
+	{ persist = true }: { persist?: boolean } = {}
 ): Promise<HeartbeatRangeResult> {
 	log.debug('getRawHeartbeatRange called', { userId, startTimestampS, endTimestampS, project });
 	const timer = log.time('getRawHeartbeatRange');
 	// A window that fully ended a while ago won't meaningfully change — persist
 	// its pages. Windows touching the present stay memory-only.
-	const finalized = endTimestampS * 1000 < Date.now() - FINALIZED_AFTER_MS;
-	const cacheOpts = finalized
-		? { persistTtlMs: HEARTBEATS_TTL_MS, cacheUserId: userId }
-		: undefined;
+	const cacheOpts =
+		persist && isFinalized(endTimestampS)
+			? { persistTtlMs: HEARTBEATS_TTL_MS, cacheUserId: userId }
+			: undefined;
 	const BATCH_SIZE = 5000;
 	const MAX_FETCH = 500000;
-	let all: RawHeartbeat[] = [];
+	const all: RawHeartbeat[] = [];
 	let offset = 0;
 	let truncated = false;
 	let fromCache = false;
@@ -673,7 +772,7 @@ export async function getRawHeartbeatRange(
 			truncated = true;
 			break;
 		}
-		all = all.concat(batch);
+		for (const hb of batch) all.push(hb);
 		offset += BATCH_SIZE;
 		log.trace('getRawHeartbeatRange batch', { userId, batchSize: batch.length, totalAccumulated: all.length, hasMore });
 		if (!hasMore) break;
