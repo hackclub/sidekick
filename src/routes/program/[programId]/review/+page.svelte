@@ -2,11 +2,12 @@
 	import type { PageData } from './$types.js';
 	import { resolve } from '$app/paths';
 	import { browser } from '$app/environment';
-	import { Clock, CheckCircle, Hourglass, Scale, ShieldCheck, ShieldAlert, Download, Copy, ChevronDown, Check, Search, Tag, ArrowUpDown } from 'lucide-svelte';
+	import { Clock, CheckCircle, Hourglass, Scale, ShieldCheck, ShieldAlert, Download, Copy, ChevronDown, Check, Search, Filter, ArrowUpDown } from 'lucide-svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import CsvExportModal from '$lib/components/ui/CsvExportModal.svelte';
 	import ProjectTags from '$lib/components/review/ProjectTags.svelte';
 	import { isUuid, shortenId } from '$lib/utils/id';
+	import { normalizeTags } from '$lib/utils/tags.js';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	interface Props {
@@ -53,10 +54,21 @@
 		{ value: 'hours-asc', label: 'Fewest hours' }
 	]);
 
+	type ShipKind = 'all' | 'new' | 'update';
+
+	const SHIP_KIND_OPTIONS: { value: ShipKind; label: string }[] = [
+		{ value: 'all', label: 'All submissions' },
+		{ value: 'new', label: 'New projects' },
+		{ value: 'update', label: 'Updates' }
+	];
+
 	let searchInput = $state('');
 	const selectedTagIds = new SvelteSet<string>();
+	// Program-sent tags (cards, flags, tracks...) carry no id, so they're keyed by label.
+	const selectedProgramTags = new SvelteSet<string>();
+	let shipKind = $state<ShipKind>('all');
 	let sortMode = $state<SortMode>('default');
-	let tagDropdownOpen = $state(false);
+	let filterDropdownOpen = $state(false);
 	let sortDropdownOpen = $state(false);
 
 	const sortLabel = $derived(SORT_OPTIONS.find((o) => o.value === sortMode)?.label ?? 'Sort');
@@ -68,6 +80,19 @@
 			.map((id) => tagById.get(id))
 			.filter((t): t is { id: string; label: string; color: string } => !!t);
 	}
+
+	// Every distinct program tag across the queue, first color seen wins.
+	const programTagOptions = $derived(
+		[...data.projects, ...data.hqProjects]
+			.flatMap((p) => normalizeTags(p.tags))
+			.filter((t, i, all) => all.findIndex((o) => o.label === t.label) === i)
+			.map((t) => ({ label: t.label, color: t.color }))
+			.sort((a, b) => a.label.localeCompare(b.label))
+	);
+
+	const activeFilterCount = $derived(
+		selectedTagIds.size + selectedProgramTags.size + (shipKind === 'all' ? 0 : 1)
+	);
 
 	function matchesFilters(project: (typeof data.projects)[number]): boolean {
 		const query = searchInput.trim().toLowerCase();
@@ -83,6 +108,16 @@
 			for (const id of selectedTagIds) {
 				if (!assigned.has(id)) return false;
 			}
+		}
+		if (selectedProgramTags.size > 0) {
+			const labels = new Set(normalizeTags(project.tags).map((t) => t.label));
+			for (const label of selectedProgramTags) {
+				if (!labels.has(label)) return false;
+			}
+		}
+		if (shipKind !== 'all') {
+			const isUpdate = project.ships.length > 1;
+			if (isUpdate !== (shipKind === 'update')) return false;
 		}
 		return true;
 	}
@@ -142,16 +177,27 @@
 		)
 	);
 	const filteredHqProjects = $derived(sortProjects(data.hqProjects.filter(matchesFilters), 'pending_hq'));
-	const filtersActive = $derived(searchInput.trim().length > 0 || selectedTagIds.size > 0);
+	const filtersActive = $derived(searchInput.trim().length > 0 || activeFilterCount > 0);
 
 	function toggleTagFilter(id: string) {
 		if (selectedTagIds.has(id)) selectedTagIds.delete(id);
 		else selectedTagIds.add(id);
 	}
 
-	function handleTagDropdownWindowClick(e: MouseEvent) {
+	function toggleProgramTagFilter(label: string) {
+		if (selectedProgramTags.has(label)) selectedProgramTags.delete(label);
+		else selectedProgramTags.add(label);
+	}
+
+	function clearFilters() {
+		selectedTagIds.clear();
+		selectedProgramTags.clear();
+		shipKind = 'all';
+	}
+
+	function handleFilterDropdownWindowClick(e: MouseEvent) {
 		const target = e.target as HTMLElement;
-		if (!target.closest('[data-tag-filter]')) tagDropdownOpen = false;
+		if (!target.closest('[data-filter-dropdown]')) filterDropdownOpen = false;
 	}
 
 	function handleSortDropdownWindowClick(e: MouseEvent) {
@@ -160,9 +206,9 @@
 	}
 
 	$effect(() => {
-		if (tagDropdownOpen) {
-			window.addEventListener('click', handleTagDropdownWindowClick, true);
-			return () => window.removeEventListener('click', handleTagDropdownWindowClick, true);
+		if (filterDropdownOpen) {
+			window.addEventListener('click', handleFilterDropdownWindowClick, true);
+			return () => window.removeEventListener('click', handleFilterDropdownWindowClick, true);
 		}
 	});
 
@@ -312,20 +358,47 @@
 					class="flex-1 bg-transparent text-sm outline-none placeholder:text-text-placeholder font-medium min-w-0"
 				/>
 			</form>
-			{#if data.tagDefinitions.length > 0}
-				<div class="relative" data-tag-filter>
-					<button
-						class="border border-border-input rounded-tag flex gap-2 items-center px-3 py-1.5 cursor-pointer hover:bg-surface min-w-0"
-						onclick={() => (tagDropdownOpen = !tagDropdownOpen)}
-					>
-						<Tag size={14} class="text-text-dim shrink-0" />
-						<span class="font-medium text-sm text-text-dim truncate">
-							{selectedTagIds.size > 0 ? `Tags (${selectedTagIds.size})` : 'Tags'}
-						</span>
-						<ChevronDown size={12} class="text-text-dim shrink-0" />
-					</button>
-					{#if tagDropdownOpen}
-						<div class="absolute top-full left-0 mt-1 bg-page border border-border-card rounded-input shadow-lg z-30 min-w-[200px] max-h-[320px] overflow-y-auto py-1">
+			<div class="relative" data-filter-dropdown>
+				<button
+					class="border border-border-input rounded-tag flex gap-2 items-center px-3 py-1.5 cursor-pointer hover:bg-surface min-w-0"
+					onclick={() => (filterDropdownOpen = !filterDropdownOpen)}
+				>
+					<Filter size={14} class="text-text-dim shrink-0" />
+					<span class="font-medium text-sm text-text-dim truncate">
+						{activeFilterCount > 0 ? `Filters (${activeFilterCount})` : 'Filters'}
+					</span>
+					<ChevronDown size={12} class="text-text-dim shrink-0" />
+				</button>
+				{#if filterDropdownOpen}
+					<div class="absolute top-full left-0 mt-1 bg-page border border-border-card rounded-input shadow-lg z-30 min-w-[220px] max-h-[420px] overflow-y-auto py-1">
+						<div class="px-3 pt-1 pb-0.5 text-[11px] font-medium text-text-tertiary uppercase tracking-wide">Submission</div>
+						{#each SHIP_KIND_OPTIONS as opt (opt.value)}
+							<button
+								class="w-full text-left px-3 py-1.5 text-sm hover:bg-surface cursor-pointer flex items-center justify-between gap-2"
+								onclick={() => (shipKind = opt.value)}
+							>
+								{opt.label}
+								{#if shipKind === opt.value}
+									<Check size={14} class="text-accent shrink-0" />
+								{/if}
+							</button>
+						{/each}
+						{#if programTagOptions.length > 0}
+							<div class="px-3 pt-2 pb-0.5 text-[11px] font-medium text-text-tertiary uppercase tracking-wide border-t border-border-card mt-1">{data.program.name} tags</div>
+							{#each programTagOptions as tag (tag.label)}
+								<button
+									class="w-full text-left px-3 py-1.5 text-sm hover:bg-surface cursor-pointer flex items-center justify-between gap-2"
+									onclick={() => toggleProgramTagFilter(tag.label)}
+								>
+									<ProjectTags tags={[tag]} />
+									{#if selectedProgramTags.has(tag.label)}
+										<Check size={14} class="text-accent shrink-0" />
+									{/if}
+								</button>
+							{/each}
+						{/if}
+						{#if data.tagDefinitions.length > 0}
+							<div class="px-3 pt-2 pb-0.5 text-[11px] font-medium text-text-tertiary uppercase tracking-wide border-t border-border-card mt-1">Custom tags</div>
 							{#each data.tagDefinitions as tag (tag.id)}
 								<button
 									class="w-full text-left px-3 py-1.5 text-sm hover:bg-surface cursor-pointer flex items-center justify-between gap-2"
@@ -337,18 +410,18 @@
 									{/if}
 								</button>
 							{/each}
-							{#if selectedTagIds.size > 0}
-								<button
-									class="w-full text-left px-3 py-1.5 text-xs text-text-tertiary hover:bg-surface cursor-pointer border-t border-border-card mt-1"
-									onclick={() => selectedTagIds.clear()}
-								>
-									Clear tag filters
-								</button>
-							{/if}
-						</div>
-					{/if}
-				</div>
-			{/if}
+						{/if}
+						{#if activeFilterCount > 0}
+							<button
+								class="w-full text-left px-3 py-1.5 text-xs text-text-tertiary hover:bg-surface cursor-pointer border-t border-border-card mt-1"
+								onclick={clearFilters}
+							>
+								Clear filters
+							</button>
+						{/if}
+					</div>
+				{/if}
+			</div>
 			<div class="relative" data-sort-dropdown>
 				<button
 					class="border border-border-input rounded-tag flex gap-2 items-center px-3 py-1.5 cursor-pointer hover:bg-surface min-w-0"
