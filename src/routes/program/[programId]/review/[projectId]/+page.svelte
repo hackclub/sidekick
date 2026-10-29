@@ -877,6 +877,7 @@
 					shipHours={Object.fromEntries(data.project.ships.map((s) => [s.id, s.hoursSubmitted]))}
 					approvedShipHours={approvedHoursMap}
 					canAuthorize={data.canAuthorize}
+					authorizeLabel={data.authorizeSendsToFraud ? 'Send to fraud review' : 'Authorize'}
 					onsave={handleSaveReview}
 					fieldDefs={reviewFieldDefs}
 					supportsOverride={Object.fromEntries(

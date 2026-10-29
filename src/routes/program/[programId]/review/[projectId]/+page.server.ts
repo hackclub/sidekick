@@ -437,6 +437,12 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		}
 	}
 
+	// Upstream pending_hq approvals sent to the fraud queue are represented by
+	// their local fraud-queue row, so the upstream copy is dropped below.
+	const fraudHeldShipIds = new Set(
+		pendingApprovals.filter((pa) => pa.status === 'pending' && pa.queue === FRAUD_QUEUE).map((pa) => pa.shipId)
+	);
+
 	const mergedTimeline = [...timeline.events]
 		.map((event) => {
 			if (event.type === 'approval' && pendingHqShipIds.has(event.shipId)) {
@@ -495,6 +501,9 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			}
 			// Filter out the HQ approval event (absorbed into the authorized_approval pill)
 			if (hqApprovalEvents.has(event as typeof timeline.events[number])) {
+				return false;
+			}
+			if (event.type === 'pending_approval' && event.id.startsWith('hq:') && fraudHeldShipIds.has(event.shipId)) {
 				return false;
 			}
 			return true;
@@ -621,6 +630,8 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		// Experiment: this user's approvals are held for fraud review instead of
 		// going upstream (see $lib/server/experiments/fraud-queue.ts).
 		fraudQueueRouted: isRoutedToFraudQueue(membership),
+		// Authorizing a non-fraud-queue approval sends it to the fraud queue instead.
+		authorizeSendsToFraud: isRoutedToFraudQueue(membership) && !hasFraudQueued,
 		// A fraud-queued approval exists on the pending ship that this viewer
 		// can't see — still blocks new verdicts.
 		fraudQueuedHidden,

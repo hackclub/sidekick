@@ -7,6 +7,11 @@
 // reviewer keeps the upstream attribution, exactly like a community approval
 // authorized by HQ.
 //
+// The same applies when a routed member authorizes someone else's approval
+// (a community approval, or one already pending_hq upstream): instead of
+// going upstream it moves into the fraud queue, still credited to the
+// original reviewer.
+//
 // Both flags are per-membership and set from the program's manage page, so
 // the experiment is switched off per user by unticking "Route approvals to
 // fraud review" — no code or data changes needed. Rows already in the fraud

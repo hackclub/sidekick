@@ -87,8 +87,10 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 
 	// Filter to projects that actually have pending_hq ships (endpoints that
 	// don't support the status may return all projects).
+	// Upstream approvals held in the fraud queue are listed there instead.
+	const fraudQueuedShipIds = new Set(fraudApprovals.map((pa) => pa.shipId));
 	const hqProjects = hqProjectsResult.projects.filter(
-		(p) => p.ships.some((s) => s.status === 'pending_hq')
+		(p) => p.ships.some((s) => s.status === 'pending_hq' && !fraudQueuedShipIds.has(s.id))
 	);
 
 	const allProjects = [...projectsResult.projects, ...hqProjects];

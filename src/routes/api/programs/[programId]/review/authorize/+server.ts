@@ -3,7 +3,7 @@ import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
 import { createLogger } from '$lib/server/logger.js';
-import { FRAUD_QUEUE, isFraudQueueReviewer } from '$lib/server/experiments/fraud-queue.js';
+import { FRAUD_QUEUE, isFraudQueueReviewer, isRoutedToFraudQueue } from '$lib/server/experiments/fraud-queue.js';
 import type { RequestHandler } from './$types.js';
 import type { ProgramMembership } from '@prisma/client';
 
@@ -27,6 +27,45 @@ function requireQueueAccess(membership: ProgramMembership, pending: { queue: str
 
 function requireHqAuthorizer(membership: ProgramMembership) {
 	if (!membership.canAuthorizeReviews) throw error(403, 'Missing permission: canAuthorizeReviews');
+}
+
+// An upstream pending_hq approval that was sent to the fraud queue is held by
+// a local fraud-queue row; it can't be authorized or edited around that.
+async function requireNotFraudQueued(programId: string, shipId: string) {
+	const held = await db.pendingApproval.findFirst({
+		where: { programId, shipId, status: 'pending', queue: FRAUD_QUEUE },
+		select: { id: true }
+	});
+	if (held) throw error(403, 'This approval is awaiting fraud review.');
+}
+
+// Only fraud-queue rows can mirror an approval already pending_hq upstream
+// (see the hq: branch of POST); every other row exists only locally.
+async function isPendingHqUpstream(
+	client: ProtocolClient,
+	pending: { queue: string; projectId: string; shipId: string }
+): Promise<boolean> {
+	if (pending.queue !== FRAUD_QUEUE) return false;
+	const { ships } = await client.fetchProjectDetail({ projectId: pending.projectId });
+	return ships.some((s) => s.id === pending.shipId && s.status === 'pending_hq');
+}
+
+async function auditSentToFraudQueue(
+	programId: string,
+	userId: string,
+	shipId: string,
+	metadata: { projectId: string; originalReviewerId: string; pendingApprovalId: string }
+) {
+	await db.auditLog.create({
+		data: {
+			programId,
+			userId,
+			action: 'review_send_to_fraud_queue',
+			entityType: 'ship',
+			entityId: shipId,
+			metadata: { ...metadata, queue: FRAUD_QUEUE }
+		}
+	});
 }
 
 function parseProtocolError(e: ProtocolError): { status: number; body: { error: string; message: string } } {
@@ -62,6 +101,45 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		if (pendingApprovalId.startsWith('hq:')) {
 			requireHqAuthorizer(membership);
 			const shipId = pendingApprovalId.slice(3);
+			await requireNotFraudQueued(params.programId, shipId);
+
+			// Experiment: a routed authorizer's sign-off holds the upstream
+			// approval in the fraud queue instead of authorizing it. The ship
+			// stays pending_hq upstream until a fraud reviewer authorizes it.
+			if (isRoutedToFraudQueue(membership)) {
+				if (typeof projectId !== 'string') throw error(400, 'projectId is required');
+				const timeline = await client.fetchProjectTimeline({ projectId });
+				const approval = timeline.events.findLast(
+					(e): e is Extract<typeof e, { type: 'approval' }> => e.type === 'approval' && e.shipId === shipId
+				);
+				if (!approval) throw error(404, 'Upstream approval not found');
+
+				const data = {
+					hoursAssigned: approval.hoursAssigned,
+					rewardedHoursOverride: approval.rewardedHoursOverride ?? null,
+					feedbackMessage: approval.feedbackMessage,
+					justification: approval.justification,
+					fields: approval.fields ?? undefined,
+					status: 'pending',
+					queue: FRAUD_QUEUE
+				};
+				const held = await db.pendingApproval.upsert({
+					where: {
+						programId_shipId_reviewerId: { programId: params.programId, shipId, reviewerId: approval.actorId }
+					},
+					create: { programId: params.programId, projectId, shipId, reviewerId: approval.actorId, ...data },
+					update: data
+				});
+				await auditSentToFraudQueue(params.programId, user.id, shipId, {
+					projectId,
+					originalReviewerId: approval.actorId,
+					pendingApprovalId: held.id
+				});
+
+				logger.info('HQ approval sent to fraud review', { shipId, pendingApprovalId: held.id });
+				return json({ success: true, queue: FRAUD_QUEUE });
+			}
+
 			const reviewerId = user.slackId || user.hcaId;
 			logger.debug('Direct HQ authorization', { shipId, reviewerId });
 			const result = await client.submitReviewAction({
@@ -97,20 +175,52 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		}
 		requireQueueAccess(membership, pending);
 
-		try {
-			await client.submitReviewAction({
+		// Experiment: a routed authorizer's sign-off moves the approval into the
+		// fraud queue instead of sending it upstream.
+		if (pending.queue !== FRAUD_QUEUE && isRoutedToFraudQueue(membership)) {
+			await db.pendingApproval.update({
+				where: { id: pendingApprovalId },
+				data: { queue: FRAUD_QUEUE }
+			});
+			await auditSentToFraudQueue(params.programId, user.id, pending.shipId, {
+				projectId: pending.projectId,
+				originalReviewerId: pending.reviewerId,
+				pendingApprovalId
+			});
+
+			logger.info('Pending approval sent to fraud review', { pendingApprovalId, shipId: pending.shipId });
+			return json({ success: true, queue: FRAUD_QUEUE });
+		}
+
+		// Approvals sent to the fraud queue from pending_hq are already submitted
+		// upstream: sync any fraud-review edits onto that approval rather than
+		// stacking a duplicate one.
+		if (await isPendingHqUpstream(client, pending)) {
+			await client.updateReviewAction({
 				shipId: pending.shipId,
 				reviewerId: pending.reviewerId,
-				action: 'approve',
-				hoursAssigned: pending.hoursAssigned,
-				rewardedHoursOverride: pending.rewardedHoursOverride ?? undefined,
+				type: 'approval',
 				feedbackMessage: pending.feedbackMessage,
 				justification: pending.justification,
-				isHq: false,
-				fields: (pending.fields as Record<string, string | number | boolean>) ?? undefined
+				hoursAssigned: pending.hoursAssigned,
+				rewardedHoursOverride: pending.rewardedHoursOverride
 			});
-		} catch (e) {
-			if (!(e instanceof ProtocolError)) throw e;
+		} else {
+			try {
+				await client.submitReviewAction({
+					shipId: pending.shipId,
+					reviewerId: pending.reviewerId,
+					action: 'approve',
+					hoursAssigned: pending.hoursAssigned,
+					rewardedHoursOverride: pending.rewardedHoursOverride ?? undefined,
+					feedbackMessage: pending.feedbackMessage,
+					justification: pending.justification,
+					isHq: false,
+					fields: (pending.fields as Record<string, string | number | boolean>) ?? undefined
+				});
+			} catch (e) {
+				if (!(e instanceof ProtocolError)) throw e;
+			}
 		}
 
 		const reviewerId = user.slackId || user.hcaId;
@@ -172,6 +282,7 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 		if (pendingApprovalId.startsWith('hq:')) {
 			requireHqAuthorizer(membership);
 			const shipId = pendingApprovalId.slice(3);
+			await requireNotFraudQueued(params.programId, shipId);
 			const reviewerId = user.slackId || user.hcaId;
 
 			const program = await db.program.findUniqueOrThrow({
@@ -210,6 +321,21 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 			throw error(404, 'Pending approval not found');
 		}
 		requireQueueAccess(membership, pending);
+
+		// A fraud-queue row mirroring an upstream pending_hq approval has to be
+		// sent back upstream too, or the ship would resurface in the HQ queue.
+		const program = await db.program.findUniqueOrThrow({
+			where: { id: params.programId }
+		});
+		const client = new ProtocolClient(program.masterEndpoint, program.secretKey);
+		if (await isPendingHqUpstream(client, pending)) {
+			await client.submitReviewAction({
+				shipId: pending.shipId,
+				reviewerId: user.slackId || user.hcaId,
+				action: 'deauthorize',
+				message
+			});
+		}
 
 		await db.pendingApproval.update({
 			where: { id: pendingApprovalId },
@@ -265,6 +391,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		requireHqAuthorizer(membership);
 		if (!reviewerId) throw error(400, 'reviewerId is required for HQ pending approvals');
 		const shipId = pendingApprovalId.slice(3);
+		await requireNotFraudQueued(params.programId, shipId);
 
 		const program = await db.program.findUniqueOrThrow({
 			where: { id: params.programId }

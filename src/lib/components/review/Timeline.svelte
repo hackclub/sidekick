@@ -15,6 +15,7 @@
 		shipHours?: Record<string, number>;
 		approvedShipHours?: Record<string, number>;
 		canAuthorize?: boolean;
+		authorizeLabel?: string;
 		onsave?: (data: EditData) => Promise<string | null>;
 		onauthorize?: (id: string) => void;
 		ondelete?: (id: string) => void;
@@ -25,7 +26,7 @@
 		class?: string;
 	}
 
-	let { events, actors, shipHours = {}, approvedShipHours = {}, canAuthorize = false, onsave, onauthorize, ondelete, oneditpending, authorizing = null, fieldDefs = {}, supportsOverride = {}, class: className = '' }: Props = $props();
+	let { events, actors, shipHours = {}, approvedShipHours = {}, canAuthorize = false, authorizeLabel = 'Authorize', onsave, onauthorize, ondelete, oneditpending, authorizing = null, fieldDefs = {}, supportsOverride = {}, class: className = '' }: Props = $props();
 
 	const shipsWithApproval = $derived(new Set(
 		events
@@ -73,6 +74,6 @@
 	{/if}
 
 	{#each events as event, i (i)}
-		<TimelineEvent {event} {actors} shipHourInfo={shipHourInfo.ships} approvalHourInfo={shipHourInfo.approvals} {canAuthorize} {onsave} {onauthorize} {ondelete} {oneditpending} {authorizing} {fieldDefs} {supportsOverride} />
+		<TimelineEvent {event} {actors} shipHourInfo={shipHourInfo.ships} approvalHourInfo={shipHourInfo.approvals} {canAuthorize} {authorizeLabel} {onsave} {onauthorize} {ondelete} {oneditpending} {authorizing} {fieldDefs} {supportsOverride} />
 	{/each}
 </div>

@@ -27,6 +27,9 @@
 		shipHourInfo?: Record<string, { delta: number; cumulative: number }>;
 		approvalHourInfo?: Record<string, { cumulative: number }>;
 		canAuthorize?: boolean;
+		// Label for the authorize button. The fraud-queue experiment uses
+		// "Send to fraud review" for routed authorizers.
+		authorizeLabel?: string;
 		// Save handlers resolve to null on success, or an error message to show
 		// the reviewer. Edits are only committed to the display on success.
 		onsave?: (data: EditData) => Promise<string | null>;
@@ -43,7 +46,7 @@
 		supportsOverride?: Record<string, boolean>;
 	}
 
-	let { event, actors, shipHourInfo = {}, approvalHourInfo = {}, canAuthorize = false, onsave, onauthorize, ondelete, oneditpending, authorizing = null, fieldDefs = {}, supportsOverride = {} }: Props = $props();
+	let { event, actors, shipHourInfo = {}, approvalHourInfo = {}, canAuthorize = false, authorizeLabel = 'Authorize', onsave, onauthorize, ondelete, oneditpending, authorizing = null, fieldDefs = {}, supportsOverride = {} }: Props = $props();
 
 	// System events name their machine instead of a person.
 	const actor = $derived(
@@ -811,7 +814,7 @@
 					{:else}
 						<ShieldCheck size={16} />
 					{/if}
-					Authorize
+					{authorizeLabel}
 				</button>
 			</div>
 		{:else if editing}
