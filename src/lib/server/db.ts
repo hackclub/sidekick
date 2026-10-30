@@ -27,7 +27,16 @@ function createClient() {
 	// a review for longer paid for fresh SCRAM handshakes on the next page,
 	// several at once and on a CPU-starved database: hundreds of milliseconds
 	// to a few seconds before the first query. Idle connections are kept.
-	const adapter = new PrismaPg({ connectionString: url, idleTimeoutMillis: 0 });
+	//
+	// pg also waits forever for a connection by default, so pages hung rather
+	// than failed while Postgres was down. The timeout also bounds the wait for
+	// a free pool slot, hence the Prisma 6 engine's pool_timeout rather than its
+	// shorter connect_timeout.
+	const adapter = new PrismaPg({
+		connectionString: url,
+		idleTimeoutMillis: 0,
+		connectionTimeoutMillis: 10_000
+	});
 	const client = new PrismaClient({ adapter });
 	log.info('Prisma client created');
 	return client;
