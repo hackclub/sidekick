@@ -44,18 +44,6 @@ async function requireNotHeld(programId: string, shipId: string) {
 	throw error(409, 'This approval is held in Sidekick; authorize or discard the held approval instead.');
 }
 
-// Only a fraud-queue row (see the hq: branch of POST) or a row in a program
-// that mirrors held approvals can stand for an approval already parked
-// upstream; anywhere else the row exists only here, so skip the round trip.
-async function isHeldUpstream(
-	program: { mirrorHeldApprovals: boolean },
-	client: ProtocolClient,
-	pending: { queue: string; projectId: string; shipId: string }
-): Promise<boolean> {
-	if (pending.queue !== FRAUD_QUEUE && !program.mirrorHeldApprovals) return false;
-	return isPendingHqUpstream(client, pending);
-}
-
 async function auditSentToFraudQueue(
 	programId: string,
 	userId: string,
@@ -199,9 +187,12 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		}
 
 		// A held approval already parked upstream (sent to the fraud queue from
-		// pending_hq, or mirrored when it was made): sync any edits onto that
-		// approval rather than stacking a duplicate one.
-		if (await isHeldUpstream(program, client, pending)) {
+		// pending_hq, mirrored when it was made, or approved by an earlier
+		// authorize that failed on the authorize itself): sync any edits onto
+		// that approval rather than stacking a duplicate one. Otherwise a failed
+		// approve has to surface: swallowing it left the authorize below to fail
+		// with a bare "ship N is pending, not pending_hq".
+		if (await isPendingHqUpstream(client, pending)) {
 			await client.updateReviewAction({
 				shipId: pending.shipId,
 				reviewerId: pending.reviewerId,
@@ -225,7 +216,21 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 					fields: (pending.fields as Record<string, string | number | boolean>) ?? undefined
 				});
 			} catch (e) {
-				if (!(e instanceof ProtocolError)) throw e;
+				// The approval is sent as the original reviewer, and a program that
+				// records reviews against its own accounts (Crescent) answers 404
+				// for a reviewer who has never signed in there. Only the reviewer
+				// can fix that, so tell the authorizer who to ask.
+				if (!(e instanceof ProtocolError) || e.status !== 404) throw e;
+				const { body } = parseProtocolError(e);
+				const programName = program.yswsName || program.name;
+				logger.warn('Original reviewer unknown upstream', { pendingApprovalId, reviewerId: pending.reviewerId, error: body.message });
+				return json(
+					{
+						error: body.error,
+						message: `${body.message} If the reviewer who made this approval has never signed in to ${programName}, ask them to create an account there, then authorize again.`
+					},
+					{ status: 404 }
+				);
 			}
 		}
 
@@ -328,13 +333,14 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 		}
 		requireQueueAccess(membership, pending);
 
-		// A held row mirroring an upstream pending_hq approval has to be sent
-		// back upstream too, or the ship would resurface in the HQ queue.
+		// A held row whose approval is already pending_hq upstream (any of the
+		// ways POST checks for) has to be sent back upstream too, or the ship
+		// would resurface in the HQ queue.
 		const program = await db.program.findUniqueOrThrow({
 			where: { id: params.programId }
 		});
 		const client = new ProtocolClient(program.masterEndpoint, program.secretKey);
-		if (await isHeldUpstream(program, client, pending)) {
+		if (await isPendingHqUpstream(client, pending)) {
 			await client.submitReviewAction({
 				shipId: pending.shipId,
 				reviewerId: user.slackId || user.hcaId,
