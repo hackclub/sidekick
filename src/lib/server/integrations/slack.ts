@@ -1,5 +1,6 @@
 import { env } from '$env/dynamic/private';
 import { createLogger } from '../logger.js';
+import { getRedis } from '../queue/connection.js';
 
 const log = createLogger('slack');
 
@@ -10,18 +11,81 @@ export interface SlackUserProfile {
 	deleted: boolean;
 }
 
-const cache = new Map<string, { profile: SlackUserProfile | null; expiresAt: number }>();
-const TTL = 30 * 60 * 1000; // 30 minutes
+interface CachedProfile {
+	profile: SlackUserProfile | null;
+	fetchedAt: number;
+}
+
+// The review queue resolves every reviewer and author on it (well over a
+// hundred people), and users.info has no batch form, so a cold cache meant a
+// hundred-odd Slack calls that Slack throttled to about seven seconds before
+// the list could render. That happened after every deploy and every quiet half
+// hour. Profiles are now kept in Redis, so they survive restarts, and an entry
+// past FRESH_MS is served as it is while it refreshes in the background: a
+// display name or avatar a few minutes stale is fine, a stalled queue is not.
+const FRESH_MS = 30 * 60 * 1000;
+const KEEP_S = 7 * 24 * 60 * 60;
+const REDIS_PREFIX = 'slack-profile:';
+// The Redis client retries forever, so a read that hangs must not hold a page.
+const REDIS_READ_TIMEOUT_MS = 500;
+
+const cache = new Map<string, CachedProfile>();
+const inFlight = new Map<string, Promise<SlackUserProfile | null>>();
+
+async function readStoredProfile(userId: string): Promise<CachedProfile | null> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		const raw = await Promise.race([
+			getRedis().get(REDIS_PREFIX + userId),
+			new Promise<null>((resolve) => {
+				timer = setTimeout(() => resolve(null), REDIS_READ_TIMEOUT_MS);
+			})
+		]);
+		return raw ? (JSON.parse(raw) as CachedProfile) : null;
+	} catch (err) {
+		log.warn('stored Slack profile read failed', { userId, error: String(err) });
+		return null;
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+function storeProfile(userId: string, profile: SlackUserProfile | null) {
+	const entry: CachedProfile = { profile, fetchedAt: Date.now() };
+	cache.set(userId, entry);
+	getRedis()
+		.set(REDIS_PREFIX + userId, JSON.stringify(entry), 'EX', KEEP_S)
+		.catch((err) => log.warn('stored Slack profile write failed', { userId, error: String(err) }));
+}
 
 export async function getSlackUserProfile(userId: string): Promise<SlackUserProfile | null> {
 	log.debug('getSlackUserProfile called', { userId });
-	const cached = cache.get(userId);
-	if (cached && cached.expiresAt > Date.now()) {
-		log.trace('getSlackUserProfile cache hit', { userId });
-		return cached.profile;
+	let entry = cache.get(userId);
+	if (!entry) {
+		const stored = await readStoredProfile(userId);
+		if (stored) {
+			entry = stored;
+			cache.set(userId, stored);
+		}
 	}
-	log.trace('getSlackUserProfile cache miss', { userId });
+	if (entry) {
+		if (Date.now() - entry.fetchedAt > FRESH_MS) {
+			void fetchSlackUserProfile(userId);
+		}
+		return entry.profile;
+	}
+	return fetchSlackUserProfile(userId);
+}
 
+function fetchSlackUserProfile(userId: string): Promise<SlackUserProfile | null> {
+	const pending = inFlight.get(userId);
+	if (pending) return pending;
+	const promise = loadSlackUserProfile(userId).finally(() => inFlight.delete(userId));
+	inFlight.set(userId, promise);
+	return promise;
+}
+
+async function loadSlackUserProfile(userId: string): Promise<SlackUserProfile | null> {
 	const token = env.SLACK_BOT_TOKEN;
 	if (!token) {
 		log.warn('getSlackUserProfile SLACK_BOT_TOKEN not set');
@@ -38,7 +102,9 @@ export async function getSlackUserProfile(userId: string): Promise<SlackUserProf
 		timer.end({ userId, ok: data.ok });
 		if (!data.ok) {
 			log.warn('getSlackUserProfile API error', { userId, error: data.error });
-			cache.set(userId, { profile: null, expiresAt: Date.now() + TTL });
+			// A rate limit says nothing about the user, so it keeps what is known.
+			if (data.error === 'ratelimited') return cache.get(userId)?.profile ?? null;
+			storeProfile(userId, null);
 			return null;
 		}
 
@@ -53,11 +119,11 @@ export async function getSlackUserProfile(userId: string): Promise<SlackUserProf
 		};
 
 		log.debug('getSlackUserProfile result', { userId, name: profile.name, deleted: profile.deleted });
-		cache.set(userId, { profile, expiresAt: Date.now() + TTL });
+		storeProfile(userId, profile);
 		return profile;
 	} catch (err) {
 		log.error('getSlackUserProfile failed', err, { userId });
-		return null;
+		return cache.get(userId)?.profile ?? null;
 	}
 }
 
