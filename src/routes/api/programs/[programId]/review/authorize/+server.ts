@@ -4,6 +4,7 @@ import { requirePermission } from '$lib/server/rbac.js';
 import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
 import { createLogger } from '$lib/server/logger.js';
 import { FRAUD_QUEUE, isFraudQueueReviewer, isRoutedToFraudQueue } from '$lib/server/experiments/fraud-queue.js';
+import { isPendingHqUpstream } from '$lib/server/held-approvals.js';
 import type { RequestHandler } from './$types.js';
 import type { ProgramMembership } from '@prisma/client';
 
@@ -29,25 +30,30 @@ function requireHqAuthorizer(membership: ProgramMembership) {
 	if (!membership.canAuthorizeReviews) throw error(403, 'Missing permission: canAuthorizeReviews');
 }
 
-// An upstream pending_hq approval that was sent to the fraud queue is held by
-// a local fraud-queue row; it can't be authorized or edited around that.
-async function requireNotFraudQueued(programId: string, shipId: string) {
+// An upstream pending_hq approval that Sidekick also holds (sent to the fraud
+// queue, or mirrored by a program with mirrorHeldApprovals) is acted on through
+// its held row, which carries the queue and its permissions; the hq: shortcut
+// would authorize around them.
+async function requireNotHeld(programId: string, shipId: string) {
 	const held = await db.pendingApproval.findFirst({
-		where: { programId, shipId, status: 'pending', queue: FRAUD_QUEUE },
-		select: { id: true }
+		where: { programId, shipId, status: 'pending' },
+		select: { queue: true }
 	});
-	if (held) throw error(403, 'This approval is awaiting fraud review.');
+	if (!held) return;
+	if (held.queue === FRAUD_QUEUE) throw error(403, 'This approval is awaiting fraud review.');
+	throw error(409, 'This approval is held in Sidekick; authorize or discard the held approval instead.');
 }
 
-// Only fraud-queue rows can mirror an approval already pending_hq upstream
-// (see the hq: branch of POST); every other row exists only locally.
-async function isPendingHqUpstream(
+// Only a fraud-queue row (see the hq: branch of POST) or a row in a program
+// that mirrors held approvals can stand for an approval already parked
+// upstream; anywhere else the row exists only here, so skip the round trip.
+async function isHeldUpstream(
+	program: { mirrorHeldApprovals: boolean },
 	client: ProtocolClient,
 	pending: { queue: string; projectId: string; shipId: string }
 ): Promise<boolean> {
-	if (pending.queue !== FRAUD_QUEUE) return false;
-	const { ships } = await client.fetchProjectDetail({ projectId: pending.projectId });
-	return ships.some((s) => s.id === pending.shipId && s.status === 'pending_hq');
+	if (pending.queue !== FRAUD_QUEUE && !program.mirrorHeldApprovals) return false;
+	return isPendingHqUpstream(client, pending);
 }
 
 async function auditSentToFraudQueue(
@@ -101,7 +107,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		if (pendingApprovalId.startsWith('hq:')) {
 			requireHqAuthorizer(membership);
 			const shipId = pendingApprovalId.slice(3);
-			await requireNotFraudQueued(params.programId, shipId);
+			await requireNotHeld(params.programId, shipId);
 
 			// Experiment: a routed authorizer's sign-off holds the upstream
 			// approval in the fraud queue instead of authorizing it. The ship
@@ -192,10 +198,10 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			return json({ success: true, queue: FRAUD_QUEUE });
 		}
 
-		// Approvals sent to the fraud queue from pending_hq are already submitted
-		// upstream: sync any fraud-review edits onto that approval rather than
-		// stacking a duplicate one.
-		if (await isPendingHqUpstream(client, pending)) {
+		// A held approval already parked upstream (sent to the fraud queue from
+		// pending_hq, or mirrored when it was made): sync any edits onto that
+		// approval rather than stacking a duplicate one.
+		if (await isHeldUpstream(program, client, pending)) {
 			await client.updateReviewAction({
 				shipId: pending.shipId,
 				reviewerId: pending.reviewerId,
@@ -282,7 +288,7 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 		if (pendingApprovalId.startsWith('hq:')) {
 			requireHqAuthorizer(membership);
 			const shipId = pendingApprovalId.slice(3);
-			await requireNotFraudQueued(params.programId, shipId);
+			await requireNotHeld(params.programId, shipId);
 			const reviewerId = user.slackId || user.hcaId;
 
 			const program = await db.program.findUniqueOrThrow({
@@ -322,13 +328,13 @@ export const DELETE: RequestHandler = async ({ params, request, locals }) => {
 		}
 		requireQueueAccess(membership, pending);
 
-		// A fraud-queue row mirroring an upstream pending_hq approval has to be
-		// sent back upstream too, or the ship would resurface in the HQ queue.
+		// A held row mirroring an upstream pending_hq approval has to be sent
+		// back upstream too, or the ship would resurface in the HQ queue.
 		const program = await db.program.findUniqueOrThrow({
 			where: { id: params.programId }
 		});
 		const client = new ProtocolClient(program.masterEndpoint, program.secretKey);
-		if (await isPendingHqUpstream(client, pending)) {
+		if (await isHeldUpstream(program, client, pending)) {
 			await client.submitReviewAction({
 				shipId: pending.shipId,
 				reviewerId: user.slackId || user.hcaId,
@@ -391,7 +397,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 		requireHqAuthorizer(membership);
 		if (!reviewerId) throw error(400, 'reviewerId is required for HQ pending approvals');
 		const shipId = pendingApprovalId.slice(3);
-		await requireNotFraudQueued(params.programId, shipId);
+		await requireNotHeld(params.programId, shipId);
 
 		const program = await db.program.findUniqueOrThrow({
 			where: { id: params.programId }

@@ -771,6 +771,8 @@ The `fields` object is optional. If the ship declared `approveFields`, the value
 
 `isHq` indicates whether the reviewer has HQ authorization powers. If your program uses the two-stage review flow, an approval with `"isHq": true` should **bypass the `pending_hq` stage** and finalize the ship as `"approved"` immediately; `"isHq": false` should move it to `"pending_hq"` to await authorization. Programs without a two-stage flow can ignore this field.
 
+By default Sidekick holds a non-HQ approval (and any approval routed to fraud review) on its side and sends nothing until it is signed off, then sends `approve` with `"isHq": false` followed at once by `authorize`. A program with **Report held approvals upstream** turned on in its API config receives the `"isHq": false` approval the moment it is made instead, keeps it `pending_hq` until Sidekick sends `authorize` or `deauthorize`, and receives `UPDATE_REVIEW_ACTION` for any edits made in between. Turn it on only for an endpoint with the two-stage flow: one that ignores `isHq` would finalize the approval on arrival.
+
 **Reject:**
 ```json
 {

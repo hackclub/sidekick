@@ -453,7 +453,7 @@
 				{#if filtersActive}
 					{filteredProjects.length + filteredHqProjects.length} of {data.projects.length + data.hqProjects.length} shown
 				{:else}
-					{Math.max(0, data.pendingCount - data.pendingApprovals.length - data.fraudQueuedShipIds.length)} pending review{#if data.pendingHqCount > 0}, {data.pendingHqCount} under HQ review{/if}
+					{Math.max(0, data.pendingCount - data.heldInQueueCount)} pending review{#if data.pendingHqCount > 0}, {data.pendingHqCount} under HQ review{/if}
 				{/if}
 			</span>
 		{#if allExportableProjects.length > 0}

@@ -87,11 +87,20 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 
 	// Filter to projects that actually have pending_hq ships (endpoints that
 	// don't support the status may return all projects).
-	// Upstream approvals held in the fraud queue are listed there instead.
-	const fraudQueuedShipIds = new Set(fraudApprovals.map((pa) => pa.shipId));
+	// An upstream pending_hq approval that Sidekick also holds (sent to the
+	// fraud queue, or mirrored by a program with mirrorHeldApprovals) is listed
+	// under its held row instead.
+	const heldShipIds = new Set(allPendingApprovals.map((pa) => pa.shipId));
 	const hqProjects = hqProjectsResult.projects.filter(
-		(p) => p.ships.some((s) => s.status === 'pending_hq' && !fraudQueuedShipIds.has(s.id))
+		(p) => p.ships.some((s) => s.status === 'pending_hq' && !heldShipIds.has(s.id))
 	);
+	// Held ships the program still counts as pending (it was never told of
+	// them), so the queue's count can leave them out; mirrored ones are
+	// pending_hq upstream and were never in that count.
+	const queuedShipIds = new Set(
+		projectsResult.projects.flatMap((p) => p.ships.filter((s) => s.status === 'pending').map((s) => s.id))
+	);
+	const heldInQueueCount = [...heldShipIds].filter((id) => queuedShipIds.has(id)).length;
 
 	const allProjects = [...projectsResult.projects, ...hqProjects];
 	const approvedShipIds = allProjects
@@ -182,6 +191,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		canAuthorize: membership.canAuthorizeReviews,
 		pendingApprovals: pendingApprovals.map(serializeApproval),
 		fraudApprovals: fraudReviewer ? fraudApprovals.map(serializeApproval) : [],
-		fraudQueuedShipIds: fraudApprovals.map((pa) => pa.shipId)
+		fraudQueuedShipIds: fraudApprovals.map((pa) => pa.shipId),
+		heldInQueueCount
 	};
 };
