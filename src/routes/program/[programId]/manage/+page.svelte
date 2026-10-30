@@ -61,6 +61,7 @@
 
 	let masterEndpoint = $state(data.program.masterEndpoint);
 	let secretKey = $state(data.program.secretKey);
+	let mirrorHeldApprovals = $state(data.program.mirrorHeldApprovals);
 	let apiConfigSaving = $state(false);
 	let apiConfigSaved = $state(false);
 
@@ -1859,6 +1860,13 @@
 						{#snippet icon()}<KeyRound size={16} />{/snippet}
 						<SecretKeyField name="secretKey" bind:value={secretKey} />
 					</LabeledField>
+					<input type="hidden" name="mirrorHeldApprovals" value={String(mirrorHeldApprovals)} />
+					<Checkbox checked={mirrorHeldApprovals} onchange={() => (mirrorHeldApprovals = !mirrorHeldApprovals)}>
+						<div class="flex flex-col gap-0.5">
+							<span class="text-sm font-semibold text-text-primary">Report held approvals upstream</span>
+							<span class="text-xs text-text-tertiary leading-relaxed">Approvals waiting on HQ or fraud review are sent to your endpoint right away with <code>isHq: false</code>, so it can show them as <code>pending_hq</code>, and are later authorized or deauthorized. Only turn this on if your endpoint supports the two-stage review flow; one that ignores <code>isHq</code> would approve them immediately.</span>
+						</div>
+					</Checkbox>
 					<button
 						type="submit"
 						disabled={apiConfigSaving}

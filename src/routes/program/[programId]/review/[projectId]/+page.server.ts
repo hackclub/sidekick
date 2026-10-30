@@ -14,6 +14,7 @@ import { CHECKS } from '$lib/server/checks/registry.js';
 import { enqueueChecks } from '$lib/server/queue/checks.js';
 import { enqueueLapseAfkAnalyses } from '$lib/server/queue/lapse-afk.js';
 import { FRAUD_QUEUE, isRoutedToFraudQueue, isFraudQueueReviewer } from '$lib/server/experiments/fraud-queue.js';
+import { mirrorHeldApproval } from '$lib/server/held-approvals.js';
 import { createLogger } from '$lib/server/logger.js';
 import type { CheckContext } from '$lib/server/checks/types.js';
 import type { SubmitReviewActionInput } from '$lib/server/protocol/types.js';
@@ -437,11 +438,10 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		}
 	}
 
-	// Upstream pending_hq approvals sent to the fraud queue are represented by
-	// their local fraud-queue row, so the upstream copy is dropped below.
-	const fraudHeldShipIds = new Set(
-		pendingApprovals.filter((pa) => pa.status === 'pending' && pa.queue === FRAUD_QUEUE).map((pa) => pa.shipId)
-	);
+	// An upstream pending_hq approval that Sidekick also holds (sent to the
+	// fraud queue, or mirrored by a program with mirrorHeldApprovals) is
+	// represented by its held row, so the upstream copy is dropped below.
+	const heldShipIds = new Set(pendingApprovals.filter((pa) => pa.status === 'pending').map((pa) => pa.shipId));
 
 	const mergedTimeline = [...timeline.events]
 		.map((event) => {
@@ -503,7 +503,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			if (hqApprovalEvents.has(event as typeof timeline.events[number])) {
 				return false;
 			}
-			if (event.type === 'pending_approval' && event.id.startsWith('hq:') && fraudHeldShipIds.has(event.shipId)) {
+			if (event.type === 'pending_approval' && event.id.startsWith('hq:') && heldShipIds.has(event.shipId)) {
 				return false;
 			}
 			return true;
@@ -675,7 +675,7 @@ export const actions: Actions = {
 		const queue = isRoutedToFraudQueue(membership) ? FRAUD_QUEUE : undefined;
 		if (action === 'approve' && (!membership.canAuthorizeReviews || queue)) {
 			log.info('queuing pending approval', { shipId, projectId: params.projectId, queue: queue ?? 'hq' });
-			await db.pendingApproval.upsert({
+			const held = await db.pendingApproval.upsert({
 				where: {
 					programId_shipId_reviewerId: {
 						programId: params.programId,
@@ -720,6 +720,10 @@ export const actions: Actions = {
 					}
 				}
 			});
+
+			if (program.mirrorHeldApprovals) {
+				await mirrorHeldApproval(new ProtocolClient(program.masterEndpoint, program.secretKey), held);
+			}
 
 			log.info('review queued for approval', { shipId, projectId: params.projectId, queue: queue ?? 'hq' });
 			return { success: true };

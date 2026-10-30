@@ -50,6 +50,10 @@ model Program {
   description    String?
   masterEndpoint String
   secretKey      String
+  // Send held approvals upstream as parked (isHq: false) the moment they are
+  // made, so the program sees them as pending_hq. Only for programs with a
+  // two-stage flow: one that ignores isHq would finalize the approval.
+  mirrorHeldApprovals Boolean @default(false)
   isActive            Boolean  @default(true)
   hcbOrganizationId   String?
   hcbOrganizationName String?
