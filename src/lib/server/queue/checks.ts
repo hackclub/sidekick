@@ -53,7 +53,10 @@ export async function enqueueChecks(
 	log.trace('resetting check results in transaction', { programId, shipId });
 	await db.$transaction([
 		db.checkResult.deleteMany({ where: { programId, shipId } }),
+		// Two loads of the same review page race here; the loser's rows would
+		// collide with the winner's, which are just as fresh.
 		db.checkResult.createMany({
+			skipDuplicates: true,
 			data: CHECKS.map((check) => ({
 				programId,
 				shipId,
