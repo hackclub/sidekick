@@ -1,3 +1,4 @@
+import { Agent, fetch } from "undici";
 import { createLogger } from "../logger.js";
 import type {
   SidekickRequest,
@@ -21,6 +22,13 @@ import type {
 } from "./types";
 
 const log = createLogger("protocol");
+
+// One connection pool shared by every master-endpoint call. The global fetch
+// drops idle sockets after 4 seconds (endpoints behind Cloudflare send no
+// Keep-Alive hint to stretch that), so nearly every RPC paid for a fresh DNS
+// lookup and TCP+TLS handshake: 300-800ms from the cluster, against endpoints
+// that answer in tens of milliseconds.
+const dispatcher = new Agent({ keepAliveTimeout: 60_000 });
 
 export class ProtocolError extends Error {
   status: number;
@@ -127,6 +135,7 @@ export class ProtocolClient {
         },
         body: JSON.stringify({ action, input }),
         signal: controller.signal,
+        dispatcher,
       });
 
       if (!response.ok) {
