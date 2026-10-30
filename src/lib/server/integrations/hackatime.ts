@@ -1,5 +1,6 @@
+import { promisify } from 'node:util';
+import { gzip, gunzip } from 'node:zlib';
 import { env } from '$env/dynamic/private';
-import type { Prisma } from '@prisma/client';
 import { db } from '../db.js';
 import { createLogger } from '../logger.js';
 import { aggregateByProject } from './hackatime-duration.js';
@@ -95,6 +96,20 @@ function isFinalized(endTimestampS: number): boolean {
 	return endTimestampS * 1000 < Date.now() - FINALIZED_AFTER_MS;
 }
 
+// Persisted payloads are gzipped JSON, so Postgres only ever stores and ships
+// opaque bytes; see the HackatimeCache model.
+const gzipAsync = promisify(gzip);
+const gunzipAsync = promisify(gunzip);
+
+async function encodePayload(data: unknown): Promise<Uint8Array<ArrayBuffer>> {
+	const buf = await gzipAsync(JSON.stringify(data));
+	return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength) as Uint8Array<ArrayBuffer>;
+}
+
+async function decodePayload(payload: Uint8Array): Promise<unknown> {
+	return JSON.parse((await gunzipAsync(payload)).toString('utf8'));
+}
+
 // Computed project stats, cached in place of the heartbeats they come from.
 // Every review view needs them, and rebuilding them meant parsing up to tens
 // of thousands of heartbeats (from Hackatime, or as multi-MB JSON pages out of
@@ -184,7 +199,7 @@ async function loadThroughPersistentCache(
 			const row = await db.hackatimeCache.findUnique({ where: { key } });
 			if (row && row.expiresAt > new Date()) {
 				log.trace('authFetch persistent cache hit', { path });
-				return { data: row.payload, fromCache: true };
+				return { data: await decodePayload(row.payload), fromCache: true };
 			}
 		} catch (err) {
 			log.warn('hackatime cache read failed; fetching live', { path, error: String(err) });
@@ -195,15 +210,16 @@ async function loadThroughPersistentCache(
 
 	if (opts?.persistTtlMs && !opts.persistReadOnly) {
 		const expiresAt = new Date(Date.now() + opts.persistTtlMs);
-		const payload = data as Prisma.InputJsonValue;
 		const hackatimeUserId = opts.cacheUserId ?? null;
 		// Fire-and-forget: a cache write failure must not fail the request.
-		db.hackatimeCache
-			.upsert({
-				where: { key },
-				create: { key, payload, hackatimeUserId, expiresAt },
-				update: { payload, hackatimeUserId, expiresAt }
-			})
+		encodePayload(data)
+			.then((payload) =>
+				db.hackatimeCache.upsert({
+					where: { key },
+					create: { key, payload, hackatimeUserId, expiresAt },
+					update: { payload, hackatimeUserId, expiresAt }
+				})
+			)
 			.catch((err) => log.warn('hackatime cache write failed', { path, error: String(err) }));
 		maybeCleanupCache();
 	}
@@ -495,7 +511,7 @@ async function loadProjectHackatimeStats(
 	if (finalized) {
 		try {
 			const row = await db.hackatimeCache.findUnique({ where: { key } });
-			if (row && row.expiresAt > new Date()) return row.payload as unknown as ProjectHackatimeStats;
+			if (row && row.expiresAt > new Date()) return (await decodePayload(row.payload)) as ProjectHackatimeStats;
 		} catch (err) {
 			log.warn('hackatime stats cache read failed; computing', { userId, error: String(err) });
 		}
@@ -504,14 +520,15 @@ async function loadProjectHackatimeStats(
 	const stats = await computeProjectHackatimeStats(userId, projectKeys, names, startS, endS);
 
 	if (finalized) {
-		const payload = stats as unknown as Prisma.InputJsonValue;
 		const expiresAt = new Date(Date.now() + HEARTBEATS_TTL_MS);
-		db.hackatimeCache
-			.upsert({
-				where: { key },
-				create: { key, payload, hackatimeUserId: userId, expiresAt },
-				update: { payload, hackatimeUserId: userId, expiresAt }
-			})
+		encodePayload(stats)
+			.then((payload) =>
+				db.hackatimeCache.upsert({
+					where: { key },
+					create: { key, payload, hackatimeUserId: userId, expiresAt },
+					update: { payload, hackatimeUserId: userId, expiresAt }
+				})
+			)
 			.catch((err) => log.warn('hackatime stats cache write failed', { userId, error: String(err) }));
 		maybeCleanupCache();
 	}

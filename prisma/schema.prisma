@@ -271,7 +271,9 @@ model CardGrantTemplate {
 // project list) gets minutes. See authFetch in integrations/hackatime.ts.
 model HackatimeCache {
   key             String   @id
-  payload         Json
+  // Gzipped JSON. Heartbeat pages run to megabytes, and as jsonb every read had
+  // Postgres decompress them and re-serialize them to text, enough to OOM it.
+  payload         Bytes
   hackatimeUserId String?
   expiresAt       DateTime
   createdAt       DateTime @default(now())
