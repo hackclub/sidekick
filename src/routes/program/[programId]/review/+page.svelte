@@ -2,13 +2,15 @@
 	import type { PageData } from './$types.js';
 	import { resolve } from '$app/paths';
 	import { browser } from '$app/environment';
-	import { Clock, CheckCircle, Hourglass, Scale, ShieldCheck, ShieldAlert, Download, Copy, ChevronDown, Check, Search, Filter, ArrowUpDown } from 'lucide-svelte';
+	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
+	import { Clock, CheckCircle, Hourglass, Scale, ShieldCheck, ShieldAlert, Download, Copy, ChevronDown, Check, Search, Filter, ArrowUpDown, Ban, Minus, X } from 'lucide-svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import CsvExportModal from '$lib/components/ui/CsvExportModal.svelte';
 	import ProjectTags from '$lib/components/review/ProjectTags.svelte';
 	import { isUuid, shortenId } from '$lib/utils/id';
 	import { normalizeTags } from '$lib/utils/tags.js';
-	import { SvelteSet } from 'svelte/reactivity';
+	import { SvelteMap } from 'svelte/reactivity';
 
 	interface Props {
 		data: PageData;
@@ -62,10 +64,15 @@
 		{ value: 'update', label: 'Updates' }
 	];
 
+	type TagMode = 'include' | 'exclude';
+	type TagMatch = 'any' | 'all';
+
 	let searchInput = $state('');
-	const selectedTagIds = new SvelteSet<string>();
-	// Program-sent tags (cards, flags, tracks...) carry no id, so they're keyed by label.
-	const selectedProgramTags = new SvelteSet<string>();
+	// Keyed `p:<label>` for program-sent tags (cards, flags, tracks...), which carry
+	// no id, and `c:<id>` for Sidekick's own custom tags.
+	const tagFilters = new SvelteMap<string, TagMode>();
+	let tagMatch = $state<TagMatch>('any');
+	let tagSearch = $state('');
 	let shipKind = $state<ShipKind>('all');
 	let sortMode = $state<SortMode>('default');
 	let filterDropdownOpen = $state(false);
@@ -81,18 +88,89 @@
 			.filter((t): t is { id: string; label: string; color: string } => !!t);
 	}
 
+	type TagOption = { key: string; label: string; color?: string; count: number };
+
+	function tagKeysFor(project: (typeof data.projects)[number]): Set<string> {
+		return new Set([
+			...normalizeTags(project.tags).map((t) => `p:${t.label}`),
+			...(data.projectTagIds[project.id] ?? []).map((id) => `c:${id}`)
+		]);
+	}
+
+	const queueTagKeys = $derived([...data.projects, ...data.hqProjects].map(tagKeysFor));
+
+	function countOf(key: string): number {
+		return queueTagKeys.filter((keys) => keys.has(key)).length;
+	}
+
 	// Every distinct program tag across the queue, first color seen wins.
-	const programTagOptions = $derived(
+	const programTagOptions = $derived<TagOption[]>(
 		[...data.projects, ...data.hqProjects]
 			.flatMap((p) => normalizeTags(p.tags))
 			.filter((t, i, all) => all.findIndex((o) => o.label === t.label) === i)
-			.map((t) => ({ label: t.label, color: t.color }))
+			.map((t) => ({ key: `p:${t.label}`, label: t.label, color: t.color, count: countOf(`p:${t.label}`) }))
 			.sort((a, b) => a.label.localeCompare(b.label))
 	);
 
-	const activeFilterCount = $derived(
-		selectedTagIds.size + selectedProgramTags.size + (shipKind === 'all' ? 0 : 1)
+	const customTagOptions = $derived<TagOption[]>(
+		data.tagDefinitions.map((t) => ({ key: `c:${t.id}`, label: t.label, color: t.color, count: countOf(`c:${t.id}`) }))
 	);
+
+	const tagSearchShown = $derived(programTagOptions.length + customTagOptions.length > 8);
+
+	function searchTags(options: TagOption[]): TagOption[] {
+		const query = tagSearch.trim().toLowerCase();
+		return query ? options.filter((t) => t.label.toLowerCase().includes(query)) : options;
+	}
+
+	const visibleProgramTags = $derived(searchTags(programTagOptions));
+	const visibleCustomTags = $derived(searchTags(customTagOptions));
+
+	// A filter outlives its tag leaving the queue, so its chip still has to name it.
+	function describeTag(key: string): { label: string; color?: string } {
+		if (key.startsWith('p:')) {
+			return programTagOptions.find((t) => t.key === key) ?? { label: key.slice(2) };
+		}
+		const tag = tagById.get(key.slice(2));
+		return tag ? { label: tag.label, color: tag.color } : { label: 'Deleted tag' };
+	}
+
+	const includedTagKeys = $derived([...tagFilters].filter(([, m]) => m === 'include').map(([k]) => k));
+	const excludedTagKeys = $derived([...tagFilters].filter(([, m]) => m === 'exclude').map(([k]) => k));
+
+	const activeFilterCount = $derived(tagFilters.size + (shipKind === 'all' ? 0 : 1));
+
+	// Filters live in the URL so they survive opening a project and coming back,
+	// a reload, and being shared: `tag`/`not` name program tags by label,
+	// `ctag`/`cnot` custom tags by id.
+	const TAG_PARAMS = { p: { include: 'tag', exclude: 'not' }, c: { include: 'ctag', exclude: 'cnot' } } as const;
+	const FILTER_PARAMS = ['tag', 'not', 'ctag', 'cnot', 'match', 'kind'];
+
+	{
+		const params = page.url.searchParams;
+		for (const [prefix, names] of Object.entries(TAG_PARAMS)) {
+			for (const [mode, name] of Object.entries(names)) {
+				for (const value of params.getAll(name)) tagFilters.set(`${prefix}:${value}`, mode as TagMode);
+			}
+		}
+		if (params.get('match') === 'all') tagMatch = 'all';
+		const kind = params.get('kind');
+		if (kind === 'new' || kind === 'update') shipKind = kind;
+	}
+
+	$effect(() => {
+		const url = new URL(page.url);
+		for (const name of FILTER_PARAMS) url.searchParams.delete(name);
+		for (const [key, mode] of tagFilters) {
+			const prefix = key.slice(0, 1) as keyof typeof TAG_PARAMS;
+			url.searchParams.append(TAG_PARAMS[prefix][mode], key.slice(2));
+		}
+		if (tagMatch === 'all') url.searchParams.set('match', 'all');
+		if (shipKind !== 'all') url.searchParams.set('kind', shipKind);
+		// Same page, only the query string changes: there is no route to resolve.
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
+		if (url.search !== page.url.search) replaceState(url, page.state);
+	});
 
 	function matchesFilters(project: (typeof data.projects)[number]): boolean {
 		const query = searchInput.trim().toLowerCase();
@@ -103,16 +181,15 @@
 				.toLowerCase();
 			if (!haystack.includes(query)) return false;
 		}
-		if (selectedTagIds.size > 0) {
-			const assigned = new Set(data.projectTagIds[project.id] ?? []);
-			for (const id of selectedTagIds) {
-				if (!assigned.has(id)) return false;
-			}
-		}
-		if (selectedProgramTags.size > 0) {
-			const labels = new Set(normalizeTags(project.tags).map((t) => t.label));
-			for (const label of selectedProgramTags) {
-				if (!labels.has(label)) return false;
+		if (tagFilters.size > 0) {
+			const keys = tagKeysFor(project);
+			if (excludedTagKeys.some((k) => keys.has(k))) return false;
+			if (includedTagKeys.length > 0) {
+				const matched =
+					tagMatch === 'all'
+						? includedTagKeys.every((k) => keys.has(k))
+						: includedTagKeys.some((k) => keys.has(k));
+				if (!matched) return false;
 			}
 		}
 		if (shipKind !== 'all') {
@@ -179,20 +256,19 @@
 	const filteredHqProjects = $derived(sortProjects(data.hqProjects.filter(matchesFilters), 'pending_hq'));
 	const filtersActive = $derived(searchInput.trim().length > 0 || activeFilterCount > 0);
 
-	function toggleTagFilter(id: string) {
-		if (selectedTagIds.has(id)) selectedTagIds.delete(id);
-		else selectedTagIds.add(id);
-	}
-
-	function toggleProgramTagFilter(label: string) {
-		if (selectedProgramTags.has(label)) selectedProgramTags.delete(label);
-		else selectedProgramTags.add(label);
+	// Clicking the mode a tag already has clears it; clicking the other switches it.
+	function setTagMode(key: string, mode: TagMode) {
+		if (tagFilters.get(key) === mode) tagFilters.delete(key);
+		else tagFilters.set(key, mode);
 	}
 
 	function clearFilters() {
-		selectedTagIds.clear();
-		selectedProgramTags.clear();
+		tagFilters.clear();
 		shipKind = 'all';
+	}
+
+	function handleFilterDropdownKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') filterDropdownOpen = false;
 	}
 
 	function handleFilterDropdownWindowClick(e: MouseEvent) {
@@ -208,7 +284,11 @@
 	$effect(() => {
 		if (filterDropdownOpen) {
 			window.addEventListener('click', handleFilterDropdownWindowClick, true);
-			return () => window.removeEventListener('click', handleFilterDropdownWindowClick, true);
+			window.addEventListener('keydown', handleFilterDropdownKeydown);
+			return () => {
+				window.removeEventListener('click', handleFilterDropdownWindowClick, true);
+				window.removeEventListener('keydown', handleFilterDropdownKeydown);
+			};
 		}
 	});
 
@@ -344,7 +424,8 @@
 	<title>Review - {data.program.name} - Sidekick</title>
 </svelte:head>
 
-<div class="px-10 max-md:px-4 py-8 max-md:py-5 flex flex-col gap-8 max-md:gap-6 max-w-full overflow-hidden">
+<div class="px-10 max-md:px-4 py-8 max-md:py-5 flex flex-col gap-8 max-md:gap-6 max-w-full overflow-x-clip">
+	<div class="flex flex-col gap-2.5">
 	<div class="flex items-center justify-between flex-wrap gap-2">
 		<div class="flex gap-2 items-center flex-wrap min-w-0">
 			<form
@@ -358,6 +439,47 @@
 					class="flex-1 bg-transparent text-sm outline-none placeholder:text-text-placeholder font-medium min-w-0"
 				/>
 			</form>
+			{#snippet tagRow(tag: TagOption)}
+				{@const mode = tagFilters.get(tag.key)}
+				<div class="group flex items-center gap-1 pl-1.5 pr-1.5">
+					<button
+						class="flex-1 min-w-0 text-left px-1.5 py-1.5 text-sm rounded-tag hover:bg-surface cursor-pointer flex items-center gap-2"
+						aria-pressed={mode === 'include'}
+						title={mode === 'include' ? 'Stop filtering by this tag' : 'Only show projects with this tag'}
+						onclick={() => setTagMode(tag.key, 'include')}
+					>
+						<span
+							class="size-4 shrink-0 rounded-[4px] border flex items-center justify-center {mode === 'include'
+								? 'bg-accent border-accent text-white'
+								: mode === 'exclude'
+									? 'border-check-fail text-check-fail'
+									: 'border-border-input'}"
+						>
+							{#if mode === 'include'}
+								<Check size={12} strokeWidth={3} />
+							{:else if mode === 'exclude'}
+								<Minus size={12} strokeWidth={3} />
+							{/if}
+						</span>
+						{#if mode === 'exclude'}
+							<span class="text-xs font-medium text-check-fail shrink-0">Not</span>
+						{/if}
+						<ProjectTags tags={[tag]} class="min-w-0 {mode === 'exclude' ? 'opacity-60' : ''}" />
+						<span class="ml-auto text-xs text-text-tertiary tabular-nums shrink-0">{tag.count}</span>
+					</button>
+					<button
+						class="shrink-0 p-1 rounded-tag cursor-pointer hover:bg-surface focus-visible:opacity-100 {mode === 'exclude'
+							? 'text-check-fail'
+							: 'text-text-tertiary opacity-0 group-hover:opacity-100 max-md:opacity-100'}"
+						aria-pressed={mode === 'exclude'}
+						aria-label="Exclude {tag.label}"
+						title={mode === 'exclude' ? 'Stop excluding this tag' : 'Hide projects with this tag'}
+						onclick={() => setTagMode(tag.key, 'exclude')}
+					>
+						<Ban size={14} />
+					</button>
+				</div>
+			{/snippet}
 			<div class="relative" data-filter-dropdown>
 				<button
 					class="border border-border-input rounded-tag flex gap-2 items-center px-3 py-1.5 cursor-pointer hover:bg-surface min-w-0"
@@ -383,33 +505,49 @@
 								{/if}
 							</button>
 						{/each}
-						{#if programTagOptions.length > 0}
-							<div class="px-3 pt-2 pb-0.5 text-[11px] font-medium text-text-tertiary uppercase tracking-wide border-t border-border-card mt-1">{data.program.name} tags</div>
-							{#each programTagOptions as tag (tag.label)}
-								<button
-									class="w-full text-left px-3 py-1.5 text-sm hover:bg-surface cursor-pointer flex items-center justify-between gap-2"
-									onclick={() => toggleProgramTagFilter(tag.label)}
-								>
-									<ProjectTags tags={[tag]} />
-									{#if selectedProgramTags.has(tag.label)}
-										<Check size={14} class="text-accent shrink-0" />
-									{/if}
-								</button>
-							{/each}
-						{/if}
-						{#if data.tagDefinitions.length > 0}
-							<div class="px-3 pt-2 pb-0.5 text-[11px] font-medium text-text-tertiary uppercase tracking-wide border-t border-border-card mt-1">Custom tags</div>
-							{#each data.tagDefinitions as tag (tag.id)}
-								<button
-									class="w-full text-left px-3 py-1.5 text-sm hover:bg-surface cursor-pointer flex items-center justify-between gap-2"
-									onclick={() => toggleTagFilter(tag.id)}
-								>
-									<ProjectTags tags={[tag]} />
-									{#if selectedTagIds.has(tag.id)}
-										<Check size={14} class="text-accent shrink-0" />
-									{/if}
-								</button>
-							{/each}
+						{#if programTagOptions.length + customTagOptions.length > 0}
+							<div class="flex items-center justify-between gap-2 px-3 pt-2 pb-1 border-t border-border-card mt-1">
+								<span class="text-[11px] font-medium text-text-tertiary uppercase tracking-wide">Tags</span>
+								{#if includedTagKeys.length > 1}
+									<div class="flex border border-border-input rounded-tag overflow-hidden text-[11px] font-medium" role="group" aria-label="Match included tags">
+										{#each [['any', 'Any'], ['all', 'All']] as const as [value, label] (value)}
+											<button
+												class="px-2 py-0.5 cursor-pointer {tagMatch === value ? 'bg-accent-bg text-accent' : 'text-text-dim hover:bg-surface'}"
+												aria-pressed={tagMatch === value}
+												title={value === 'any' ? 'Show projects with any of the included tags' : 'Show projects with every included tag'}
+												onclick={() => (tagMatch = value)}
+											>
+												{label}
+											</button>
+										{/each}
+									</div>
+								{/if}
+							</div>
+							{#if tagSearchShown}
+								<div class="mx-2 mb-1 border border-border-input rounded-tag flex gap-1.5 items-center px-2 py-1">
+									<Search size={12} class="text-text-placeholder shrink-0" />
+									<input
+										bind:value={tagSearch}
+										placeholder="Find a tag..."
+										class="flex-1 bg-transparent text-xs outline-none placeholder:text-text-placeholder font-medium min-w-0"
+									/>
+								</div>
+							{/if}
+							{#if visibleProgramTags.length > 0}
+								<div class="px-3 pt-1 pb-0.5 text-[11px] font-medium text-text-tertiary">{data.program.name}</div>
+								{#each visibleProgramTags as tag (tag.key)}
+									{@render tagRow(tag)}
+								{/each}
+							{/if}
+							{#if visibleCustomTags.length > 0}
+								<div class="px-3 pt-1 pb-0.5 text-[11px] font-medium text-text-tertiary">Custom</div>
+								{#each visibleCustomTags as tag (tag.key)}
+									{@render tagRow(tag)}
+								{/each}
+							{/if}
+							{#if visibleProgramTags.length + visibleCustomTags.length === 0}
+								<div class="px-3 py-1.5 text-xs text-text-tertiary">No tags match</div>
+							{/if}
 						{/if}
 						{#if activeFilterCount > 0}
 							<button
@@ -492,6 +630,57 @@
 			</div>
 		{/if}
 		</div>
+	</div>
+	{#if activeFilterCount > 0}
+		<div class="flex items-center flex-wrap gap-1.5 text-xs font-medium">
+			{#if shipKind !== 'all'}
+				<span class="border border-border-input rounded-tag flex items-center gap-1 pl-2 pr-1 py-0.5 text-text-dim">
+					{SHIP_KIND_OPTIONS.find((o) => o.value === shipKind)?.label}
+					<button class="p-0.5 rounded hover:bg-surface cursor-pointer" aria-label="Remove submission filter" onclick={() => (shipKind = 'all')}>
+						<X size={12} />
+					</button>
+				</span>
+			{/if}
+			{#if includedTagKeys.length > 0}
+				<span class="text-text-tertiary">
+					{#if includedTagKeys.length === 1}
+						With
+					{:else}
+						With
+						<button
+							class="underline decoration-dotted underline-offset-2 text-text-dim cursor-pointer hover:text-text-primary"
+							title="Switch between any and all"
+							onclick={() => (tagMatch = tagMatch === 'any' ? 'all' : 'any')}
+						>
+							{tagMatch === 'any' ? 'any of' : 'all of'}
+						</button>
+					{/if}
+				</span>
+				{#each includedTagKeys as key (key)}
+					{@const tag = describeTag(key)}
+					<span class="border border-border-input rounded-tag flex items-center gap-1 pl-1 pr-1 py-0.5">
+						<ProjectTags tags={[tag]} />
+						<button class="p-0.5 rounded hover:bg-surface cursor-pointer text-text-dim" aria-label="Remove {tag.label}" onclick={() => tagFilters.delete(key)}>
+							<X size={12} />
+						</button>
+					</span>
+				{/each}
+			{/if}
+			{#if excludedTagKeys.length > 0}
+				<span class="text-text-tertiary">Without</span>
+				{#each excludedTagKeys as key (key)}
+					{@const tag = describeTag(key)}
+					<span class="border border-dashed border-check-fail/50 rounded-tag flex items-center gap-1 pl-1 pr-1 py-0.5">
+						<ProjectTags tags={[tag]} class="opacity-60" />
+						<button class="p-0.5 rounded hover:bg-surface cursor-pointer text-text-dim" aria-label="Stop excluding {tag.label}" onclick={() => tagFilters.delete(key)}>
+							<X size={12} />
+						</button>
+					</span>
+				{/each}
+			{/if}
+			<button class="text-text-tertiary hover:text-text-primary cursor-pointer px-1" onclick={clearFilters}>Clear all</button>
+		</div>
+	{/if}
 	</div>
 
 	{#if data.fraudApprovals.length > 0}
