@@ -108,7 +108,7 @@ export interface ProjectExportGithub {
 }
 
 export interface ProjectExportAirtableRecord {
-	id: string;
+	program: string;
 	/** Null unless the exporting reviewer can authorize reviews. */
 	url: string | null;
 	hours: number;

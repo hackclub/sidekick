@@ -264,7 +264,7 @@
 				type: 'airtable',
 				timestamp: r.createdAt,
 				title: r.isExact ? 'Airtable record created' : 'Airtable record created (fuzzy match)',
-				subtitle: `${r.id} · ${fmtHrs(r.hours)}h`
+				subtitle: `${r.program} · ${fmtHrs(r.hours)}h`
 			});
 		}
 
@@ -404,10 +404,10 @@
 	// Structured as early returns rather than `(a || b) && c && d` — Svelte 5.55's
 	// dev transform drops the parentheses when reprinting such expressions, which
 	// silently changes the operator precedence.
-	function isExternalPreviousRecord(r: { isExact: boolean; hours: number; id: string }): boolean {
+	function isExternalPreviousRecord(r: { isExact: boolean; hours: number; program: string }): boolean {
 		if (!countFuzzyAirtable && !r.isExact) return false;
 		if (r.hours <= 0) return false;
-		const recProgram = normalizeForCompare(r.id.split('–')[0]?.trim() || r.id);
+		const recProgram = normalizeForCompare(r.program);
 		return recProgram !== normalizeForCompare(data.programYswsName);
 	}
 
@@ -495,7 +495,7 @@
 		airtable: airtable
 			? {
 					records: airtable.airtableRecords.map((r) => ({
-						id: r.id,
+						program: r.program,
 						url: r.url,
 						hours: r.hours,
 						approvedAt: r.approvedAt ?? r.createdAt,
@@ -811,7 +811,7 @@
 						.filter((r) => isExternalPreviousRecord(r))
 						.map((r) => ({
 							key: r.recordId,
-							programName: r.id.split('–')[0]?.trim() || r.id,
+							programName: r.program,
 							date: '',
 							hours: r.hours,
 							url: r.url ?? undefined

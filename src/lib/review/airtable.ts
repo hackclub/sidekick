@@ -5,8 +5,8 @@
 export interface AirtableMatch {
 	/** Airtable's own record id (`rec…`) — unique per record. */
 	recordId: string;
-	/** The unified DB's "ID" field, e.g. "Hackpad – 1234". */
-	id: string;
+	/** Program the record was submitted to, e.g. "Hackpad". */
+	program: string;
 	/** Canonical Airtable link; null unless the viewer can authorize reviews. */
 	url: string | null;
 	hours: number;
@@ -20,12 +20,4 @@ export interface AirtableMatch {
 	overrideHoursJustification: string | null;
 	isExact: boolean;
 	mismatches: string[];
-}
-
-export function programFromId(id: string): string {
-	const dash = id.indexOf('–');
-	if (dash > 0)
-		return id.slice(0, dash).trim();
-
-	return id;
 }

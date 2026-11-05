@@ -3,7 +3,7 @@
 	import AirtableIcon from '../icons/AirtableIcon.svelte';
 	import Checkbox from '../ui/Checkbox.svelte';
 	import AirtableRecordModal from './AirtableRecordModal.svelte';
-	import { programFromId, type AirtableMatch } from '$lib/review/airtable.js';
+	import type { AirtableMatch } from '$lib/review/airtable.js';
 
 	interface Props {
 		records: AirtableMatch[];
@@ -91,7 +91,7 @@
 					>
 						<div class="flex items-center justify-between gap-3">
 							<div class="flex items-center gap-1.5 min-w-0">
-								<span class="text-sm tracking-[-0.3px] truncate text-text-primary">{programFromId(record.id)}</span>
+								<span class="text-sm tracking-[-0.3px] truncate text-text-primary">{record.program}</span>
 								{#if !record.isExact}
 									<span class="flex shrink-0" title="Fuzzy match — didn't match: {record.mismatches.join(', ')}">
 										<BadgeQuestionMark size={13} class="text-check-fail" />

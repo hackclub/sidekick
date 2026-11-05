@@ -23,6 +23,7 @@ export interface AirtableRecord {
 		'Code URL'?: string;
 		'Hours Spent'?: number;
 		'Override Hours Spent'?: number;
+		'YSWS–Name'?: string[];
 		'Override Hours Spent Justification'?: string;
 		Description?: string;
 		Screenshot?: AirtableAttachment[];
@@ -35,6 +36,19 @@ export interface AirtableRecord {
 		'Approved At'?: string;
 		Created?: string;
 	};
+}
+
+/**
+ * The program part of a unified-DB "ID". Only this part is safe to show: the
+ * ID is derived as "<Program> – <First> <Last>", so the rest is the
+ * submitter's real name.
+ */
+export function programFromId(id: string): string {
+	const dash = id.indexOf('–');
+	if (dash > 0)
+		return id.slice(0, dash).trim();
+
+	return id.trim();
 }
 
 export interface AirtableAttachment {

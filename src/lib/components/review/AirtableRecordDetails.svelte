@@ -4,7 +4,7 @@
 	import AirtableIcon from '../icons/AirtableIcon.svelte';
 	import NamedLink from '../ui/NamedLink.svelte';
 	import { isSafeLinkUrl } from '$lib/utils/markdown.js';
-	import { programFromId, type AirtableMatch } from '$lib/review/airtable.js';
+	import type { AirtableMatch } from '$lib/review/airtable.js';
 
 	interface Props {
 		record: AirtableMatch;
@@ -18,14 +18,6 @@
 	}
 
 	let { record, compact = false, actions, titleId, class: className = '' }: Props = $props();
-
-	// The unified ID is "<Program> – <number>"; the program is already the
-	// title, so only the number is repeated beneath it.
-	const recordNumber = $derived.by(() => {
-		const program = programFromId(record.id);
-		const rest = record.id.slice(program.length).replace(/^\s*–\s*/, '').trim();
-		return rest || null;
-	});
 
 	const playableUrl = $derived(isSafeLinkUrl(record.playableUrl) ? record.playableUrl : null);
 	const codeUrl = $derived(isSafeLinkUrl(record.codeUrl) ? record.codeUrl : null);
@@ -66,12 +58,7 @@
 </script>
 
 {#snippet title()}
-	<div class="flex items-baseline gap-2 min-w-0">
-		<span id={titleId} class="font-bold text-[15px] text-text-primary tracking-[-0.4px] truncate">{programFromId(record.id)}</span>
-		{#if recordNumber}
-			<span class="font-mono text-xs text-text-secondary shrink-0" title={record.id}>#{recordNumber}</span>
-		{/if}
-	</div>
+	<span id={titleId} class="font-bold text-[15px] text-text-primary tracking-[-0.4px] truncate min-w-0">{record.program}</span>
 {/snippet}
 
 {#snippet airtableButton()}

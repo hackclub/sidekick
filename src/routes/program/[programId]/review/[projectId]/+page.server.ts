@@ -6,7 +6,7 @@ import { redactAuthorIdentity } from '$lib/server/protocol/redact.js';
 import { resolveActorIds } from '$lib/server/actors.js';
 import { getProjectHackatimeStats, getTrustLogs, getUserInfo } from '$lib/server/integrations/hackatime.js';
 import type { TrustLog, UserInfo } from '$lib/server/integrations/hackatime.js';
-import { findRecordsByUrl, airtableRecordUrl, redactPii, normalizeUrl as normalizeAirtableUrl } from '$lib/server/integrations/airtable.js';
+import { findRecordsByUrl, airtableRecordUrl, programFromId, redactPii, normalizeUrl as normalizeAirtableUrl } from '$lib/server/integrations/airtable.js';
 import { parseRepoUrl, getCommits, getRepoInfo, getReadme } from '$lib/server/integrations/github.js';
 import { getLapseTimelapses } from '$lib/server/integrations/lapse.js';
 import { getLookoutSessions } from '$lib/server/integrations/lookout.js';
@@ -122,7 +122,9 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	};
 	type AirtableMatch = {
 		recordId: string;
-		id: string;
+		// Program name only — never the record's full "ID", which is derived
+		// as "<Program> – <First> <Last>".
+		program: string;
 		// Link to the canonical record — exposes the submitter's PII, so it's
 		// only sent to HQ (canAuthorizeReviews).
 		url: string | null;
@@ -134,7 +136,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		description: string | null;
 		screenshotUrl: string | null;
 		overrideHours: number | null;
-		// Redacted of the submitter's name, e-mail, and address.
+		// Free text below is redacted of the submitter's name, e-mail, and address.
 		overrideHoursJustification: string | null;
 		isExact: boolean;
 		// Which exact-match criteria failed (empty for exact matches). "demo URL"
@@ -202,17 +204,20 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 					...(nameMatches ? [] : ['author name'])
 				];
 				const screenshot = r.fields['Screenshot']?.[0];
+				const description = r.fields['Description']?.trim();
 				const justification = r.fields['Override Hours Spent Justification']?.trim();
 				return {
 					recordId: r.id,
-					id: r.fields['ID'] ?? r.id,
+					program: r.fields['YSWS–Name']?.join(', ').trim()
+						|| redactPii(programFromId(r.fields['ID'] ?? ''), r)
+						|| 'Unknown program',
 					url: membership.canAuthorizeReviews ? airtableRecordUrl(r.id) : null,
 					hours: r.fields['Override Hours Spent'] ?? r.fields['Hours Spent'] ?? 0,
 					approvedAt: r.fields['Approved At'] ?? null,
 					createdAt: r.fields['Created'] ?? null,
 					playableUrl: r.fields['Playable URL'] ?? null,
 					codeUrl: r.fields['Code URL'] ?? null,
-					description: r.fields['Description']?.trim() || null,
+					description: description ? redactPii(description, r) : null,
 					screenshotUrl: screenshot?.thumbnails?.large?.url ?? screenshot?.url ?? null,
 					overrideHours: r.fields['Override Hours Spent'] ?? null,
 					overrideHoursJustification: justification ? redactPii(justification, r) : null,
