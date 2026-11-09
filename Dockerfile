@@ -12,7 +12,8 @@ RUN npm run build
 
 FROM base AS production
 # ffmpeg: Lapse AFK detection (integrations/lapse-afk.ts)
-RUN apk add --no-cache git ffmpeg
+# font-dejavu: text on the MCP's Hackatime charts (mcp/charts.ts); Alpine ships no fonts
+RUN apk add --no-cache git ffmpeg font-dejavu
 COPY --from=build /app/build ./build
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./

@@ -32,7 +32,8 @@ export const load: LayoutServerLoad = async ({ params, parent }) => {
 		},
 		permissions: {
 			canViewReviews: user.isSuperAdmin || !!membership?.canViewReviews,
-			canViewFulfillments: user.isSuperAdmin || !!membership?.canViewFulfillments
+			canViewFulfillments: user.isSuperAdmin || !!membership?.canViewFulfillments,
+			canViewHeartbeats: user.isSuperAdmin || !!membership?.canViewHeartbeats
 		}
 	};
 };

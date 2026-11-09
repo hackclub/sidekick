@@ -337,26 +337,12 @@ function utcDateStr(timestampS: number): string {
  * The exact casing matters: the admin heartbeats endpoint's `project` filter is
  * case-sensitive, so heartbeat fetches must use these names, not the raw keys.
  */
-async function getMatchedProjects(
+export async function getMatchedProjects(
 	userId: string,
 	projectKeys: string[]
 ): Promise<{ names: string[]; earliestS: number; latestS: number } | null> {
-	const data = await authFetch(
-		'/api/admin/v1/user/projects',
-		{ id: userId },
-		{ persistTtlMs: METADATA_TTL_MS, cacheUserId: userId }
-	);
 	const keySet = new Set(projectKeys.map((k) => k.toLowerCase()));
-
-	interface AdminProject {
-		name: string;
-		first_heartbeat: number;
-		last_heartbeat: number;
-	}
-
-	const matched = (data.projects ?? []).filter(
-		(p: AdminProject) => keySet.has(p.name.toLowerCase())
-	);
+	const matched = (await getUserProjects(userId)).filter((p) => keySet.has(p.name.toLowerCase()));
 	if (matched.length === 0) {
 		log.debug('getMatchedProjects no matching projects', { userId });
 		return null;
@@ -373,7 +359,23 @@ async function getMatchedProjects(
 		return null;
 	}
 
-	return { names: matched.map((p: AdminProject) => p.name), earliestS: earliest, latestS: latest };
+	return { names: matched.map((p) => p.name), earliestS: earliest, latestS: latest };
+}
+
+export interface AdminProject {
+	name: string;
+	first_heartbeat: number;
+	last_heartbeat: number;
+}
+
+/** Every Hackatime project the user has, with the span of its heartbeats. */
+export async function getUserProjects(userId: string): Promise<AdminProject[]> {
+	const data = await authFetch(
+		'/api/admin/v1/user/projects',
+		{ id: userId },
+		{ persistTtlMs: METADATA_TTL_MS, cacheUserId: userId }
+	);
+	return data.projects ?? [];
 }
 
 export async function getProjectDateRange(

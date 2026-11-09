@@ -27,6 +27,9 @@ model User {
   memberships   ProgramMembership[]
   auditLogs   AuditLog[]
   sessions    Session[]
+  mcpTokens   McpToken[]
+  reviewDrafts ReviewDraft[]
+  fraudReviews FraudReview[]
 }
 
 model Session {
@@ -36,6 +39,26 @@ model Session {
   refreshToken String
   expiresAt    DateTime
   createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// A personal token an agent presents to /mcp as its Bearer header, acting as
+// its owner with the owner's program permissions. Only the SHA-256 digest is
+// stored; the raw token is shown once, when it is minted. See docs/MCP.md.
+model McpToken {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String
+  tokenHash  String    @unique
+  // The raw token's last four characters, so its owner can tell tokens apart.
+  hint       String
+  lastUsedAt DateTime?
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -75,6 +98,8 @@ model Program {
   rejectionTemplates     RejectionTemplate[]
   projectTagDefinitions  ProjectTagDefinition[]
   statsSnapshots         ProgramStatsSnapshot[]
+  reviewDrafts           ReviewDraft[]
+  fraudReviews           FraudReview[]
   pinnedBy               User[]                 @relation("PinnedProgram")
 }
 
@@ -309,5 +334,57 @@ model WarehouseTemplate {
   program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
 
   @@unique([programId, shopItemId])
+  @@index([programId])
+}
+
+// A verdict an agent drafted through the MCP for its reviewer. It never goes
+// upstream by itself: the review page offers it to the same reviewer, who
+// loads it into the form, reads it and submits it themselves. One per
+// reviewer and ship; a newer draft replaces the older one.
+model ReviewDraft {
+  id              String   @id @default(cuid())
+  programId       String
+  projectId       String
+  shipId          String
+  userId          String
+  action          String
+  hoursAssigned   Float?
+  feedbackMessage String
+  justification   String   @default("")
+  internalMessage String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, shipId, userId])
+  @@index([programId, projectId])
+}
+
+// A reviewer's call, from the Fraud Review page, on whether a project's
+// Hackatime heartbeats for one ship were inflated with fraud tooling
+// (autotypers, keep-alives, scripted heartbeats, faked Lapse). "clean" says
+// nothing about deflation: a clean ship may still need hours taken off for a
+// wrong project, unrelated files, ai coding or idle time. "skipped" means the
+// reviewer left it for later or for someone else, and counts as unreviewed.
+// Keyed by ship, so a re-ship shows the old verdict as being for an earlier
+// ship instead of passing it off as current. See docs/MCP.md.
+model FraudReview {
+  id        String   @id @default(cuid())
+  programId String
+  projectId String
+  shipId    String
+  status    String
+  note      String?
+  // Whoever set the verdict last; changing it overwrites the row.
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([programId, projectId, shipId])
   @@index([programId])
 }

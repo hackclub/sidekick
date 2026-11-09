@@ -8,11 +8,12 @@
 	import SidebarButton from './SidebarButton.svelte';
 	import ProgramSwitcher from './ProgramSwitcher.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
-	import { House, Scale, Package, PanelLeftOpen, PanelLeftClose, Plus, ChevronsUpDown, ChevronUp, ChevronDown, ShieldCheck, LogOut } from 'lucide-svelte';
+	import { House, Scale, Package, PanelLeftOpen, PanelLeftClose, Plus, ChevronsUpDown, ChevronUp, ChevronDown, ShieldCheck, LogOut, Bot, ScanSearch } from 'lucide-svelte';
 
 	interface Permissions {
 		canViewReviews: boolean;
 		canViewFulfillments: boolean;
+		canViewHeartbeats?: boolean;
 	}
 
 	interface Props {
@@ -25,6 +26,8 @@
 	let { user, programs, currentProgram = null, permissions = null }: Props = $props();
 	const canReview = $derived(permissions?.canViewReviews ?? true);
 	const canFulfill = $derived(permissions?.canViewFulfillments ?? true);
+	// Off by default outside a program's pages: it's for heartbeat viewers only.
+	const canFraudReview = $derived(permissions ? !!permissions.canViewHeartbeats : user.isSuperAdmin);
 	let showProgramSwitcher = $state(false);
 	let showUserMenu = $state(false);
 
@@ -58,6 +61,14 @@
 		<p class="text-sm font-medium text-text-primary truncate">{user.name}</p>
 		<p class="text-[11px] text-text-tertiary truncate">{user.email}</p>
 	</div>
+	<a
+		href={resolve('/account/agents')}
+		class="flex items-center gap-2 px-3 py-2.5 text-sm text-text-primary hover:bg-surface transition-colors cursor-pointer"
+		onclick={() => (showUserMenu = false)}
+	>
+		<Bot size={14} />
+		<span>Agent access</span>
+	</a>
 	<a
 		href={resolve('/auth/logout')}
 		class="flex items-center gap-2 px-3 py-2.5 text-sm text-check-fail hover:bg-check-fail/5 transition-colors cursor-pointer"
@@ -141,6 +152,7 @@
 					{@const items = [
 						{ path: programBase, icon: House, label: 'Home', enabled: true },
 						{ path: `${programBase}/review`, icon: Scale, label: 'Review', enabled: canReview },
+						{ path: `${programBase}/fraud-review`, icon: ScanSearch, label: 'Fraud Review', enabled: canFraudReview },
 						{ path: `${programBase}/fulfillment`, icon: Package, label: 'Fulfillment', enabled: canFulfill },
 					]}
 					{#each items as item (item.path)}
@@ -178,6 +190,9 @@
 					</SidebarButton>
 					<SidebarButton active={isActive(`${programBase}/review`)} onclick={() => canReview && navigateTo(`${programBase}/review`)} disabled={!canReview}>
 						<Scale size={18} />
+					</SidebarButton>
+					<SidebarButton active={isActive(`${programBase}/fraud-review`)} onclick={() => canFraudReview && navigateTo(`${programBase}/fraud-review`)} disabled={!canFraudReview}>
+						<ScanSearch size={18} />
 					</SidebarButton>
 					<SidebarButton active={isActive(`${programBase}/fulfillment`)} onclick={() => canFulfill && navigateTo(`${programBase}/fulfillment`)} disabled={!canFulfill}>
 						<Package size={18} />
@@ -256,6 +271,7 @@
 	{/snippet}
 	{#snippet homeIcon()}<House size={18} strokeWidth={currentProgram && isActive(programBase) ? 2.2 : 1.8} />{/snippet}
 	{#snippet reviewIcon()}<Scale size={18} strokeWidth={isActive(`${programBase}/review`) ? 2.2 : 1.8} />{/snippet}
+	{#snippet fraudReviewIcon()}<ScanSearch size={18} strokeWidth={isActive(`${programBase}/fraud-review`) ? 2.2 : 1.8} />{/snippet}
 	{#snippet fulfillmentIcon()}<Package size={18} strokeWidth={isActive(`${programBase}/fulfillment`) ? 2.2 : 1.8} />{/snippet}
 	{#snippet adminIcon()}<ShieldCheck size={18} strokeWidth={$page.url.pathname.startsWith('/admin') ? 2.2 : 1.8} />{/snippet}
 	{#snippet userIcon()}<Avatar name={user.name} url={user.avatarUrl} size="sm" />{/snippet}
@@ -264,6 +280,10 @@
 	{#if currentProgram}
 		{@render mobileTab('Home', isActive(programBase), true, () => navigateTo(programBase), homeIcon)}
 		{@render mobileTab('Review', isActive(`${programBase}/review`), canReview, () => navigateTo(`${programBase}/review`), reviewIcon)}
+		<!-- Left out rather than greyed out for everyone else: the bar has little room. -->
+		{#if canFraudReview}
+			{@render mobileTab('Fraud', isActive(`${programBase}/fraud-review`), true, () => navigateTo(`${programBase}/fraud-review`), fraudReviewIcon)}
+		{/if}
 		{@render mobileTab('Fulfillment', isActive(`${programBase}/fulfillment`), canFulfill, () => navigateTo(`${programBase}/fulfillment`), fulfillmentIcon)}
 	{/if}
 	{#if user.isSuperAdmin}

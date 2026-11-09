@@ -3,7 +3,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { applyAction, deserialize } from '$app/forms';
 	import { resolve } from '$app/paths';
-	import { AlertTriangle, X, Plus, Check } from 'lucide-svelte';
+	import { AlertTriangle, X, Plus, Check, Bot } from 'lucide-svelte';
 	import type { PageData } from './$types.js';
 
 	const log = createLogger('ReviewPage');
@@ -21,6 +21,7 @@
 	import OtherProjects from '$lib/components/review/OtherProjects.svelte';
 	import ProjectTags from '$lib/components/review/ProjectTags.svelte';
 	import ReviewViewers from '$lib/components/review/ReviewViewers.svelte';
+	import FraudReviewBadge from '$lib/components/fraud-review/FraudReviewBadge.svelte';
 	import { ChevronLeft } from 'lucide-svelte';
 	import type { TimelineEvent as TEvent, ReviewFieldDefinition } from '$lib/server/protocol/types.js';
 	import { isUuid, shortenId } from '$lib/utils/id';
@@ -553,6 +554,38 @@
 		submitting = false;
 	}
 
+	// An agent's drafted verdict (draft_review over the MCP) goes into the form
+	// only when the reviewer asks for it, never by itself.
+	let agentPrefill = $state<{
+		action: 'approve' | 'reject';
+		hoursAssigned?: number;
+		feedbackMessage?: string;
+		justification?: string;
+		internalMessage?: string;
+	} | null>(null);
+
+	function loadAgentDraft() {
+		const draft = data.agentDraft;
+		if (!draft) return;
+		agentPrefill = {
+			action: draft.action,
+			hoursAssigned: draft.hoursAssigned ?? undefined,
+			feedbackMessage: draft.feedbackMessage,
+			justification: draft.action === 'approve' ? draft.justification : undefined,
+			internalMessage: draft.action === 'reject' ? draft.internalMessage : undefined
+		};
+		reviewPanelRef?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	}
+
+	async function discardAgentDraft() {
+		if (!data.pendingShip) return;
+		const formData = new FormData();
+		formData.set('shipId', data.pendingShip.id);
+		await fetch('?/discardAgentDraft', { method: 'POST', body: formData });
+		agentPrefill = null;
+		await invalidateAll();
+	}
+
 	// Set while the "existing Airtable records" warning is open; resolves with
 	// whether the reviewer chose to go ahead with the approval.
 	let airtableWarning = $state<{ records: AirtableMatch[]; resolve: (proceed: boolean) => void } | null>(null);
@@ -741,6 +774,20 @@
 		</div>
 
 		<div class="flex gap-4 items-center shrink-0 ml-4">
+			{#if data.canViewHeartbeats}
+				<a
+					href={resolve(`/program/${data.program.id}/fraud-review/${encodeURIComponent(data.project.id)}`)}
+					class="max-md:hidden"
+					title="Open on the Fraud Review page"
+				>
+					<FraudReviewBadge
+						review={data.fraudReview}
+						staleShipNumber={data.fraudReview && !data.fraudReview.forPendingShip
+							? data.project.ships.findIndex((s) => s.id === data.fraudReview?.shipId) + 1 || null
+							: null}
+					/>
+				</a>
+			{/if}
 			<ReviewViewers
 				programId={data.program.id}
 				projectId={data.project.id}
@@ -890,8 +937,39 @@
 				/>
 
 				{#if data.canReview && data.pendingShip}
+					{#if data.agentDraft}
+						<div class="flex items-center gap-3 border border-dashed border-accent bg-accent-bg-warm rounded-section px-4 py-3 mb-3">
+							<Bot size={16} class="text-accent shrink-0" />
+							<p class="flex-1 min-w-0 text-sm">
+								Your agent drafted
+								<span class="font-semibold">
+									{data.agentDraft.action === 'approve'
+										? `an approval of ${data.agentDraft.hoursAssigned}h`
+										: 'a rejection'}
+								</span>
+								<span class="text-text-secondary">
+									· {new Date(data.agentDraft.updatedAt).toLocaleString()}
+								</span>
+							</p>
+							<button
+								type="button"
+								class="px-2 py-1 rounded-tag text-xs font-medium border border-accent text-accent bg-white hover:bg-accent-bg cursor-pointer"
+								onclick={loadAgentDraft}
+							>
+								Load into form
+							</button>
+							<button
+								type="button"
+								class="px-2 py-1 rounded-tag text-xs font-medium border border-border-input text-text-secondary bg-white hover:text-check-fail cursor-pointer"
+								onclick={discardAgentDraft}
+							>
+								Discard
+							</button>
+						</div>
+					{/if}
 					<div bind:this={reviewPanelRef}>
 						<ReviewActionPanel
+							prefill={agentPrefill}
 							approveLabel={data.fraudQueueRouted ? 'Send to fraud review' : 'Approve'}
 							{remainingHours}
 							onsubmit={handleReviewSubmit}
@@ -968,6 +1046,10 @@
 					class={data.canViewHeartbeats ? '' : 'relative min-h-[32rem]'}
 					style="grid-area: heartbeats"
 				>
+					{#if data.canViewHeartbeats}
+						<!-- The header has no room for it on mobile. -->
+						<FraudReviewBadge review={data.fraudReview} compact class="md:hidden mb-2" />
+					{/if}
 					<HackatimeViewer
 						class={data.canViewHeartbeats ? '' : 'absolute inset-0'}
 						hackatimeUser={data.hackatimeUser}

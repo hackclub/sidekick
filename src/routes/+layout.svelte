@@ -15,7 +15,13 @@
 	const currentProgram = $derived(
 		data.programs?.find((p) => p.id === $page.params.programId) ?? data.programs?.[0] ?? null
 	);
-	const showShell = $derived(!!data.user && !$page.url.pathname.startsWith('/auth/'));
+	// The Hackatime export page is captured as a screenshot of that section
+	// alone, so it renders bare.
+	const showShell = $derived(
+		!!data.user &&
+			!$page.url.pathname.startsWith('/auth/') &&
+			$page.route.id !== '/program/[programId]/review/[projectId]/hackatime'
+	);
 	const permissions = $derived(($page.data as Record<string, unknown>).permissions as { canViewReviews: boolean; canViewFulfillments: boolean } | undefined ?? null);
 </script>
 

@@ -15,6 +15,7 @@ import { enqueueChecks } from '$lib/server/queue/checks.js';
 import { enqueueLapseAfkAnalyses } from '$lib/server/queue/lapse-afk.js';
 import { FRAUD_QUEUE, isRoutedToFraudQueue, isFraudQueueReviewer } from '$lib/server/experiments/fraud-queue.js';
 import { mirrorHeldApproval } from '$lib/server/held-approvals.js';
+import { loadFraudReviewState } from '$lib/server/fraud-review.js';
 import { createLogger } from '$lib/server/logger.js';
 import type { CheckContext } from '$lib/server/checks/types.js';
 import type { SubmitReviewActionInput } from '$lib/server/protocol/types.js';
@@ -575,7 +576,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		}
 	}
 
-	const [rejectionTemplates, tagDefinitions, tagAssignments] = await Promise.all([
+	const [rejectionTemplates, tagDefinitions, tagAssignments, agentDraft, fraudReview] = await Promise.all([
 		db.rejectionTemplate.findMany({
 			where: { programId: params.programId },
 			orderBy: { createdAt: 'asc' },
@@ -589,13 +590,34 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		db.projectTagAssignment.findMany({
 			where: { programId: params.programId, projectId: params.projectId },
 			select: { tagId: true }
-		})
+		}),
+		// A verdict this reviewer's agent drafted over the MCP, offered to them
+		// (and only them) to load into the form.
+		pendingShip
+			? db.reviewDraft.findUnique({
+					where: {
+						programId_shipId_userId: { programId: params.programId, shipId: pendingShip.id, userId: user.id }
+					}
+				})
+			: null,
+		// The Fraud Review page's verdict on the heartbeats, for those who can see them.
+		membership.canViewHeartbeats ? loadFraudReviewState(params.programId, project) : null
 	]);
 
 	return {
 		project: membership.canViewHeartbeats ? project : redactAuthorIdentity(project),
 		tagDefinitions,
 		assignedTagIds: tagAssignments.map((a) => a.tagId),
+		agentDraft: agentDraft
+			? {
+					action: agentDraft.action as 'approve' | 'reject',
+					hoursAssigned: agentDraft.hoursAssigned,
+					feedbackMessage: agentDraft.feedbackMessage,
+					justification: agentDraft.justification,
+					internalMessage: agentDraft.internalMessage,
+					updatedAt: agentDraft.updatedAt.toISOString()
+				}
+			: null,
 		pendingShip: pendingShip ?? null,
 		rejectionTemplates,
 		author: {
@@ -632,6 +654,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		canReview: membership.canCreateReviews,
 		canAuthorize: hasFraudQueued ? fraudReviewer : membership.canAuthorizeReviews,
 		canViewHeartbeats: membership.canViewHeartbeats,
+		fraudReview,
 		// Experiment: this user's approvals are held for fraud review instead of
 		// going upstream (see $lib/server/experiments/fraud-queue.ts).
 		fraudQueueRouted: isRoutedToFraudQueue(membership),
@@ -730,6 +753,7 @@ export const actions: Actions = {
 				await mirrorHeldApproval(new ProtocolClient(program.masterEndpoint, program.secretKey), held);
 			}
 
+			await discardAgentDraft(params.programId, shipId, user.id);
 			log.info('review queued for approval', { shipId, projectId: params.projectId, queue: queue ?? 'hq' });
 			return { success: true };
 		}
@@ -805,8 +829,26 @@ export const actions: Actions = {
 			}
 		});
 
+		if (result.success && (action === 'approve' || action === 'reject')) {
+			await discardAgentDraft(params.programId, shipId, user.id);
+		}
+
 		log.info('review action complete', { action, shipId, success: result.success });
 
 		return { success: result.success };
+	},
+
+	discardAgentDraft: async ({ request, params, locals }) => {
+		const user = locals.user;
+		if (!user) throw error(401);
+		const shipId = (await request.formData()).get('shipId') as string;
+		await discardAgentDraft(params.programId, shipId, user.id);
+		return { success: true };
 	}
 };
+
+// A draft is only ever its own reviewer's, so removing it needs no permission
+// beyond being that reviewer.
+async function discardAgentDraft(programId: string, shipId: string, userId: string) {
+	await db.reviewDraft.deleteMany({ where: { programId, shipId, userId } });
+}
