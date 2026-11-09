@@ -261,7 +261,9 @@ export async function getReadme(owner: string, repo: string): Promise<string | n
 		let content: string | null;
 		if (data.content && data.encoding === 'base64') {
 			log.debug('getReadme success', { owner, repo });
-			content = atob(data.content.replace(/\n/g, ''));
+			// atob yields one character per byte, which garbles any non-ASCII
+			// character (an em dash among them, a tell the checks look for).
+			content = Buffer.from(data.content, 'base64').toString('utf8');
 		} else {
 			log.debug('getReadme success (non-base64)', { owner, repo });
 			content = data.content ?? null;
