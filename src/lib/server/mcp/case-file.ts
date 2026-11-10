@@ -259,6 +259,40 @@ export async function buildCaseFile(ctx: McpContext, subject: Subject) {
 		}));
 	}
 
+	// The approval HQ would authorize: one Sidekick is holding (a community
+	// reviewer's, or one routed to fraud review), or the program's own
+	// pending_hq approval. Held ones hidden from this member stay hidden, as
+	// in the timeline.
+	const awaitingHq = () => {
+		if (!pendingShip) return null;
+		const held = timeline.events.findLast(
+			(e) => e.type === 'held_approval' && e.status === 'pending' && e.shipId === pendingShip.id
+		);
+		const upstream =
+			pendingShip.status === 'pending_hq'
+				? timeline.events.findLast(
+						(e) =>
+							(e.type === 'approval' || e.type === 'pending_approval') &&
+							e.shipId === pendingShip.id
+					)
+				: undefined;
+		const approval = held ?? upstream;
+		if (!approval || !('hoursAssigned' in approval)) return null;
+		return {
+			heldIn:
+				approval.type === 'held_approval'
+					? approval.queue === 'fraud'
+						? 'Sidekick fraud review queue'
+						: 'Sidekick HQ queue'
+					: 'program (pending_hq)',
+			by: timeline.name(approval.actorId),
+			at: approval.timestamp,
+			hoursAssigned: approval.hoursAssigned,
+			feedback: clip(approval.feedbackMessage, 800),
+			justification: clip(approval.justification, 3000)
+		};
+	};
+
 	return {
 		reviewUrl: reviewUrl(ctx, subject.program.id, project.id),
 		program: subject.program.yswsName || subject.program.name,
@@ -301,9 +335,7 @@ export async function buildCaseFile(ctx: McpContext, subject: Subject) {
 					submittedAt: pendingShip.submittedAt,
 					previouslyApprovedHoursHere: approvedHours(subject, timeline.events),
 					isUpdate: project.ships.some((s) => s.status === 'approved'),
-					heldApprovals: timeline.events.filter(
-						(e) => e.type === 'held_approval' && e.status === 'pending'
-					).length,
+					awaitingHq: awaitingHq(),
 					approveFields: pendingShip.approveFields?.map(
 						(f) => `${f.label}${f.required ? ' (required)' : ''}`
 					),

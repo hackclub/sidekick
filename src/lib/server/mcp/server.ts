@@ -92,10 +92,10 @@ export function createMcpServer(ctx: McpContext): McpServer {
 		'list_review_queue',
 		{
 			description:
-				"A program's review queue, longest-waiting first unless the program orders it: one short row per project. `queue` is 'pending' (awaiting a first review) or 'pending_hq' (approved by a community reviewer, awaiting HQ). With Hackatime access, each row carries `fraudReview`, the Fraud Review page's verdict on the pending ship's heartbeats: 'clean' (a person found no fraud tooling inflating the time; it says nothing about deflation), 'skipped' (a person left it undecided) or 'none'; `fraudReviewEarlierShip` gives the verdict on an earlier ship when the pending one has none. `fraud_review` keeps only rows with that verdict.",
+				"A program's review queue, longest-waiting first unless the program orders it: one short row per project. `queue` is 'pending' (awaiting a first review), 'pending_hq' (the program reports an approval awaiting HQ) or 'awaiting_hq' (every approval awaiting HQ authorization: the program's pending_hq ships plus approvals Sidekick is holding for HQ or for fraud review; rows carry `awaitingHq` with who approved and for how many hours when Sidekick holds it). With Hackatime access, each row carries `fraudReview`, the Fraud Review page's verdict on the pending ship's heartbeats: 'clean' (a person found no fraud tooling inflating the time; it says nothing about deflation), 'skipped' (a person left it undecided) or 'none'; `fraudReviewEarlierShip` gives the verdict on an earlier ship when the pending one has none. `fraud_review` keeps only rows with that verdict.",
 			inputSchema: {
 				program_id: z.string(),
-				queue: z.enum(['pending', 'pending_hq']).default('pending'),
+				queue: z.enum(['pending', 'pending_hq', 'awaiting_hq']).default('pending'),
 				fraud_review: z.enum(['clean', 'skipped', 'none']).optional(),
 				offset: z.number().int().min(0).default(0),
 				limit: z.number().int().min(1).max(50).default(25)
@@ -111,51 +111,97 @@ export function createMcpServer(ctx: McpContext): McpServer {
 						'`fraud_review` needs Hackatime access (canViewHeartbeats) in this program.'
 					);
 				}
-				const projects: Project[] = [];
-				let cursor: string | undefined;
+				const fetchAll = async (status: 'pending' | 'pending_hq') => {
+					const projects: Project[] = [];
+					let cursor: string | undefined;
+					let explicitlySorted = false;
+					for (;;) {
+						const page = await client.fetchProjects({ status, cursor, limit: 100 });
+						projects.push(...page.projects);
+						explicitlySorted ||= !!page.explicitlySorted;
+						if (!page.nextCursor) break;
+						cursor = page.nextCursor;
+					}
+					return { projects, explicitlySorted };
+				};
+				const fraudReviewer = isFraudQueueReviewer(membership);
+				const held = await db.pendingApproval.findMany({
+					where: { programId: program_id, status: 'pending' },
+					select: {
+						shipId: true,
+						queue: true,
+						reviewerId: true,
+						hoursAssigned: true,
+						createdAt: true
+					}
+				});
+				// Fraud-queue approvals stay hidden from members the review page hides them from.
+				const ownReviewerId = ctx.user.slackId || ctx.user.hcaId;
+				const visibleHeld = held.filter(
+					(h) => h.queue !== FRAUD_QUEUE || fraudReviewer || h.reviewerId === ownReviewerId
+				);
+				const heldShips = new Map(visibleHeld.map((h) => [h.shipId, h]));
+
+				// The ship each row is about: the latest pending one, or for the HQ
+				// queue the latest pending_hq one, or the latest pending one Sidekick
+				// holds an approval for.
+				let waiting: Array<{ project: Project; ship: Project['ships'][number] }>;
 				let explicitlySorted = false;
-				for (;;) {
-					const page = await client.fetchProjects({ status: queue, cursor, limit: 100 });
-					projects.push(...page.projects);
-					explicitlySorted ||= !!page.explicitlySorted;
-					if (!page.nextCursor) break;
-					cursor = page.nextCursor;
+				if (queue === 'awaiting_hq') {
+					const [hq, pending] = await Promise.all([fetchAll('pending_hq'), fetchAll('pending')]);
+					const byProject = new Map<string, { project: Project; ship: Project['ships'][number] }>();
+					for (const p of pending.projects) {
+						const ship = pendingShipOf(p, 'pending');
+						if (ship && heldShips.has(ship.id)) byProject.set(p.id, { project: p, ship });
+					}
+					for (const p of hq.projects) {
+						const ship = pendingShipOf(p, 'pending_hq');
+						if (ship && !byProject.has(p.id)) byProject.set(p.id, { project: p, ship });
+					}
+					waiting = [...byProject.values()];
+				} else {
+					const result = await fetchAll(queue);
+					explicitlySorted = result.explicitlySorted;
+					waiting = result.projects.flatMap((p) => {
+						const ship = pendingShipOf(p, queue);
+						return ship ? [{ project: p, ship }] : [];
+					});
 				}
-				let waiting = projects.filter((p) => pendingShipOf(p, queue));
 				if (!explicitlySorted) {
 					waiting.sort(
 						(a, b) =>
-							new Date(pendingShipOf(a, queue)!.submittedAt).getTime() -
-							new Date(pendingShipOf(b, queue)!.submittedAt).getTime()
+							new Date(a.ship.submittedAt).getTime() - new Date(b.ship.submittedAt).getTime()
 					);
 				}
-				const held = await db.pendingApproval.findMany({
-					where: { programId: program_id, status: 'pending' },
-					select: { shipId: true, queue: true }
-				});
-				const heldShips = new Map(held.map((h) => [h.shipId, h.queue]));
 				// Keyed to the ship the Fraud Review page marks: the project's most
 				// recent pending one.
 				const verdicts = canSeeTime
 					? await loadFraudReviewStates(
 							program_id,
-							new Map(waiting.map((p) => [p.id, fraudReviewShip(p)?.id ?? null]))
+							new Map(waiting.map((w) => [w.project.id, fraudReviewShip(w.project)?.id ?? null]))
 						)
 					: null;
 				const verdictOf = (id: string) => {
 					const v = verdicts?.get(id);
 					return v?.forPendingShip ? v.status : 'none';
 				};
-				if (fraud_review) waiting = waiting.filter((p) => verdictOf(p.id) === fraud_review);
+				if (fraud_review) waiting = waiting.filter((w) => verdictOf(w.project.id) === fraud_review);
 				const page = waiting.slice(offset, offset + limit);
-				const actors = await resolveActorIds([...new Set(page.map((p) => p.authorId))]);
-				const fraudReviewer = isFraudQueueReviewer(membership);
+				const heldOnPage = page.flatMap((w) => {
+					const h = heldShips.get(w.ship.id);
+					return h ? [h] : [];
+				});
+				const actors = await resolveActorIds([
+					...new Set([
+						...page.map((w) => w.project.authorId),
+						...heldOnPage.map((h) => h.reviewerId)
+					])
+				]);
 				return jsonResult({
 					total: waiting.length,
 					offset,
-					rows: page.map((p) => {
-						const ship = pendingShipOf(p, queue)!;
-						const heldIn = heldShips.get(ship.id);
+					rows: page.map(({ project: p, ship }) => {
+						const h = heldShips.get(ship.id);
 						return {
 							projectId: p.id,
 							title: clip(p.title, 80),
@@ -163,6 +209,7 @@ export function createMcpServer(ctx: McpContext): McpServer {
 							hoursClaimed: ship.hoursSubmitted,
 							submittedAt: ship.submittedAt.slice(0, 16),
 							ship: p.ships.indexOf(ship) + 1,
+							shipStatus: ship.status,
 							tags: p.tags?.map((t) => t.label),
 							...(verdicts
 								? {
@@ -172,9 +219,21 @@ export function createMcpServer(ctx: McpContext): McpServer {
 											: {})
 									}
 								: {}),
-							...(heldIn && (heldIn !== FRAUD_QUEUE || fraudReviewer)
-								? { held: heldIn === FRAUD_QUEUE ? 'in fraud review' : 'approval awaiting HQ' }
-								: {})
+							...(h
+								? {
+										awaitingHq: {
+											heldIn:
+												h.queue === FRAUD_QUEUE
+													? 'Sidekick fraud review queue'
+													: 'Sidekick HQ queue',
+											by: actors.get(h.reviewerId)?.name ?? h.reviewerId,
+											hoursAssigned: h.hoursAssigned,
+											at: h.createdAt.toISOString().slice(0, 16)
+										}
+									}
+								: ship.status === 'pending_hq'
+									? { awaitingHq: { heldIn: 'program (pending_hq)' } }
+									: {})
 						};
 					})
 				});
@@ -314,9 +373,15 @@ export function createMcpServer(ctx: McpContext): McpServer {
 			runTool('draft_review', ctx, async () => {
 				const subject = await loadSubject(ctx, program_id, project_id, 'canCreateReviews');
 				const ship = subject.pendingShip;
-				if (!ship || ship.status !== 'pending') {
+				if (!ship) {
+					throw new ToolError('This project has no pending ship, so there is nothing to draft.');
+				}
+				const heldForShip = await db.pendingApproval.count({
+					where: { programId: program_id, shipId: ship.id, status: 'pending' }
+				});
+				if (ship.status !== 'pending' || heldForShip > 0) {
 					throw new ToolError(
-						'This project has no ship awaiting review, so there is nothing to draft.'
+						'The pending ship has an approval awaiting HQ authorization. Drafts are for ships awaiting a first review; HQ authorizes, edits or sends back that approval from the review page.'
 					);
 				}
 				if (action === 'approve') {
