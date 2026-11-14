@@ -128,11 +128,13 @@ export async function buildCaseFile(ctx: McpContext, subject: Subject) {
 		'unavailable' in unified
 			? unified
 			: unified.map((r) => {
+					// An empty URL matches nothing: '' === '' would claim every row without one.
 					const repoMatches =
+						!!normalizeUrl(project.codeUrl) &&
 						normalizeUrl(r.fields['Code URL'] ?? '') === normalizeUrl(project.codeUrl);
 					const demoMatches =
-						!!project.demoUrl &&
-						normalizeUrl(r.fields['Playable URL'] ?? '') === normalizeUrl(project.demoUrl);
+						!!normalizeUrl(project.demoUrl ?? '') &&
+						normalizeUrl(r.fields['Playable URL'] ?? '') === normalizeUrl(project.demoUrl ?? '');
 					const justification = r.fields['Override Hours Spent Justification']?.trim();
 					return {
 						program:
@@ -423,13 +425,13 @@ export function fitCaseFile<T extends object>(caseFile: T, limit: number): T {
 			return `all but the last 5 of ${reviews.length} automated reviews (get_timeline has them)`;
 		},
 		() => {
-			const failing = cf.checks?.failing;
-			if (!Array.isArray(failing) || failing.length === 0) return null;
+			const failing = (cf.checks?.failing ?? []) as Json[];
+			if (!failing.some((c) => c.summary?.length > 150)) return null;
 			for (const c of failing) c.summary = clip(c.summary, 150);
 			return 'failing check summaries, to 150 characters';
 		},
 		() => {
-			const rows = unified()?.filter((r) => r.justification);
+			const rows = unified()?.filter((r) => r.justification?.length > 150);
 			if (!rows?.length) return null;
 			for (const r of rows) r.justification = clip(r.justification, 150);
 			return 'Unified YSWS DB justifications, to 150 characters';
@@ -454,11 +456,66 @@ export function fitCaseFile<T extends object>(caseFile: T, limit: number): T {
 		}
 	];
 	for (const step of steps) {
+		if (size(cf) <= limit) break;
 		const what = step();
 		if (!what) continue;
 		trimmed.push(what);
 		cf.trimmedToFit = trimmed;
-		if (size(cf) <= limit) break;
+	}
+	// Still over: something none of the steps expect is large. Halve the largest list (or
+	// clip the longest text) anywhere in the file until it fits, and name what was cut.
+	for (let guard = 0; guard < 60 && size(cf) > limit; guard++) {
+		const biggest = largestPart(cf);
+		if (!biggest) break;
+		const { parent, key, path, value } = biggest;
+		if (Array.isArray(value)) {
+			parent[key] = value.slice(0, Math.floor(value.length / 2));
+			trimmed.push(`${path}: kept ${parent[key].length} of ${value.length}`);
+		} else {
+			parent[key] = clip(value, Math.floor(value.length / 2));
+			trimmed.push(`${path}: clipped to ${Math.floor(value.length / 2)} characters`);
+		}
+		cf.trimmedToFit = trimmed;
 	}
 	return cf as T;
+}
+
+/** The largest list with more than one item, or the longest string, in a JSON tree. */
+function largestPart(root: Json) {
+	let best: {
+		parent: Json;
+		key: string | number;
+		path: string;
+		value: unknown[] | string;
+		size: number;
+	} | null = null;
+	const walk = (node: unknown, path: string) => {
+		if (!node || typeof node !== 'object') return;
+		for (const [k, v] of Object.entries(node)) {
+			if (k === 'trimmedToFit') continue;
+			const key = Array.isArray(node) ? Number(k) : k;
+			const childPath = Array.isArray(node) ? `${path}[${k}]` : path ? `${path}.${k}` : k;
+			const shrinkable =
+				(Array.isArray(v) && v.length > 1) || (typeof v === 'string' && v.length > 200);
+			if (shrinkable) {
+				const n = JSON.stringify(v).length;
+				if (!best || n > best.size)
+					best = {
+						parent: node as Json,
+						key,
+						path: childPath,
+						value: v as unknown[] | string,
+						size: n
+					};
+			}
+			walk(v, childPath);
+		}
+	};
+	walk(root, '');
+	return best as {
+		parent: Json;
+		key: string | number;
+		path: string;
+		value: unknown[] | string;
+	} | null;
 }
