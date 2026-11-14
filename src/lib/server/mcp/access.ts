@@ -56,7 +56,7 @@ export function hours(seconds: number): number {
 // Every answer shares the agent's context window with the rest of its work,
 // so no tool may hand back more than this, however large the record behind
 // it is. Past it the answer is withheld and the agent is told to narrow it.
-const RESPONSE_LIMIT = 48_000;
+export const RESPONSE_LIMIT = 48_000;
 
 export function jsonResult(value: unknown): CallToolResult {
 	const text = JSON.stringify(value, null, 1);

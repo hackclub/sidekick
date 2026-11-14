@@ -195,7 +195,7 @@ export async function buildCaseFile(ctx: McpContext, subject: Subject) {
 						source: 'Sidekick',
 						name: c.check.description,
 						severity: c.check.severity,
-						summary: c.result.summary
+						summary: clip(c.result.summary, 600)
 					})),
 				...programChecks
 					.filter((c) => c.status !== 'pass')
@@ -204,7 +204,7 @@ export async function buildCaseFile(ctx: McpContext, subject: Subject) {
 						name: c.name,
 						status: c.status,
 						severity: c.severity ?? 'fail',
-						summary: c.summary ?? null
+						summary: clip(c.summary, 600)
 					}))
 			],
 			passing:
@@ -372,7 +372,7 @@ export async function buildCaseFile(ctx: McpContext, subject: Subject) {
 				: 'none yet',
 			automatedReviews: systemEvents.map(({ e, index }) =>
 				e.type === 'system'
-					? `#${index} ${e.source.name}: ${e.summary} (${e.tone ?? 'neutral'})`
+					? `#${index} ${e.source.name}: ${clip(e.summary, 300)} (${e.tone ?? 'neutral'})`
 					: ''
 			)
 		},
@@ -384,4 +384,81 @@ export async function buildCaseFile(ctx: McpContext, subject: Subject) {
 				}
 			: null
 	};
+}
+
+// The case file is plain JSON by now; trimming walks it without its build-time types.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Json = Record<string, any>;
+
+/**
+ * Brings a case file under the MCP's answer limit, so a project with a long
+ * history still gets one rather than an error. Trims the least useful parts
+ * first, one step at a time, and says what it trimmed in `trimmedToFit`.
+ */
+export function fitCaseFile<T extends object>(caseFile: T, limit: number): T {
+	const size = (v: unknown) => JSON.stringify(v, null, 1).length;
+	if (size(caseFile) <= limit) return caseFile;
+	const cf: Json = structuredClone(caseFile);
+	const trimmed: string[] = [];
+	const unified = () => (Array.isArray(cf.unifiedYswsDb) ? (cf.unifiedYswsDb as Json[]) : null);
+	const steps: Array<() => string | null> = [
+		() => {
+			// Rows that share only a URL prefix (the author's other repos) are context, not matches.
+			const rows = unified()?.filter((r) => !r.matchedOn?.length && r.justification);
+			if (!rows?.length) return null;
+			for (const r of rows) r.justification = null;
+			return 'justifications of Unified YSWS DB rows that match neither URL';
+		},
+		() => {
+			const rows = unified();
+			const loose = rows?.filter((r) => !r.matchedOn?.length) ?? [];
+			if (!rows || loose.length === 0) return null;
+			cf.unifiedYswsDb = rows.filter((r) => r.matchedOn?.length);
+			return `${loose.length} Unified YSWS DB rows that match neither the code URL nor the demo URL`;
+		},
+		() => {
+			const reviews = cf.history?.automatedReviews;
+			if (!Array.isArray(reviews) || reviews.length <= 5) return null;
+			cf.history.automatedReviews = reviews.slice(-5);
+			return `all but the last 5 of ${reviews.length} automated reviews (get_timeline has them)`;
+		},
+		() => {
+			const failing = cf.checks?.failing;
+			if (!Array.isArray(failing) || failing.length === 0) return null;
+			for (const c of failing) c.summary = clip(c.summary, 150);
+			return 'failing check summaries, to 150 characters';
+		},
+		() => {
+			const rows = unified()?.filter((r) => r.justification);
+			if (!rows?.length) return null;
+			for (const r of rows) r.justification = clip(r.justification, 150);
+			return 'Unified YSWS DB justifications, to 150 characters';
+		},
+		() => {
+			const other = cf.author?.otherProjects;
+			if (!Array.isArray(other) || other.length <= 5) return null;
+			cf.author.otherProjects = other.slice(0, 5);
+			return `the author's other projects, to 5 of ${other.length}`;
+		},
+		() => {
+			if (!Array.isArray(cf.lapse) || cf.lapse.length <= 10) return null;
+			const n = cf.lapse.length;
+			cf.lapse = cf.lapse.slice(0, 10);
+			return `Lapse timelapses, to 10 of ${n}`;
+		},
+		() => {
+			const held = cf.claim?.awaitingHq;
+			if (!held?.justification || held.justification.length <= 800) return null;
+			held.justification = clip(held.justification, 800);
+			return 'the held approval justification, to 800 characters (get_timeline has it in full)';
+		}
+	];
+	for (const step of steps) {
+		const what = step();
+		if (!what) continue;
+		trimmed.push(what);
+		cf.trimmedToFit = trimmed;
+		if (size(cf) <= limit) break;
+	}
+	return cf as T;
 }
