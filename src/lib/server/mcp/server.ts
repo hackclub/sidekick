@@ -8,13 +8,14 @@ import {
 	clip,
 	jsonResult,
 	programAccess,
+	RESPONSE_LIMIT,
 	reviewUrl,
 	runTool,
 	ToolError,
 	type McpContext
 } from './access.js';
 import { authorTimezone, loadSubject } from './subject.js';
-import { buildCaseFile } from './case-file.js';
+import { buildCaseFile, fitCaseFile } from './case-file.js';
 import { loadTimeline, timelineEntries, timelineEvent } from './timeline.js';
 import { hackatimeDay, hackatimeOverview } from './hackatime.js';
 import { pastReviews } from './precedents.js';
@@ -251,7 +252,7 @@ export function createMcpServer(ctx: McpContext): McpServer {
 		({ program_id, project_id }) =>
 			runTool('get_project', ctx, async () => {
 				const subject = await loadSubject(ctx, program_id, project_id);
-				return jsonResult(await buildCaseFile(ctx, subject));
+				return jsonResult(fitCaseFile(await buildCaseFile(ctx, subject), RESPONSE_LIMIT));
 			})
 	);
 
