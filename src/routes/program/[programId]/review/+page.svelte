@@ -38,7 +38,7 @@
 	}
 
 	const projectMap = $derived(
-		Object.fromEntries(data.projects.map((p) => [p.id, p]))
+		Object.fromEntries([...data.heldProjects, ...data.projects].map((p) => [p.id, p]))
 	);
 
 	// Filtering & sorting (client-side — the full queue is already loaded)

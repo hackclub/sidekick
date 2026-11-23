@@ -94,6 +94,12 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	const hqProjects = hqProjectsResult.projects.filter(
 		(p) => p.ships.some((s) => s.status === 'pending_hq' && !heldShipIds.has(s.id))
 	);
+	// Those held rows still need their project's title, screenshot and tags,
+	// and a mirrored one's project is only in the pending_hq list, which the
+	// filter above just took it out of.
+	const listedApprovals = fraudReviewer ? allPendingApprovals : pendingApprovals;
+	const heldProjectIds = new Set(listedApprovals.map((pa) => pa.projectId));
+	const heldProjects = hqProjectsResult.projects.filter((p) => heldProjectIds.has(p.id));
 	// Held ships the program still counts as pending (it was never told of
 	// them), so the queue's count can leave them out; mirrored ones are
 	// pending_hq upstream and were never in that count.
@@ -179,6 +185,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 	return {
 		projects: projectsResult.projects.map(visible),
 		hqProjects: hqProjects.map(visible),
+		heldProjects: heldProjects.map(visible),
 		actors: actorsObj,
 		nextCursor: null,
 		totalCount: projectsResult.totalCount,
