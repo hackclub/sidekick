@@ -6,15 +6,17 @@ import type { Cookies } from '@sveltejs/kit';
 const log = createLogger('auth');
 
 const SESSION_COOKIE = 'sidekick_session';
+export const LOGIN_STATE_COOKIE = 'sidekick_login_state';
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 
-export function getHcaAuthorizationUrl(): string {
+export function getHcaAuthorizationUrl(state: string): string {
 	log.trace('building HCA authorization URL');
 	const params = new URLSearchParams({
 		client_id: env.HCA_CLIENT_ID!,
 		redirect_uri: env.HCA_REDIRECT_URI!,
 		response_type: 'code',
-		scope: 'openid profile email slack_id'
+		scope: 'openid profile email slack_id',
+		state
 	});
 	return `https://auth.hackclub.com/oauth/authorize?${params}`;
 }

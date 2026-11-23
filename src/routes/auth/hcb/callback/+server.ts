@@ -1,4 +1,5 @@
 import { redirect, error } from '@sveltejs/kit';
+import { safeReturnPath } from '$lib/server/oauth-state.js';
 import { exchangeHcbCode } from '$lib/server/integrations/hcb.js';
 import { encrypt } from '$lib/server/crypto.js';
 import { db } from '$lib/server/db.js';
@@ -24,13 +25,21 @@ export const GET: RequestHandler = async ({ url, cookies, locals }) => {
 
 	cookies.delete('hcb_oauth_state', { path: '/' });
 
-	let returnUrl = '/';
+	let payload: { returnUrl?: string; userId?: string };
 	try {
-		const payload = JSON.parse(Buffer.from(state, 'base64url').toString());
-		returnUrl = payload.returnUrl || '/';
+		payload = JSON.parse(Buffer.from(state, 'base64url').toString());
 	} catch {
-		// Fall back to /
+		throw error(400, 'Invalid OAuth state');
 	}
+
+	// The HCB account goes to whoever started the flow. If the session changed
+	// hands in between, storing the tokens would give them to somebody else.
+	if (payload.userId !== locals.user.id) {
+		log.warn('oauth state belongs to another user', { userId: locals.user.id });
+		throw error(400, 'Invalid OAuth state');
+	}
+
+	const returnUrl = safeReturnPath(payload.returnUrl);
 
 	const tExchange = log.time('hcb token exchange');
 	const tokens = await exchangeHcbCode(code);

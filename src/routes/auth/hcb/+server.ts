@@ -1,5 +1,6 @@
 import { redirect, error } from '@sveltejs/kit';
 import { randomBytes } from 'crypto';
+import { safeReturnPath } from '$lib/server/oauth-state.js';
 import { getHcbAuthorizationUrl } from '$lib/server/integrations/hcb.js';
 import { createLogger } from '$lib/server/logger.js';
 import type { RequestHandler } from './$types.js';
@@ -9,11 +10,11 @@ const log = createLogger('auth:hcb');
 export const GET: RequestHandler = async ({ url, cookies, locals }) => {
 	if (!locals.user) throw error(401, 'Not authenticated');
 
-	const returnUrl = url.searchParams.get('returnUrl') || '/';
+	const returnUrl = safeReturnPath(url.searchParams.get('returnUrl'));
 	log.info('hcb oauth initiated', { userId: locals.user.id, returnUrl });
 
 	const nonce = randomBytes(16).toString('hex');
-	const state = Buffer.from(JSON.stringify({ returnUrl, nonce })).toString('base64url');
+	const state = Buffer.from(JSON.stringify({ returnUrl, nonce, userId: locals.user.id })).toString('base64url');
 
 	cookies.set('hcb_oauth_state', state, {
 		path: '/',

@@ -1,5 +1,11 @@
 import { redirect, error } from '@sveltejs/kit';
-import { exchangeCodeForTokens, fetchHcaUserInfo, createSession } from '$lib/server/auth.js';
+import {
+	exchangeCodeForTokens,
+	fetchHcaUserInfo,
+	createSession,
+	LOGIN_STATE_COOKIE
+} from '$lib/server/auth.js';
+import { consumeOauthState } from '$lib/server/oauth-state.js';
 import { getSlackUserProfile } from '$lib/server/integrations/slack.js';
 import { db } from '$lib/server/db.js';
 import { createLogger } from '$lib/server/logger.js';
@@ -13,6 +19,13 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 	const code = url.searchParams.get('code');
 	if (!code) {
 		throw error(400, 'Missing authorization code');
+	}
+
+	// Before the code is spent: a callback this browser did not ask for must not
+	// sign it in as whoever the code belongs to.
+	if (!consumeOauthState(cookies, LOGIN_STATE_COOKIE, url.searchParams.get('state'))) {
+		log.warn('login state mismatch');
+		throw error(400, 'This sign-in link expired or was started elsewhere. Please sign in again.');
 	}
 
 	const tTokens = log.time('token exchange');
