@@ -87,22 +87,22 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 
 	// Filter to projects that actually have pending_hq ships (endpoints that
 	// don't support the status may return all projects).
-	// An upstream pending_hq approval that Sidekick also holds (sent to the
-	// fraud queue, or mirrored by a program with mirrorHeldApprovals) is listed
-	// under its held row instead.
+	// An upstream pending_hq approval that Sidekick also holds (an authorize
+	// that sent the approval and then failed) is listed under its held row
+	// instead.
 	const heldShipIds = new Set(allPendingApprovals.map((pa) => pa.shipId));
 	const hqProjects = hqProjectsResult.projects.filter(
 		(p) => p.ships.some((s) => s.status === 'pending_hq' && !heldShipIds.has(s.id))
 	);
 	// Those held rows still need their project's title, screenshot and tags,
-	// and a mirrored one's project is only in the pending_hq list, which the
-	// filter above just took it out of.
+	// and such a project is only in the pending_hq list, which the filter above
+	// just took it out of.
 	const listedApprovals = fraudReviewer ? allPendingApprovals : pendingApprovals;
 	const heldProjectIds = new Set(listedApprovals.map((pa) => pa.projectId));
 	const heldProjects = hqProjectsResult.projects.filter((p) => heldProjectIds.has(p.id));
 	// Held ships the program still counts as pending (it was never told of
-	// them), so the queue's count can leave them out; mirrored ones are
-	// pending_hq upstream and were never in that count.
+	// them), so the queue's count can leave them out; ones already parked
+	// upstream are pending_hq there and were never in that count.
 	const queuedShipIds = new Set(
 		projectsResult.projects.flatMap((p) => p.ships.filter((s) => s.status === 'pending').map((s) => s.id))
 	);

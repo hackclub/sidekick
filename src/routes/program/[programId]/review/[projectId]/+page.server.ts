@@ -14,7 +14,6 @@ import { CHECKS } from '$lib/server/checks/registry.js';
 import { enqueueChecks } from '$lib/server/queue/checks.js';
 import { enqueueLapseAfkAnalyses } from '$lib/server/queue/lapse-afk.js';
 import { FRAUD_QUEUE, isRoutedToFraudQueue, isFraudQueueReviewer } from '$lib/server/experiments/fraud-queue.js';
-import { mirrorHeldApproval } from '$lib/server/held-approvals.js';
 import { loadFraudReviewState } from '$lib/server/fraud-review.js';
 import { createLogger } from '$lib/server/logger.js';
 import type { CheckContext } from '$lib/server/checks/types.js';
@@ -444,9 +443,9 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		}
 	}
 
-	// An upstream pending_hq approval that Sidekick also holds (sent to the
-	// fraud queue, or mirrored by a program with mirrorHeldApprovals) is
-	// represented by its held row, so the upstream copy is dropped below.
+	// An upstream pending_hq approval that Sidekick also holds (an authorize
+	// that sent the approval and then failed) is represented by its held row,
+	// so the upstream copy is dropped below.
 	const heldShipIds = new Set(pendingApprovals.filter((pa) => pa.status === 'pending').map((pa) => pa.shipId));
 
 	const mergedTimeline = [...timeline.events]
@@ -697,13 +696,16 @@ export const actions: Actions = {
 
 		const reviewerId = user.slackId || user.hcaId;
 
-		// Non-HQ approvals go to pending queue instead of master endpoint. So do
+		// Unless the program holds its own approvals, Sidekick holds non-HQ
+		// approvals instead of sending them to the master endpoint. So do
 		// approvals by users routed into the fraud-review experiment, which land
-		// in the separate "fraud" queue.
-		const queue = isRoutedToFraudQueue(membership) ? FRAUD_QUEUE : undefined;
-		if (action === 'approve' && (!membership.canAuthorizeReviews || queue)) {
+		// in the separate "fraud" queue; the experiment needs Sidekick to be the
+		// holder.
+		const queue =
+			!program.programHoldsApprovals && isRoutedToFraudQueue(membership) ? FRAUD_QUEUE : undefined;
+		if (action === 'approve' && !program.programHoldsApprovals && (!membership.canAuthorizeReviews || queue)) {
 			log.info('queuing pending approval', { shipId, projectId: params.projectId, queue: queue ?? 'hq' });
-			const held = await db.pendingApproval.upsert({
+			await db.pendingApproval.upsert({
 				where: {
 					programId_shipId_reviewerId: {
 						programId: params.programId,
@@ -749,10 +751,6 @@ export const actions: Actions = {
 				}
 			});
 
-			if (program.mirrorHeldApprovals) {
-				await mirrorHeldApproval(new ProtocolClient(program.masterEndpoint, program.secretKey), held);
-			}
-
 			await discardAgentDraft(params.programId, shipId, user.id);
 			log.info('review queued for approval', { shipId, projectId: params.projectId, queue: queue ?? 'hq' });
 			return { success: true };
@@ -765,8 +763,10 @@ export const actions: Actions = {
 
 		switch (action) {
 			case 'approve':
-				// Only reachable for HQ users not routed to the fraud queue — everyone
-				// else's approvals were queued above.
+				// HQ users not routed to the fraud queue, or anyone at all when the
+				// program holds its own approvals: everyone else's were held above.
+				// The program parks an approval sent with isHq: false until HQ
+				// authorizes it, which keeps a routed member's sign-off unpaid too.
 				input = {
 					...base,
 					action: 'approve',
@@ -774,7 +774,7 @@ export const actions: Actions = {
 					rewardedHoursOverride,
 					feedbackMessage: formData.get('feedbackMessage') as string,
 					justification: formData.get('justification') as string,
-					isHq: membership.canAuthorizeReviews,
+					isHq: membership.canAuthorizeReviews && !isRoutedToFraudQueue(membership),
 					fields
 				};
 				break;

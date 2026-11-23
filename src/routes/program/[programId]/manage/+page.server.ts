@@ -140,7 +140,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			description: program.description,
 			masterEndpoint: program.masterEndpoint,
 			secretKey: program.secretKey,
-			mirrorHeldApprovals: program.mirrorHeldApprovals,
+			programHoldsApprovals: program.programHoldsApprovals,
 			hcbOrganizationId: program.hcbOrganizationId,
 			hcbOrganizationName: program.hcbOrganizationName,
 			hcbOrganizationSlug: program.hcbOrganizationSlug
@@ -275,17 +275,17 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const masterEndpoint = (formData.get('masterEndpoint') as string)?.trim();
 		const secretKey = (formData.get('secretKey') as string)?.trim();
-		const mirrorHeldApprovals = formData.get('mirrorHeldApprovals') === 'true';
+		const programHoldsApprovals = formData.get('programHoldsApprovals') === 'true';
 
 		if (!masterEndpoint || !secretKey) {
 			throw error(400, 'Master endpoint and secret key are required');
 		}
 
-		logger.info('updateApiConfig action', { programId: params.programId, masterEndpoint, mirrorHeldApprovals });
+		logger.info('updateApiConfig action', { programId: params.programId, masterEndpoint, programHoldsApprovals });
 
 		await db.program.update({
 			where: { id: params.programId },
-			data: { masterEndpoint, secretKey, mirrorHeldApprovals }
+			data: { masterEndpoint, secretKey, programHoldsApprovals }
 		});
 
 		return { success: true };

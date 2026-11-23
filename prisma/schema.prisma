@@ -73,10 +73,13 @@ model Program {
   description    String?
   masterEndpoint String
   secretKey      String
-  // Send held approvals upstream as parked (isHq: false) the moment they are
-  // made, so the program sees them as pending_hq. Only for programs with a
-  // two-stage flow: one that ignores isHq would finalize the approval.
-  mirrorHeldApprovals Boolean @default(false)
+  // Who holds an approval waiting on HQ: the program (it parks approvals sent
+  // with isHq: false and reports them as pending_hq) or, when off, Sidekick
+  // (a PendingApproval the program first hears of when it is authorized).
+  // Never both: two holders drift apart and the same ship gets reviewed twice.
+  // Only for programs with a two-stage flow: one that ignores isHq would
+  // finalize the approval. The column keeps its old name.
+  programHoldsApprovals Boolean @default(false) @map("mirrorHeldApprovals")
   isActive            Boolean  @default(true)
   hcbOrganizationId   String?
   hcbOrganizationName String?

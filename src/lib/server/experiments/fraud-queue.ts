@@ -7,10 +7,11 @@
 // reviewer keeps the upstream attribution, exactly like a community approval
 // authorized by HQ.
 //
-// The same applies when a routed member authorizes someone else's approval
-// (a community approval, or one already pending_hq upstream): instead of
-// going upstream it moves into the fraud queue, still credited to the
-// original reviewer.
+// The same applies when a routed member authorizes someone else's community
+// approval: instead of going upstream it moves into the fraud queue, still
+// credited to the original reviewer. The queue only exists where Sidekick
+// holds approvals; for a program with `programHoldsApprovals` a routed
+// member's approvals go upstream unauthorized and they cannot authorize.
 //
 // Both flags are per-membership and set from the program's manage page, so
 // the experiment is switched off per user by unticking "Route approvals to

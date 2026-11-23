@@ -30,10 +30,10 @@ function requireHqAuthorizer(membership: ProgramMembership) {
 	if (!membership.canAuthorizeReviews) throw error(403, 'Missing permission: canAuthorizeReviews');
 }
 
-// An upstream pending_hq approval that Sidekick also holds (sent to the fraud
-// queue, or mirrored by a program with mirrorHeldApprovals) is acted on through
-// its held row, which carries the queue and its permissions; the hq: shortcut
-// would authorize around them.
+// An upstream pending_hq approval that Sidekick also holds (an authorize that
+// sent the approval and then failed) is acted on through its held row, which
+// carries the queue and its permissions; the hq: shortcut would authorize
+// around them.
 async function requireNotHeld(programId: string, shipId: string) {
 	const held = await db.pendingApproval.findFirst({
 		where: { programId, shipId, status: 'pending' },
@@ -97,41 +97,10 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			const shipId = pendingApprovalId.slice(3);
 			await requireNotHeld(params.programId, shipId);
 
-			// Experiment: a routed authorizer's sign-off holds the upstream
-			// approval in the fraud queue instead of authorizing it. The ship
-			// stays pending_hq upstream until a fraud reviewer authorizes it.
+			// The program holds this approval, so Sidekick cannot move it into its
+			// own fraud queue, and a routed authorizer's sign-off must not skip it.
 			if (isRoutedToFraudQueue(membership)) {
-				if (typeof projectId !== 'string') throw error(400, 'projectId is required');
-				const timeline = await client.fetchProjectTimeline({ projectId });
-				const approval = timeline.events.findLast(
-					(e): e is Extract<typeof e, { type: 'approval' }> => e.type === 'approval' && e.shipId === shipId
-				);
-				if (!approval) throw error(404, 'Upstream approval not found');
-
-				const data = {
-					hoursAssigned: approval.hoursAssigned,
-					rewardedHoursOverride: approval.rewardedHoursOverride ?? null,
-					feedbackMessage: approval.feedbackMessage,
-					justification: approval.justification,
-					fields: approval.fields ?? undefined,
-					status: 'pending',
-					queue: FRAUD_QUEUE
-				};
-				const held = await db.pendingApproval.upsert({
-					where: {
-						programId_shipId_reviewerId: { programId: params.programId, shipId, reviewerId: approval.actorId }
-					},
-					create: { programId: params.programId, projectId, shipId, reviewerId: approval.actorId, ...data },
-					update: data
-				});
-				await auditSentToFraudQueue(params.programId, user.id, shipId, {
-					projectId,
-					originalReviewerId: approval.actorId,
-					pendingApprovalId: held.id
-				});
-
-				logger.info('HQ approval sent to fraud review', { shipId, pendingApprovalId: held.id });
-				return json({ success: true, queue: FRAUD_QUEUE });
+				throw error(403, 'Your sign-offs go through fraud review, which approvals this program holds itself do not support.');
 			}
 
 			const reviewerId = user.slackId || user.hcaId;
@@ -186,8 +155,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 			return json({ success: true, queue: FRAUD_QUEUE });
 		}
 
-		// A held approval already parked upstream (sent to the fraud queue from
-		// pending_hq, mirrored when it was made, or approved by an earlier
+		// A held approval already parked upstream (approved by an earlier
 		// authorize that failed on the authorize itself): sync any edits onto
 		// that approval rather than stacking a duplicate one. Otherwise a failed
 		// approve has to surface: swallowing it left the authorize below to fail
