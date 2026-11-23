@@ -14,10 +14,10 @@ import { CHECKS } from '$lib/server/checks/registry.js';
 import { enqueueChecks } from '$lib/server/queue/checks.js';
 import { enqueueLapseAfkAnalyses } from '$lib/server/queue/lapse-afk.js';
 import { FRAUD_QUEUE, isRoutedToFraudQueue, isFraudQueueReviewer } from '$lib/server/experiments/fraud-queue.js';
+import { discardReviewDraft, ReviewActionError, submitReview } from '$lib/server/review-actions.js';
 import { loadFraudReviewState } from '$lib/server/fraud-review.js';
 import { createLogger } from '$lib/server/logger.js';
 import type { CheckContext } from '$lib/server/checks/types.js';
-import type { SubmitReviewActionInput } from '$lib/server/protocol/types.js';
 import type { PageServerLoad, Actions } from './$types.js';
 
 const log = createLogger('page:review');
@@ -682,10 +682,12 @@ export const actions: Actions = {
 		});
 
 		const formData = await request.formData();
+		const text = (name: string) => (formData.get(name) as string | null) ?? undefined;
 		const action = formData.get('action') as string;
 		const shipId = formData.get('shipId') as string;
 		const fieldsRaw = formData.get('fields') as string | null;
 		const fields = fieldsRaw ? JSON.parse(fieldsRaw) as Record<string, string | number | boolean> : undefined;
+		const hoursRaw = text('hoursAssigned');
 		const rewardedOverrideRaw = formData.get('rewardedHoursOverride') as string | null;
 		const rewardedHoursOverride =
 			rewardedOverrideRaw != null && rewardedOverrideRaw !== '' && Number.isFinite(parseFloat(rewardedOverrideRaw))
@@ -694,161 +696,43 @@ export const actions: Actions = {
 
 		log.info('review action', { action, shipId, projectId: params.projectId, userId: user.id });
 
-		const reviewerId = user.slackId || user.hcaId;
-
-		// Unless the program holds its own approvals, Sidekick holds non-HQ
-		// approvals instead of sending them to the master endpoint. So do
-		// approvals by users routed into the fraud-review experiment, which land
-		// in the separate "fraud" queue; the experiment needs Sidekick to be the
-		// holder.
-		const queue =
-			!program.programHoldsApprovals && isRoutedToFraudQueue(membership) ? FRAUD_QUEUE : undefined;
-		if (action === 'approve' && !program.programHoldsApprovals && (!membership.canAuthorizeReviews || queue)) {
-			log.info('queuing pending approval', { shipId, projectId: params.projectId, queue: queue ?? 'hq' });
-			await db.pendingApproval.upsert({
-				where: {
-					programId_shipId_reviewerId: {
-						programId: params.programId,
-						shipId,
-						reviewerId
-					}
-				},
-				create: {
-					programId: params.programId,
+		try {
+			const outcome = await submitReview(
+				{ user, membership, program },
+				{
 					projectId: params.projectId,
 					shipId,
-					reviewerId,
-					hoursAssigned: parseFloat(formData.get('hoursAssigned') as string),
-					rewardedHoursOverride: rewardedHoursOverride ?? null,
-					feedbackMessage: formData.get('feedbackMessage') as string,
-					justification: formData.get('justification') as string,
-					fields: fields ?? undefined,
-					...(queue && { queue })
-				},
-				update: {
-					hoursAssigned: parseFloat(formData.get('hoursAssigned') as string),
-					rewardedHoursOverride: rewardedHoursOverride ?? null,
-					feedbackMessage: formData.get('feedbackMessage') as string,
-					justification: formData.get('justification') as string,
-					fields: fields ?? undefined,
-					...(queue && { queue })
-				}
-			});
-
-			await db.auditLog.create({
-				data: {
-					programId: params.programId,
-					userId: user.id,
-					action: 'review_pending_approve',
-					entityType: 'ship',
-					entityId: shipId,
-					metadata: {
-						projectId: params.projectId,
-						hoursAssigned: (formData.get('hoursAssigned') as string) || null,
-						rewardedHoursOverride: rewardedHoursOverride ?? null,
-						...(queue && { queue })
-					}
-				}
-			});
-
-			await discardAgentDraft(params.programId, shipId, user.id);
-			log.info('review queued for approval', { shipId, projectId: params.projectId, queue: queue ?? 'hq' });
-			return { success: true };
-		}
-
-		const client = new ProtocolClient(program.masterEndpoint, program.secretKey);
-
-		let input: SubmitReviewActionInput;
-		const base = { shipId, reviewerId };
-
-		switch (action) {
-			case 'approve':
-				// HQ users not routed to the fraud queue, or anyone at all when the
-				// program holds its own approvals: everyone else's were held above.
-				// The program parks an approval sent with isHq: false until HQ
-				// authorizes it, which keeps a routed member's sign-off unpaid too.
-				input = {
-					...base,
-					action: 'approve',
-					hoursAssigned: parseFloat(formData.get('hoursAssigned') as string),
+					action,
+					hoursAssigned: hoursRaw !== undefined ? parseFloat(hoursRaw) : undefined,
 					rewardedHoursOverride,
-					feedbackMessage: formData.get('feedbackMessage') as string,
-					justification: formData.get('justification') as string,
-					isHq: membership.canAuthorizeReviews && !isRoutedToFraudQueue(membership),
+					feedbackMessage: text('feedbackMessage'),
+					justification: text('justification'),
+					internalMessage: text('internalMessage'),
+					commentText: text('commentText'),
 					fields
-				};
-				break;
-			case 'reject':
-				input = {
-					...base,
-					action: 'reject',
-					feedbackMessage: formData.get('feedbackMessage') as string,
-					internalMessage: (formData.get('internalMessage') as string) || undefined,
-					isHq: membership.canAuthorizeReviews,
-					fields
-				};
-				break;
-			case 'comment':
-			case 'internal_comment': {
-				const commentText = (formData.get('commentText') as string | null) ?? '';
-				if (!commentText.trim()) throw error(400, 'Comment text is required');
-				input = {
-					...base,
-					action: action as 'comment' | 'internal_comment',
-					commentText
-				};
-				break;
-			}
-			default:
-				throw error(400, `Unknown action: ${action}`);
-		}
-
-		let result;
-		try {
-			result = await client.submitReviewAction(input);
+				}
+			);
+			const success = outcome.kind === 'held' || outcome.success;
+			log.info('review action complete', { action, shipId, success, outcome: outcome.kind });
+			return { success };
 		} catch (e) {
 			if (e instanceof ProtocolError) {
 				log.error('protocol error during review action', e, { action, shipId });
 				return fail(502, { protocolError: `Upstream error: ${e.displayMessage}` });
 			}
+			if (e instanceof ReviewActionError) {
+				log.warn('review action refused', { action, shipId, status: e.status, message: e.message });
+				return fail(e.status, { protocolError: e.message });
+			}
 			throw e;
 		}
-
-		await db.auditLog.create({
-			data: {
-				programId: params.programId,
-				userId: user.id,
-				action: `review_${action}`,
-				entityType: 'ship',
-				entityId: shipId,
-				metadata: {
-					projectId: params.projectId,
-					hoursAssigned: (formData.get('hoursAssigned') as string) || null,
-					rewardedHoursOverride: rewardedHoursOverride ?? null
-				}
-			}
-		});
-
-		if (result.success && (action === 'approve' || action === 'reject')) {
-			await discardAgentDraft(params.programId, shipId, user.id);
-		}
-
-		log.info('review action complete', { action, shipId, success: result.success });
-
-		return { success: result.success };
 	},
 
 	discardAgentDraft: async ({ request, params, locals }) => {
 		const user = locals.user;
 		if (!user) throw error(401);
 		const shipId = (await request.formData()).get('shipId') as string;
-		await discardAgentDraft(params.programId, shipId, user.id);
+		await discardReviewDraft(params.programId, shipId, user.id);
 		return { success: true };
 	}
 };
-
-// A draft is only ever its own reviewer's, so removing it needs no permission
-// beyond being that reviewer.
-async function discardAgentDraft(programId: string, shipId: string, userId: string) {
-	await db.reviewDraft.deleteMany({ where: { programId, shipId, userId } });
-}

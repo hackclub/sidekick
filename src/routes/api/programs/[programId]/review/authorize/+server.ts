@@ -1,424 +1,120 @@
 import { json, error } from '@sveltejs/kit';
 import { db } from '$lib/server/db.js';
 import { requirePermission } from '$lib/server/rbac.js';
-import { ProtocolClient, ProtocolError } from '$lib/server/protocol/client.js';
+import { ProtocolError } from '$lib/server/protocol/client.js';
 import { createLogger } from '$lib/server/logger.js';
-import { FRAUD_QUEUE, isFraudQueueReviewer, isRoutedToFraudQueue } from '$lib/server/experiments/fraud-queue.js';
-import { isPendingHqUpstream } from '$lib/server/held-approvals.js';
+import { FRAUD_QUEUE } from '$lib/server/experiments/fraud-queue.js';
+import {
+	authorizeApproval,
+	editAwaitingApproval,
+	parseProtocolError,
+	ReviewActionError,
+	sendBackApproval,
+	type ReviewActor
+} from '$lib/server/review-actions.js';
+import type { RequestEvent } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import type { ProgramMembership } from '@prisma/client';
 
 const logger = createLogger('api:review:authorize');
 
-// Some endpoints (e.g. Beest's audit approve) require these fields, so we
-// always send something meaningful even when the authorizer typed nothing.
-const DEFAULT_AUTHORIZE_JUSTIFICATION = 'Approved via Sidekick HQ authorization.';
-const DEFAULT_DEAUTHORIZE_MESSAGE =
-	'Your approval was sent back by HQ for another look. Please re-review this ship.';
+// The review page's actions on an approval awaiting HQ. The work, and the
+// permission checks past canViewReviews, live in $lib/server/review-actions
+// so the MCP does exactly the same; this only reads the request and shapes
+// the answer.
 
-// Approvals held in the fraud queue may only be acted on by fraud reviewers
-// (who need not be HQ authorizers); everything else needs canAuthorizeReviews.
-function requireQueueAccess(membership: ProgramMembership, pending: { queue: string }) {
-	if (pending.queue === FRAUD_QUEUE) {
-		if (!isFraudQueueReviewer(membership)) throw error(403, 'This approval is awaiting fraud review.');
-		return;
-	}
-	requireHqAuthorizer(membership);
-}
-
-function requireHqAuthorizer(membership: ProgramMembership) {
-	if (!membership.canAuthorizeReviews) throw error(403, 'Missing permission: canAuthorizeReviews');
-}
-
-// An upstream pending_hq approval that Sidekick also holds (an authorize that
-// sent the approval and then failed) is acted on through its held row, which
-// carries the queue and its permissions; the hq: shortcut would authorize
-// around them.
-async function requireNotHeld(programId: string, shipId: string) {
-	const held = await db.pendingApproval.findFirst({
-		where: { programId, shipId, status: 'pending' },
-		select: { queue: true }
-	});
-	if (!held) return;
-	if (held.queue === FRAUD_QUEUE) throw error(403, 'This approval is awaiting fraud review.');
-	throw error(409, 'This approval is held in Sidekick; authorize or discard the held approval instead.');
-}
-
-async function auditSentToFraudQueue(
-	programId: string,
-	userId: string,
-	shipId: string,
-	metadata: { projectId: string; originalReviewerId: string; pendingApprovalId: string }
-) {
-	await db.auditLog.create({
-		data: {
-			programId,
-			userId,
-			action: 'review_send_to_fraud_queue',
-			entityType: 'ship',
-			entityId: shipId,
-			metadata: { ...metadata, queue: FRAUD_QUEUE }
-		}
-	});
-}
-
-function parseProtocolError(e: ProtocolError): { status: number; body: { error: string; message: string } } {
-	try {
-		const parsed = JSON.parse(e.body);
-		return { status: e.status, body: { error: parsed.error ?? 'PROTOCOL_ERROR', message: parsed.message ?? e.body } };
-	} catch {
-		return { status: e.status, body: { error: 'PROTOCOL_ERROR', message: e.body } };
-	}
-}
-
-export const POST: RequestHandler = async ({ params, request, locals }) => {
+async function actorFor({ params, locals }: RequestEvent): Promise<ReviewActor> {
 	const user = locals.user;
 	if (!user) throw error(401);
-
-	const membership = await requirePermission(user.id, params.programId, 'canViewReviews', {
+	const programId = params.programId!;
+	const membership = await requirePermission(user.id, programId, 'canViewReviews', {
 		isSuperAdmin: user.isSuperAdmin
 	});
+	const program = await db.program.findUniqueOrThrow({ where: { id: programId } });
+	return { user, membership, program };
+}
 
-	const { pendingApprovalId, justification: rawJustification, projectId } = await request.json();
+// A refusal from the shared actions, or the program's own error, as the page
+// reads it: `message` is shown to the reviewer.
+function answerFailure(e: unknown, what: string, pendingApprovalId: string): Response {
+	if (e instanceof ReviewActionError) {
+		if (!e.code) throw error(e.status, e.message);
+		return json({ error: e.code, message: e.message }, { status: e.status });
+	}
+	if (e instanceof ProtocolError) {
+		const { status, body } = parseProtocolError(e);
+		logger.warn(`${what} protocol error`, { pendingApprovalId, status, error: body.message });
+		return json(body, { status });
+	}
+	throw e;
+}
+
+export const POST: RequestHandler = async (event) => {
+	const actor = await actorFor(event);
+	const { pendingApprovalId, justification, projectId } = await event.request.json();
 	if (!pendingApprovalId) throw error(400, 'pendingApprovalId is required');
-	const justification =
-		(typeof rawJustification === 'string' && rawJustification.trim()) || DEFAULT_AUTHORIZE_JUSTIFICATION;
 
-	logger.info('POST authorize', { programId: params.programId, pendingApprovalId });
-
-	const program = await db.program.findUniqueOrThrow({
-		where: { id: params.programId }
-	});
-	const client = new ProtocolClient(program.masterEndpoint, program.secretKey);
+	logger.info('POST authorize', { programId: event.params.programId, pendingApprovalId });
 
 	try {
-		if (pendingApprovalId.startsWith('hq:')) {
-			requireHqAuthorizer(membership);
-			const shipId = pendingApprovalId.slice(3);
-			await requireNotHeld(params.programId, shipId);
-
-			// The program holds this approval, so Sidekick cannot move it into its
-			// own fraud queue, and a routed authorizer's sign-off must not skip it.
-			if (isRoutedToFraudQueue(membership)) {
-				throw error(403, 'Your sign-offs go through fraud review, which approvals this program holds itself do not support.');
-			}
-
-			const reviewerId = user.slackId || user.hcaId;
-			logger.debug('Direct HQ authorization', { shipId, reviewerId });
-			const result = await client.submitReviewAction({
-				shipId,
-				reviewerId,
-				action: 'authorize',
-				justification
-			});
-
-			await db.auditLog.create({
-				data: {
-					programId: params.programId,
-					userId: user.id,
-					action: 'review_authorize',
-					entityType: 'ship',
-					entityId: shipId,
-					metadata: {
-						pendingApprovalId,
-						...(typeof projectId === 'string' && { projectId })
-					}
-				}
-			});
-
-			logger.info('HQ authorization completed', { shipId, success: result.success });
-			return json({ success: result.success });
-		}
-
-		const pending = await db.pendingApproval.findUnique({
-			where: { id: pendingApprovalId }
+		const outcome = await authorizeApproval(actor, {
+			pendingApprovalId,
+			projectId: typeof projectId === 'string' ? projectId : undefined,
+			justification: typeof justification === 'string' ? justification : undefined
 		});
-		if (!pending || pending.programId !== params.programId) {
-			throw error(404, 'Pending approval not found');
-		}
-		requireQueueAccess(membership, pending);
+		return json(
+			outcome.kind === 'sent_to_fraud_queue'
+				? { success: true, queue: FRAUD_QUEUE }
+				: { success: outcome.success }
+		);
+	} catch (e) {
+		return answerFailure(e, 'Authorization', pendingApprovalId);
+	}
+};
 
-		// Experiment: a routed authorizer's sign-off moves the approval into the
-		// fraud queue instead of sending it upstream.
-		if (pending.queue !== FRAUD_QUEUE && isRoutedToFraudQueue(membership)) {
-			await db.pendingApproval.update({
-				where: { id: pendingApprovalId },
-				data: { queue: FRAUD_QUEUE }
-			});
-			await auditSentToFraudQueue(params.programId, user.id, pending.shipId, {
-				projectId: pending.projectId,
-				originalReviewerId: pending.reviewerId,
-				pendingApprovalId
-			});
+export const DELETE: RequestHandler = async (event) => {
+	const actor = await actorFor(event);
+	const { pendingApprovalId, message, projectId } = await event.request.json();
+	if (!pendingApprovalId) throw error(400, 'pendingApprovalId is required');
 
-			logger.info('Pending approval sent to fraud review', { pendingApprovalId, shipId: pending.shipId });
-			return json({ success: true, queue: FRAUD_QUEUE });
-		}
+	logger.info('DELETE discard pending', { programId: event.params.programId, pendingApprovalId });
 
-		// A held approval already parked upstream (approved by an earlier
-		// authorize that failed on the authorize itself): sync any edits onto
-		// that approval rather than stacking a duplicate one. Otherwise a failed
-		// approve has to surface: swallowing it left the authorize below to fail
-		// with a bare "ship N is pending, not pending_hq".
-		if (await isPendingHqUpstream(client, pending)) {
-			await client.updateReviewAction({
-				shipId: pending.shipId,
-				reviewerId: pending.reviewerId,
-				type: 'approval',
-				feedbackMessage: pending.feedbackMessage,
-				justification: pending.justification,
-				hoursAssigned: pending.hoursAssigned,
-				rewardedHoursOverride: pending.rewardedHoursOverride
-			});
-		} else {
-			try {
-				await client.submitReviewAction({
-					shipId: pending.shipId,
-					reviewerId: pending.reviewerId,
-					action: 'approve',
-					hoursAssigned: pending.hoursAssigned,
-					rewardedHoursOverride: pending.rewardedHoursOverride ?? undefined,
-					feedbackMessage: pending.feedbackMessage,
-					justification: pending.justification,
-					isHq: false,
-					fields: (pending.fields as Record<string, string | number | boolean>) ?? undefined
-				});
-			} catch (e) {
-				// The approval is sent as the original reviewer, and a program that
-				// records reviews against its own accounts (Crescent) answers 404
-				// for a reviewer who has never signed in there. Only the reviewer
-				// can fix that, so tell the authorizer who to ask.
-				if (!(e instanceof ProtocolError) || e.status !== 404) throw e;
-				const { body } = parseProtocolError(e);
-				const programName = program.yswsName || program.name;
-				logger.warn('Original reviewer unknown upstream', { pendingApprovalId, reviewerId: pending.reviewerId, error: body.message });
-				return json(
-					{
-						error: body.error,
-						message: `${body.message} If the reviewer who made this approval has never signed in to ${programName}, ask them to create an account there, then authorize again.`
-					},
-					{ status: 404 }
-				);
-			}
-		}
+	try {
+		const { success } = await sendBackApproval(actor, {
+			pendingApprovalId,
+			projectId: typeof projectId === 'string' ? projectId : undefined,
+			message: typeof message === 'string' ? message : undefined
+		});
+		return json({ success });
+	} catch (e) {
+		return answerFailure(e, 'Discard', pendingApprovalId);
+	}
+};
 
-		const reviewerId = user.slackId || user.hcaId;
-		const result = await client.submitReviewAction({
-			shipId: pending.shipId,
+export const PATCH: RequestHandler = async (event) => {
+	const actor = await actorFor(event);
+	const {
+		pendingApprovalId,
+		reviewerId,
+		feedbackMessage,
+		justification,
+		hoursAssigned,
+		rewardedHoursOverride
+	} = await event.request.json();
+	if (!pendingApprovalId) throw error(400, 'pendingApprovalId is required');
+
+	logger.debug('PATCH pending approval', { programId: event.params.programId, pendingApprovalId });
+
+	try {
+		await editAwaitingApproval(actor, {
+			pendingApprovalId,
 			reviewerId,
-			action: 'authorize',
-			hoursAssigned: pending.hoursAssigned,
-			rewardedHoursOverride: pending.rewardedHoursOverride ?? undefined,
-			justification
+			feedbackMessage,
+			justification,
+			hoursAssigned,
+			rewardedHoursOverride
 		});
-
-		await db.pendingApproval.delete({ where: { id: pendingApprovalId } });
-
-		await db.auditLog.create({
-			data: {
-				programId: params.programId,
-				userId: user.id,
-				action: 'review_authorize',
-				entityType: 'ship',
-				entityId: pending.shipId,
-				metadata: {
-					projectId: pending.projectId,
-					hoursAssigned: pending.hoursAssigned,
-					originalReviewerId: pending.reviewerId,
-					pendingApprovalId,
-					queue: pending.queue
-				}
-			}
-		});
-
-		logger.info('Pending approval authorized', { pendingApprovalId, shipId: pending.shipId, success: result.success });
-		return json({ success: result.success });
-	} catch (e) {
-		if (e instanceof ProtocolError) {
-			const { status, body } = parseProtocolError(e);
-			logger.warn('Authorization protocol error', { pendingApprovalId, status, error: body.message });
-			return json(body, { status });
-		}
-		throw e;
-	}
-};
-
-export const DELETE: RequestHandler = async ({ params, request, locals }) => {
-	const user = locals.user;
-	if (!user) throw error(401);
-
-	const membership = await requirePermission(user.id, params.programId, 'canViewReviews', {
-		isSuperAdmin: user.isSuperAdmin
-	});
-
-	const { pendingApprovalId, message: rawMessage, projectId } = await request.json();
-	if (!pendingApprovalId) throw error(400, 'pendingApprovalId is required');
-	const message = (typeof rawMessage === 'string' && rawMessage.trim()) || DEFAULT_DEAUTHORIZE_MESSAGE;
-
-	logger.info('DELETE discard pending', { programId: params.programId, pendingApprovalId });
-
-	try {
-		if (pendingApprovalId.startsWith('hq:')) {
-			requireHqAuthorizer(membership);
-			const shipId = pendingApprovalId.slice(3);
-			await requireNotHeld(params.programId, shipId);
-			const reviewerId = user.slackId || user.hcaId;
-
-			const program = await db.program.findUniqueOrThrow({
-				where: { id: params.programId }
-			});
-			const client = new ProtocolClient(program.masterEndpoint, program.secretKey);
-			const result = await client.submitReviewAction({
-				shipId,
-				reviewerId,
-				action: 'deauthorize',
-				message
-			});
-
-			await db.auditLog.create({
-				data: {
-					programId: params.programId,
-					userId: user.id,
-					action: 'review_discard_pending',
-					entityType: 'ship',
-					entityId: shipId,
-					metadata: {
-						pendingApprovalId,
-						...(typeof projectId === 'string' && { projectId })
-					}
-				}
-			});
-
-			logger.info('HQ deauthorization completed', { shipId, success: result.success });
-			return json({ success: result.success });
-		}
-
-		const pending = await db.pendingApproval.findUnique({
-			where: { id: pendingApprovalId }
-		});
-		if (!pending || pending.programId !== params.programId) {
-			throw error(404, 'Pending approval not found');
-		}
-		requireQueueAccess(membership, pending);
-
-		// A held row whose approval is already pending_hq upstream (any of the
-		// ways POST checks for) has to be sent back upstream too, or the ship
-		// would resurface in the HQ queue.
-		const program = await db.program.findUniqueOrThrow({
-			where: { id: params.programId }
-		});
-		const client = new ProtocolClient(program.masterEndpoint, program.secretKey);
-		if (await isPendingHqUpstream(client, pending)) {
-			await client.submitReviewAction({
-				shipId: pending.shipId,
-				reviewerId: user.slackId || user.hcaId,
-				action: 'deauthorize',
-				message
-			});
-		}
-
-		await db.pendingApproval.update({
-			where: { id: pendingApprovalId },
-			data: { status: 'discarded', discardedById: user.slackId || user.hcaId }
-		});
-
-		await db.auditLog.create({
-			data: {
-				programId: params.programId,
-				userId: user.id,
-				action: 'review_discard_pending',
-				entityType: 'ship',
-				entityId: pending.shipId,
-				metadata: {
-					projectId: pending.projectId,
-					hoursAssigned: pending.hoursAssigned,
-					originalReviewerId: pending.reviewerId,
-					pendingApprovalId
-				}
-			}
-		});
-
-		logger.info('Pending approval discarded', { pendingApprovalId, shipId: pending.shipId });
 		return json({ success: true });
 	} catch (e) {
-		if (e instanceof ProtocolError) {
-			const { status, body } = parseProtocolError(e);
-			logger.warn('Discard protocol error', { pendingApprovalId, status, error: body.message });
-			return json(body, { status });
-		}
-		throw e;
+		return answerFailure(e, 'Edit', pendingApprovalId);
 	}
-};
-
-export const PATCH: RequestHandler = async ({ params, request, locals }) => {
-	const user = locals.user;
-	if (!user) throw error(401);
-
-	const membership = await requirePermission(user.id, params.programId, 'canViewReviews', {
-		isSuperAdmin: user.isSuperAdmin
-	});
-
-	const { pendingApprovalId, reviewerId, feedbackMessage, justification, hoursAssigned, rewardedHoursOverride } = await request.json();
-	if (!pendingApprovalId) throw error(400, 'pendingApprovalId is required');
-	// undefined = leave untouched, null = clear the override, number = set it.
-	if (rewardedHoursOverride !== undefined && rewardedHoursOverride !== null && (typeof rewardedHoursOverride !== 'number' || !Number.isFinite(rewardedHoursOverride) || rewardedHoursOverride < 0)) {
-		throw error(400, 'rewardedHoursOverride must be a non-negative number or null');
-	}
-
-	logger.debug('PATCH pending approval', { programId: params.programId, pendingApprovalId });
-
-	if (pendingApprovalId.startsWith('hq:')) {
-		requireHqAuthorizer(membership);
-		if (!reviewerId) throw error(400, 'reviewerId is required for HQ pending approvals');
-		const shipId = pendingApprovalId.slice(3);
-		await requireNotHeld(params.programId, shipId);
-
-		const program = await db.program.findUniqueOrThrow({
-			where: { id: params.programId }
-		});
-		const client = new ProtocolClient(program.masterEndpoint, program.secretKey);
-
-		try {
-			await client.updateReviewAction({
-				shipId,
-				reviewerId,
-				type: 'approval',
-				feedbackMessage: feedbackMessage ?? '',
-				justification: justification ?? '',
-				hoursAssigned: hoursAssigned != null ? hoursAssigned : undefined,
-				rewardedHoursOverride
-			});
-		} catch (e) {
-			if (e instanceof ProtocolError) {
-				const parsed = parseProtocolError(e);
-				logger.warn('HQ edit protocol error', { pendingApprovalId, status: parsed.status, error: parsed.body.message });
-				return json(parsed.body, { status: parsed.status });
-			}
-			throw e;
-		}
-
-		logger.info('HQ pending approval updated via protocol', { shipId });
-		return json({ success: true });
-	}
-
-	const pending = await db.pendingApproval.findUnique({
-		where: { id: pendingApprovalId }
-	});
-	if (!pending || pending.programId !== params.programId) {
-		throw error(404, 'Pending approval not found');
-	}
-	requireQueueAccess(membership, pending);
-
-	await db.pendingApproval.update({
-		where: { id: pendingApprovalId },
-		data: {
-			feedbackMessage: feedbackMessage ?? pending.feedbackMessage,
-			justification: justification ?? pending.justification,
-			hoursAssigned: hoursAssigned != null ? hoursAssigned : pending.hoursAssigned,
-			rewardedHoursOverride: rewardedHoursOverride === undefined ? pending.rewardedHoursOverride : rewardedHoursOverride
-		}
-	});
-
-	logger.info('Pending approval updated', { pendingApprovalId });
-	return json({ success: true });
 };

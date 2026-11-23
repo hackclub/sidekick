@@ -4,6 +4,7 @@ import { requirePermission, type Permission } from '../rbac.js';
 import { ProtocolClient, ProtocolError, ProtocolTransportError } from '../protocol/client.js';
 import { HackatimeRateLimitError } from '../integrations/hackatime.js';
 import { createLogger } from '../logger.js';
+import { ReviewActionError } from '../review-actions.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { User } from '@prisma/client';
 
@@ -85,7 +86,7 @@ export async function runTool(
 		return result;
 	} catch (e) {
 		timer.end({ userId: ctx.user.id, isError: true });
-		if (e instanceof ToolError) return errorResult(e.message);
+		if (e instanceof ToolError || e instanceof ReviewActionError) return errorResult(e.message);
 		if (isHttpError(e)) return errorResult(e.body.message);
 		if (e instanceof ProtocolError) {
 			return errorResult(`The program's master endpoint refused: ${e.displayMessage}`);

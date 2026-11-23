@@ -53,8 +53,10 @@
 	<div class="flex flex-col gap-2 text-sm text-text-subtle leading-relaxed">
 		<p>
 			A token acts as you, with exactly your program permissions. The agent can read review queues,
-			projects, timelines and (where you may) Hackatime data, and leave a <em>draft</em> verdict on a
-			review page. It never approves or rejects anything: you load its draft, read it, and submit it yourself.
+			projects, timelines and (where you may) Hackatime data, leave a <em>draft</em> verdict on a review
+			page for you to load and submit, and act on reviews as you: approve, reject and comment, and where
+			you are HQ, authorize or send back approvals. Anything it does is recorded under your name, the
+			same as if you had done it on the review page.
 		</p>
 		<p>Tokens last 90 days. Revoke one the moment it might have leaked.</p>
 	</div>

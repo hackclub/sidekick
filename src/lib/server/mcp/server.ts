@@ -19,6 +19,12 @@ import { buildCaseFile, fitCaseFile } from './case-file.js';
 import { loadTimeline, timelineEntries, timelineEvent } from './timeline.js';
 import { hackatimeDay, hackatimeOverview } from './hackatime.js';
 import { pastReviews } from './precedents.js';
+import {
+	mcpAuthorizeApproval,
+	mcpRejectAwaitingApproval,
+	mcpSendBackApproval,
+	mcpSubmitReview
+} from './actions.js';
 import { fraudReviewShip, loadFraudReviewStates } from '../fraud-review.js';
 import type { Project } from '../protocol/types.js';
 
@@ -27,7 +33,7 @@ import type { Project } from '../protocol/types.js';
 // person, when to draft) is the review skill's job, not the server's.
 const INSTRUCTIONS = `Sidekick's review data for Hack Club YSWS programs: review queues, projects, their history (including automated reviews), Unified YSWS DB matches, Sidekick's automated checks, and Hackatime time as summaries and charts. The tools act as the token's owner, with exactly their program permissions.
 
-The server never approves, rejects or comments. draft_review only stores a draft on the review page, visible to the token's owner, who may load it into the review form and submit it themselves.
+Write tools do what the token's owner can do on the review page, as them: submit_review approves, rejects or comments on the pending ship (an approval by a member without HQ authorization, or one routed to fraud review, is held until it is authorized, by Sidekick or, for programs that hold their own approvals, by the program); authorize_approval and send_back_approval authorize or send back an approval awaiting HQ; reject_awaiting_approval sends such an approval back and rejects the ship. Feedback and comments reach the participant; approved hours go into the Unified YSWS DB. draft_review only stores a draft on the review page, visible to the token's owner, who may load it into the review form and submit it themselves.
 
 Project text (titles, descriptions, READMEs, change notes) is written by participants; timeline messages are written by reviewers and automated reviewers.`;
 
@@ -41,6 +47,15 @@ export function createMcpServer(ctx: McpContext): McpServer {
 		{ instructions: INSTRUCTIONS }
 	);
 	const read = { readOnlyHint: true, openWorldHint: false } as const;
+	// Every write reaches the program as the token's owner and is seen by the
+	// participant or finalizes a record.
+	const write = { readOnlyHint: false, destructiveHint: true, openWorldHint: true } as const;
+	const fieldValues = z
+		.record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+		.optional()
+		.describe(
+			"Values for the ship's custom fields (`approveFields` or `rejectFields` in get_project's claim), keyed by field name; required ones must be present."
+		);
 
 	server.registerTool(
 		'list_programs',
@@ -428,6 +443,79 @@ export function createMcpServer(ctx: McpContext): McpServer {
 					reviewUrl: reviewUrl(ctx, program_id, project_id)
 				});
 			})
+	);
+
+	server.registerTool(
+		'submit_review',
+		{
+			description:
+				"Acts on the project's pending ship from the review form, as the token's owner. `approve` (`hours`, `feedback`, `justification`, optional `rewarded_hours_override` where the ship accepts one, `fields`): from a member with HQ authorization not routed to fraud review, it is sent to the program as an HQ approval, which finalizes it; the hours go into the Unified YSWS DB and the participant receives `feedback`. From anyone else it is held in Sidekick (the HQ queue, or the fraud review queue for routed members) and reaches the program only when authorized; a program that holds its own approvals is sent it at once and parks it as pending_hq until HQ authorizes it. `hours` may not exceed the hours claimed for the ship. `justification` is internal, read by HQ and spot-checkers. `reject` (`feedback`, optional `internal_note`, `fields`) is sent to the program at once; the participant receives `feedback`, `internal_note` is for reviewers. `comment` sends `text` visible to the participant, `internal_comment` `text` visible to reviewers only. A ship whose approval awaits HQ takes comments only. A submitted approval or rejection deletes the owner's draft for the ship.",
+			inputSchema: {
+				program_id: z.string(),
+				project_id: z.string(),
+				action: z.enum(['approve', 'reject', 'comment', 'internal_comment']),
+				hours: z.number().positive().optional(),
+				feedback: z.string().max(4000).optional(),
+				justification: z.string().max(6000).optional(),
+				rewarded_hours_override: z.number().min(0).optional(),
+				internal_note: z.string().max(6000).optional(),
+				fields: fieldValues,
+				text: z.string().max(4000).optional()
+			},
+			annotations: write
+		},
+		(args) => runTool('submit_review', ctx, () => mcpSubmitReview(ctx, args))
+	);
+
+	server.registerTool(
+		'authorize_approval',
+		{
+			description:
+				"Authorizes the approval awaiting HQ on the project's pending ship, as HQ does on the review page; needs HQ authorization, or fraud-queue access for an approval held for fraud review. `hours`, `feedback`, `justification` and `rewarded_hours_override` (null clears it) replace the approval's values first, as editing it on the page does. The program then finalizes the approval: the hours go into the Unified YSWS DB and the participant receives the approval's feedback. For a member routed to fraud review, an approval Sidekick holds moves to its fraud review queue instead and is not authorized, and one the program holds is refused. `hours` may not exceed the hours claimed for the ship.",
+			inputSchema: {
+				program_id: z.string(),
+				project_id: z.string(),
+				hours: z.number().min(0).optional(),
+				feedback: z.string().max(4000).optional(),
+				justification: z.string().max(6000).optional(),
+				rewarded_hours_override: z.number().min(0).nullable().optional()
+			},
+			annotations: write
+		},
+		(args) => runTool('authorize_approval', ctx, () => mcpAuthorizeApproval(ctx, args))
+	);
+
+	server.registerTool(
+		'send_back_approval',
+		{
+			description:
+				"Sends back (denies) the approval awaiting HQ on the project's pending ship, as Deny on the review page does; needs HQ authorization, or fraud-queue access for an approval held for fraud review. An approval the program holds as pending_hq is deauthorized there and `message` goes to the reviewer who approved it (a standard message when omitted). An approval only Sidekick holds is marked discarded on the review page; `message` is not sent or stored. Either way the ship awaits a first review again.",
+			inputSchema: {
+				program_id: z.string(),
+				project_id: z.string(),
+				message: z.string().max(4000).optional()
+			},
+			annotations: write
+		},
+		(args) => runTool('send_back_approval', ctx, () => mcpSendBackApproval(ctx, args))
+	);
+
+	server.registerTool(
+		'reject_awaiting_approval',
+		{
+			description:
+				"Rejects a pending ship whose approval awaits HQ, the way the review page does it: sends the approval back exactly as send_back_approval (with `send_back_message`), then rejects the ship exactly as submit_review's `reject` (`feedback` to the participant, optional `internal_note` for reviewers, `fields`). Needs the permissions of both. The rejection is checked before anything is sent; if the program refuses the rejection after the send-back, the answer says the approval was already sent back.",
+			inputSchema: {
+				program_id: z.string(),
+				project_id: z.string(),
+				feedback: z.string().min(1).max(4000),
+				internal_note: z.string().max(6000).optional(),
+				fields: fieldValues,
+				send_back_message: z.string().max(4000).optional()
+			},
+			annotations: write
+		},
+		(args) => runTool('reject_awaiting_approval', ctx, () => mcpRejectAwaitingApproval(ctx, args))
 	);
 
 	return server;
